@@ -39,8 +39,14 @@ async function discoverAgents() {
     }
   }
 
-  // Check for Codex
+  // Check for Codex with version info
   if (commandExists('codex')) {
+    const version = getCodexVersion();
+    if (version) {
+      console.log(`✓ Codex CLI version ${version.full} detected`);
+    } else {
+      console.log('✓ Codex CLI detected (version unknown)');
+    }
     found.push('codex');
   }
 
@@ -77,6 +83,24 @@ function getClaudeVersion() {
 function getGeminiVersion() {
   try {
     const output = execSync('gemini --version 2>&1', { encoding: 'utf-8' });
+    const match = output.match(/(\d+)\.(\d+)\.(\d+)/);
+    if (match) {
+      return {
+        major: parseInt(match[1]),
+        minor: parseInt(match[2]),
+        patch: parseInt(match[3]),
+        full: match[0]
+      };
+    }
+  } catch (err) {
+    // Version check failed
+  }
+  return null;
+}
+
+function getCodexVersion() {
+  try {
+    const output = execSync('codex --version 2>&1', { encoding: 'utf-8' });
     const match = output.match(/(\d+)\.(\d+)\.(\d+)/);
     if (match) {
       return {
