@@ -11,7 +11,33 @@ class GeminiAgent extends BaseAgent {
 
   isReadyForCommands(output) {
     // Gemini shows "Type your message" when ready
-    return output.includes('Type your message');
+    // Also check for the prompt character
+    return output.includes('Type your message') || output.includes('gemini>') || output.includes('> ');
+  }
+
+  handleTrustPrompt(shell, output) {
+    // Check for trust prompt with various wordings
+    const trustPatterns = [
+      'Do you trust',
+      'trust the files',
+      'trust this folder',
+      'Trust this workspace',
+      'allow access'
+    ];
+
+    if (trustPatterns.some(pattern => output.toLowerCase().includes(pattern.toLowerCase()))) {
+      console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
+      shell.write('y\r');
+
+      // Wait a bit then send Enter to proceed past the trust confirmation
+      setTimeout(() => {
+        console.log(`[${this.name}] Sending Enter to proceed...`);
+        shell.write('\r');
+      }, 500);
+
+      return true;
+    }
+    return false;
   }
 
   hasCompleteOutput(output) {
@@ -20,6 +46,7 @@ class GeminiAgent extends BaseAgent {
   }
 
   sendCommands(shell, output) {
+    console.log(`[${this.name}] Sending /stats command...`);
     // Send /stats command
     setTimeout(() => {
       shell.write('/stats\r');

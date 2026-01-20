@@ -6,12 +6,41 @@ class ClaudeAgent extends BaseAgent {
   }
 
   getTimeout() {
-    return 15000; // 15 seconds
+    return 20000; // 20 seconds - extra time for trust prompt
   }
 
   isReadyForCommands(output) {
-    // Claude shows the main prompt with "Try" suggestion when ready
-    return output.includes('Try "') || output.includes('shortcuts');
+    // Claude shows various prompts when ready
+    // Look for the prompt character or shortcuts hint
+    return output.includes('? for shortcuts') ||
+           output.includes('> ') ||
+           output.includes('Try "') ||
+           (output.includes('>') && output.includes('───'));
+  }
+
+  handleTrustPrompt(shell, output) {
+    // Check for trust prompt with various wordings
+    const trustPatterns = [
+      'Do you trust',
+      'trust the files',
+      'trust this folder',
+      'Trust this workspace',
+      'allow access'
+    ];
+
+    if (trustPatterns.some(pattern => output.toLowerCase().includes(pattern.toLowerCase()))) {
+      console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
+      shell.write('y\r');
+
+      // Wait a bit then send Enter to proceed past the trust confirmation
+      setTimeout(() => {
+        console.log(`[${this.name}] Sending Enter to proceed...`);
+        shell.write('\r');
+      }, 500);
+
+      return true;
+    }
+    return false;
   }
 
   hasCompleteOutput(output) {
@@ -22,6 +51,7 @@ class ClaudeAgent extends BaseAgent {
   }
 
   sendCommands(shell, output) {
+    console.log(`[${this.name}] Sending /usage command...`);
     // Send /usage command
     setTimeout(() => {
       shell.write('/usage\r');

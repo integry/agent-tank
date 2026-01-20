@@ -23,7 +23,14 @@ class LLMWatcher {
         console.log('Auto-discovering available LLM agents...');
         agentNames = await discoverAgents();
         if (agentNames.length === 0) {
-          console.log('No LLM agents found. Install claude, gemini, or codex CLI tools.');
+          console.log('No compatible LLM agents found.');
+          console.log('Requirements:');
+          console.log('  - Claude Code 2.0+ (for /usage command support)');
+          console.log('  - Gemini CLI 0.24.5+ (for /stats command support)');
+          console.log('  - Codex CLI');
+          console.log('\nInstall/update with:');
+          console.log('  npm install -g @anthropic-ai/claude-code@latest');
+          console.log('  npm install -g gemini@latest');
           return;
         }
         console.log(`Found agents: ${agentNames.join(', ')}`);
@@ -38,6 +45,7 @@ class LLMWatcher {
       const agent = this.createAgent(name);
       if (agent) {
         this.agents.set(name, agent);
+        console.log(`Created agent: ${name}`);
       }
     }
 
@@ -64,12 +72,14 @@ class LLMWatcher {
   }
 
   async refreshAll() {
+    console.log('\nRefreshing all agents...');
     const promises = Array.from(this.agents.values()).map(agent =>
       agent.refresh().catch(err => {
         console.error(`Error refreshing ${agent.name}:`, err.message);
       })
     );
     await Promise.all(promises);
+    console.log('All agents refresh complete\n');
   }
 
   async refreshAgent(name) {
@@ -121,9 +131,11 @@ class LLMWatcher {
         }
 
         if (req.method === 'GET' && path === '/status') {
+          const status = this.getStatus();
+          console.log(`[HTTP] GET /status - returning status for ${Object.keys(status).length} agents`);
           res.setHeader('Content-Type', 'application/json');
           res.writeHead(200);
-          res.end(JSON.stringify(this.getStatus(), null, 2));
+          res.end(JSON.stringify(status, null, 2));
           return;
         }
 

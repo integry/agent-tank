@@ -24,11 +24,69 @@ npx llm-limit-watcher
 
 ## Prerequisites
 
+### Build Requirements
+
+The `node-pty` dependency requires native compilation. You'll need:
+
+- **Python 3.8+** (Python 3.11 recommended)
+- **C++ build tools** (gcc, g++, make)
+- **Node.js development headers**
+
+#### Linux (Ubuntu/Debian)
+```bash
+sudo apt-get install python3.11 python3.11-dev build-essential nodejs-dev
+```
+
+#### Linux (Fedora/RHEL/CentOS)
+```bash
+sudo dnf install python3.11 python3.11-devel gcc gcc-c++ make nodejs-devel
+```
+
+#### Linux (openSUSE)
+```bash
+sudo zypper install python311 python311-devel gcc gcc-c++ make nodejs20-devel
+```
+
+#### macOS
+```bash
+# Install Xcode Command Line Tools if not already installed
+xcode-select --install
+
+# Install Python 3.11
+brew install python@3.11
+```
+
+#### Windows
+- Install [Python 3.11+](https://www.python.org/downloads/)
+- Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)
+
+### LLM CLI Tools
+
 You need at least one of these CLI tools installed and authenticated:
 
-- [Claude Code](https://claude.ai/download) (`claude`)
-- [Gemini CLI](https://github.com/anthropics/gemini-cli) (`gemini`)
+- [Claude Code](https://claude.ai/download) (`claude`) - **Version 2.0+ required** for `/usage` command support
+- [Gemini CLI](https://github.com/anthropics/gemini-cli) (`gemini`) - **Version 0.24.5+ required** for `/stats` command support
 - [OpenAI Codex](https://platform.openai.com/docs/codex) (`codex`)
+
+**Version Requirements:**
+
+**Claude Code:** Version 1.x does not support the `/usage` command.
+```bash
+# Check version
+claude --version
+
+# Update to latest
+npm update -g @anthropic-ai/claude-code
+```
+
+**Gemini CLI:** Version 0.24.4 and below do not support the `/stats` command properly.
+```bash
+# Check version
+gemini --version
+
+# Update to latest
+npm update -g gemini
+```
 
 ## Usage
 
@@ -184,6 +242,24 @@ The watcher spawns each CLI tool in a pseudo-terminal (PTY), sends the appropria
 | Codex | `/status` | 5h limit %, Weekly % |
 
 ## Troubleshooting
+
+### Installation fails with "gyp ERR!"
+
+This indicates missing build dependencies. Make sure you have:
+
+1. **Python 3.8+**: Check with `python3 --version`. If you have multiple Python versions, set the PYTHON environment variable:
+   ```bash
+   PYTHON=/usr/bin/python3.11 npm install
+   ```
+
+2. **Build tools**: Install gcc, g++, and make for your platform (see Prerequisites above)
+
+3. **Node.js headers**: Install the nodejs-devel or nodejs-dev package for your distribution
+
+If you still have issues, try rebuilding:
+```bash
+npm run rebuild
+```
 
 ### Agent shows "Timeout waiting for usage data"
 
