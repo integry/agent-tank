@@ -1,0 +1,49 @@
+{
+  "name": "llm-limit-watcher",
+  "version": "1.0.0",
+  "description": "Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via HTTP API",
+  "main": "src/index.js",
+  "bin": {
+    "llm-limit-watcher": "./bin/llm-limit-watcher.js"
+  },
+  "scripts": {
+    "start": "node bin/llm-limit-watcher.js"
+  },
+  "keywords": [
+    "llm",
+    "claude",
+    "gemini",
+    "codex",
+    "openai",
+    "anthropic",
+    "google",
+    "usage",
+    "limits",
+    "rate-limit",
+    "monitor",
+    "cli",
+    "api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/integry/llm-limit-watcher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/integry/llm-limit-watcher/issues"
+  },
+  "homepage": "https://github.com/integry/llm-limit-watcher#readme",
+  "dependencies": {
+    "node-pty": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "LICENSE",
+    "README.md"
+  ]
+}

@@ -1,0 +1,30 @@
+# Development files
+.git
+.gitignore
+.github
+
+# Test files
+test/
+*.test.js
+coverage/
+
+# Editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
