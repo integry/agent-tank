@@ -224,3 +224,76 @@ button .spinner {
   align-items: center;
   gap: 6px;
 }
+
+/* Agent heading with icon */
+.agent-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Agent icon styling */
+.agent-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+/* Brand colors for agent icons and subtle backgrounds */
+/* Claude (Anthropic) - coral/orange tones */
+.agent-claude {
+  --agent-brand: #D97757;
+  --agent-bg-subtle: rgba(217, 119, 87, 0.08);
+}
+
+.agent-claude .agent-icon {
+  color: var(--agent-brand);
+}
+
+/* Gemini (Google) - blue tones */
+.agent-gemini {
+  --agent-brand: #4285F4;
+  --agent-bg-subtle: rgba(66, 133, 244, 0.08);
+}
+
+.agent-gemini .agent-icon {
+  color: var(--agent-brand);
+}
+
+/* Codex (OpenAI) - green tones */
+.agent-codex {
+  --agent-brand: #10A37F;
+  --agent-bg-subtle: rgba(16, 163, 127, 0.08);
+}
+
+.agent-codex .agent-icon {
+  color: var(--agent-brand);
+}
+
+/* Apply subtle brand backgrounds to agent cards */
+.agent-claude,
+.agent-gemini,
+.agent-codex {
+  background: linear-gradient(135deg, var(--agent-bg-subtle) 0%, var(--bg-card) 100%);
+  border-top-color: var(--agent-brand);
+}
+
+/* Light mode adjustments for brand backgrounds */
+body.light-mode .agent-claude {
+  --agent-bg-subtle: rgba(217, 119, 87, 0.06);
+}
+
+body.light-mode .agent-gemini {
+  --agent-bg-subtle: rgba(66, 133, 244, 0.06);
+}
+
+body.light-mode .agent-codex {
+  --agent-bg-subtle: rgba(16, 163, 127, 0.06);
+}
+
+/* Override accent color for agent headings with brand color */
+.agent-claude h2,
+.agent-gemini h2,
+.agent-codex h2 {
+  color: var(--agent-brand);
+}
