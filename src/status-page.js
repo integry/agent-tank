@@ -3,6 +3,23 @@ const path = require('node:path');
 
 const styles = fs.readFileSync(path.join(__dirname, 'status-page.css'), 'utf8');
 
+// Brand icons for each agent - inline SVG for performance and styling flexibility
+const agentIcons = {
+  claude: `<svg class="agent-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="currentColor" opacity="0.8"/>
+    <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`,
+  gemini: `<svg class="agent-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z" fill="currentColor"/>
+  </svg>`,
+  codex: `<svg class="agent-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M16 18L22 12L16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M8 6L2 12L8 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M14 4L10 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </svg>`
+};
+
 function statusPage(status) {
   const agents = Object.entries(status);
 
@@ -13,9 +30,15 @@ function statusPage(status) {
       ? new Date(data.lastUpdated).toLocaleString()
       : 'Never';
 
+    const icon = agentIcons[name] || '';
+    const displayName = name.charAt(0).toUpperCase() + name.slice(1);
+
     return `
-      <div class="agent-card ${statusClass}">
-        <h2>${name.charAt(0).toUpperCase() + name.slice(1)}</h2>
+      <div class="agent-card ${statusClass} agent-${name}">
+        <h2 class="agent-heading">
+          ${icon}
+          <span>${displayName}</span>
+        </h2>
         <div class="usage">${usageHtml}</div>
         <div class="card-footer">
           ${data.error ? `<span class="error-msg">${data.error}</span>` : ''}
