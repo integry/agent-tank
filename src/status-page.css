@@ -297,3 +297,28 @@ body.light-mode .agent-codex {
 .agent-codex h2 {
   color: var(--agent-brand);
 }
+
+/* Time elapsed progress bar - subtle, thin bar below reset info */
+.time-progress-bar {
+  height: 3px;
+  background: rgba(113, 128, 150, 0.2);
+  border-radius: 2px;
+  margin: 4px 0 8px 12px;
+  overflow: hidden;
+}
+
+.time-progress-fill {
+  height: 100%;
+  background: rgba(113, 128, 150, 0.5);
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+/* Light mode adjustments for time progress bar */
+body.light-mode .time-progress-bar {
+  background: rgba(113, 128, 150, 0.15);
+}
+
+body.light-mode .time-progress-fill {
+  background: rgba(113, 128, 150, 0.4);
+}
