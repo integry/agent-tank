@@ -43,6 +43,7 @@ function statusPage(status) {
       --accent-hover: #166d6d;
       --border-color: #2d3748;
       --disabled-bg: #4a5568;
+      --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     }
 
     body.light-mode {
@@ -57,6 +58,7 @@ function statusPage(status) {
       --accent-hover: #166d6d;
       --border-color: #e2e8f0;
       --disabled-bg: #cbd5e0;
+      --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
     * { box-sizing: border-box; }
@@ -84,15 +86,17 @@ function statusPage(status) {
     }
     .agent-card {
       background: var(--bg-card);
-      border-radius: 12px;
+      border-radius: 8px;
       padding: 20px;
-      border-left: 4px solid var(--accent-primary);
+      border: none;
+      border-top: 4px solid var(--accent-primary);
+      box-shadow: var(--card-shadow);
       display: flex;
       flex-direction: column;
-      transition: background-color 0.3s ease;
+      transition: background-color 0.3s ease, box-shadow 0.3s ease;
     }
-    .agent-card.error { border-left-color: #e53e3e; }
-    .agent-card.refreshing { border-left-color: #ecc94b; }
+    .agent-card.error { border-top-color: #e53e3e; }
+    .agent-card.refreshing { border-top-color: #ecc94b; }
     .agent-card h2 {
       margin: 0 0 15px 0;
       color: var(--accent-primary);
