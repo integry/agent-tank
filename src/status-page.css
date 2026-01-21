@@ -91,14 +91,13 @@ h1 {
   padding: 0 0 0 12px;
   font-size: 13px;
   border-bottom: none;
-  position: relative;
-  z-index: 1;
 }
 
 /* Container for reset info + time progress bar */
 .reset-info-wrapper {
   position: relative;
-  margin-bottom: 8px;
+  margin-top: 8px;
+  margin-bottom: 12px;
 }
 
 .usage-item.reset-info .usage-label { font-size: 12px; }
@@ -305,18 +304,15 @@ body.light-mode .agent-codex {
   color: var(--agent-brand);
 }
 
-/* Time elapsed progress bar - subtle, thin bar positioned behind reset info */
+/* Time elapsed progress bar - subtle, thin bar positioned below reset info */
 .time-progress-bar {
-  position: absolute;
-  top: 50%;
-  left: 12px;
-  right: 0;
-  transform: translateY(-50%);
+  position: relative;
+  margin-top: 4px;
+  margin-left: 12px;
   height: 3px;
   background: rgba(113, 128, 150, 0.2);
   border-radius: 2px;
   overflow: hidden;
-  z-index: 0;
 }
 
 .time-progress-fill {

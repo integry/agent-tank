@@ -277,10 +277,10 @@ function resetInfoItem(resetsIn, originalValue, cycleType) {
     </div>`;
   }
 
-  // Wrap in container so the time bar can be positioned behind the reset text
+  // Wrap in container so the time bar can be positioned below the reset text
   return `<div class="reset-info-wrapper">
-    ${timeProgressHtml}
     <div class="usage-item reset-info"${tooltip}><span class="usage-label">↳ Resets in</span><span class="usage-value">${resetsIn}</span></div>
+    ${timeProgressHtml}
   </div>`;
 }
 
