@@ -151,8 +151,11 @@ class CodexAgent extends BaseAgent {
     return output.includes('5h limit') && output.includes('Weekly limit');
   }
 
-  // Convert reset timestamp to duration string (e.g., "5h 30m")
+  // Convert reset timestamp to duration object with string and seconds
+  // Returns: { text: "5h 30m", seconds: 19800 } or null
   parseResetTime(resetStr) {
+    if (!resetStr) return null;
+
     const now = new Date();
     let resetDate;
 
@@ -177,25 +180,29 @@ class CodexAgent extends BaseAgent {
         resetDate.setDate(resetDate.getDate() + 1);
       }
     } else {
-      return resetStr; // Return original if can't parse
+      return { text: resetStr, seconds: null }; // Return original if can't parse
     }
 
     const diffMs = resetDate - now;
-    if (diffMs <= 0) return 'soon';
+    if (diffMs <= 0) return { text: 'soon', seconds: 0 };
 
-    const diffMins = Math.floor(diffMs / 60000);
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMins = Math.floor(diffSeconds / 60);
     const hours = Math.floor(diffMins / 60);
     const mins = diffMins % 60;
 
+    let text;
     if (hours > 24) {
       const days = Math.floor(hours / 24);
       const remainingHours = hours % 24;
-      return `${days}d ${remainingHours}h`;
+      text = `${days}d ${remainingHours}h`;
     } else if (hours > 0) {
-      return `${hours}h ${mins}m`;
+      text = `${hours}h ${mins}m`;
     } else {
-      return `${mins}m`;
+      text = `${mins}m`;
     }
+
+    return { text, seconds: diffSeconds };
   }
 
   parseOutput(output) {
@@ -210,13 +217,15 @@ class CodexAgent extends BaseAgent {
     if (fiveHourMatch) {
       const percentLeft = parseFloat(fiveHourMatch[1]);
       const resetsAt = fiveHourMatch[2].trim();
+      const resetData = this.parseResetTime(resetsAt);
       usage.fiveHour = {
         percentLeft,
         resetsAt,
         label: '5h limit',
         // Normalized fields for consistent display
         percentUsed: 100 - percentLeft,
-        resetsIn: this.parseResetTime(resetsAt),
+        resetsIn: resetData?.text || null,
+        resetsInSeconds: resetData?.seconds || null,
       };
     }
 
@@ -225,13 +234,15 @@ class CodexAgent extends BaseAgent {
     if (weeklyMatch) {
       const percentLeft = parseFloat(weeklyMatch[1]);
       const resetsAt = weeklyMatch[2].trim();
+      const resetData = this.parseResetTime(resetsAt);
       usage.weekly = {
         percentLeft,
         resetsAt,
         label: 'Weekly limit',
         // Normalized fields for consistent display
         percentUsed: 100 - percentLeft,
-        resetsIn: this.parseResetTime(resetsAt),
+        resetsIn: resetData?.text || null,
+        resetsInSeconds: resetData?.seconds || null,
       };
     }
 

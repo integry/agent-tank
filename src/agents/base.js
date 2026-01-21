@@ -176,12 +176,19 @@ class BaseAgent {
     return null;
   }
 
-  // Helper to strip ANSI codes
+  // Helper to strip ANSI codes and control sequences
   stripAnsi(str) {
     return str
+      // Standard ANSI escape sequences (colors, cursor movement, etc.)
       .replace(/\x1B\[[0-9;?]*[a-zA-Z]/g, '')
+      // OSC sequences (title bar, etc.)
       .replace(/\x1B\][^\x07]*\x07/g, '')
-      .replace(/\r/g, '');
+      // Any remaining escape sequences
+      .replace(/\x1B[^[\]]*?[a-zA-Z]/g, '')
+      // Carriage returns
+      .replace(/\r/g, '')
+      // Multiple spaces to single space (helps after cursor positioning is stripped)
+      .replace(/  +/g, ' ');
   }
 }
 

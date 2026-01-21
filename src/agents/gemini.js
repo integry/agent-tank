@@ -45,6 +45,33 @@ class GeminiAgent extends BaseAgent {
     return output.includes('Usage limits span all sessions');
   }
 
+  // Convert duration string like "3h 26m" or "5d 2h" to seconds
+  parseDurationToSeconds(durationStr) {
+    if (!durationStr) return null;
+
+    let totalSeconds = 0;
+
+    // Match days
+    const daysMatch = durationStr.match(/(\d+)\s*d/i);
+    if (daysMatch) {
+      totalSeconds += parseInt(daysMatch[1]) * 24 * 60 * 60;
+    }
+
+    // Match hours
+    const hoursMatch = durationStr.match(/(\d+)\s*h/i);
+    if (hoursMatch) {
+      totalSeconds += parseInt(hoursMatch[1]) * 60 * 60;
+    }
+
+    // Match minutes
+    const minsMatch = durationStr.match(/(\d+)\s*m/i);
+    if (minsMatch) {
+      totalSeconds += parseInt(minsMatch[1]) * 60;
+    }
+
+    return totalSeconds > 0 ? totalSeconds : null;
+  }
+
   sendCommands(shell, output) {
     console.log(`[${this.name}] Sending /stats command...`);
     // Send /stats command
@@ -84,6 +111,7 @@ class GeminiAgent extends BaseAgent {
             resetsIn,
             // Normalized fields for consistent display
             percentUsed: parseFloat((100 - usageLeft).toFixed(1)),
+            resetsInSeconds: this.parseDurationToSeconds(resetsIn),
           });
         }
       }

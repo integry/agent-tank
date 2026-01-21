@@ -49,16 +49,23 @@ class ClaudeAgent extends BaseAgent {
   }
 
   hasCompleteOutput(output) {
-    // Look for both session and weekly usage data
-    return output.includes('Current session') &&
-           output.includes('Current week') &&
-           output.includes('% used');
+    const clean = this.stripAnsi(output);
+    // Look for session, weekly data, AND ensure we have timezone info (indicates reset times are complete)
+    const hasSession = clean.includes('Current session');
+    const hasWeekly = clean.includes('Current week');
+    const hasPercentUsed = clean.includes('% used');
+    // Check for timezone pattern which indicates reset times are fully loaded
+    // The output includes "(Europe/London)" or similar after each reset time
+    const hasTimezone = (clean.match(/\([A-Za-z]+\/[A-Za-z_]+\)/g) || []).length >= 2;
+
+    return hasSession && hasWeekly && hasPercentUsed && hasTimezone;
   }
 
-  // Convert reset timestamp to duration string (e.g., "5h 30m")
+  // Convert reset timestamp to duration object with string and seconds
   // Formats:
   //   - "2:59am (Europe/London)" - time only (session reset, same day or next day)
   //   - "Jan 22, 1pm (Europe/London)" - date and time (weekly reset)
+  // Returns: { text: "5h 30m", seconds: 19800 } or null
   parseResetTime(resetStr) {
     if (!resetStr) return null;
 
@@ -85,12 +92,12 @@ class ClaudeAgent extends BaseAgent {
     } else {
       // Try date + time format: "Jan 22, 1pm" or "Jan 22, 12:30pm"
       const dateTimeMatch = cleanStr.match(/(\w+)\s+(\d{1,2}),?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
-      if (!dateTimeMatch) return resetStr;
+      if (!dateTimeMatch) return { text: resetStr, seconds: null };
 
       const [, month, day, hourRaw, minutes = '0', ampm] = dateTimeMatch;
       const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
       const monthIndex = monthNames.indexOf(month.toLowerCase().substring(0, 3));
-      if (monthIndex === -1) return resetStr;
+      if (monthIndex === -1) return { text: resetStr, seconds: null };
 
       let hour = parseInt(hourRaw);
       if (ampm.toLowerCase() === 'pm' && hour !== 12) hour += 12;
@@ -104,21 +111,25 @@ class ClaudeAgent extends BaseAgent {
     }
 
     const diffMs = resetDate - now;
-    if (diffMs <= 0) return 'soon';
+    if (diffMs <= 0) return { text: 'soon', seconds: 0 };
 
-    const diffMins = Math.floor(diffMs / 60000);
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMins = Math.floor(diffSeconds / 60);
     const hours = Math.floor(diffMins / 60);
     const mins = diffMins % 60;
 
+    let text;
     if (hours > 24) {
       const days = Math.floor(hours / 24);
       const remainingHours = hours % 24;
-      return `${days}d ${remainingHours}h`;
+      text = `${days}d ${remainingHours}h`;
     } else if (hours > 0) {
-      return `${hours}h ${mins}m`;
+      text = `${hours}h ${mins}m`;
     } else {
-      return `${mins}m`;
+      text = `${mins}m`;
     }
+
+    return { text, seconds: diffSeconds };
   }
 
   sendCommands(shell, output) {
@@ -145,6 +156,14 @@ class ClaudeAgent extends BaseAgent {
       weeklySonnet: null,
     };
 
+    // Debug: log session section for troubleshooting
+    const sessionIdx = clean.indexOf('Current session');
+    const weeklyIdx = clean.indexOf('Current week');
+    if (sessionIdx !== -1 && weeklyIdx !== -1) {
+      const sessionSection = clean.substring(sessionIdx, weeklyIdx);
+      console.log(`[${this.name}] Session section preview:`, sessionSection.substring(0, 200));
+    }
+
     // Helper to extract section between two headers
     const extractSection = (start, end) => {
       const regex = end
@@ -170,19 +189,22 @@ class ClaudeAgent extends BaseAgent {
         resetsAt = `${dateTimeMatch[1]} (${dateTimeMatch[3]})`;
       }
 
-      // Fall back to time-only pattern (session): H:MMam/pm (timezone)
+      // Fall back to time-only pattern (session): H:MMam/pm or Ham/pm (timezone)
+      // Minutes are optional (shows "11am" for exact hours)
       if (!resetsAt) {
-        const timeOnlyMatch = section.match(/(\d{1,2}:\d{2}\s*(am|pm))\s*\(([^)]+)\)/i);
+        const timeOnlyMatch = section.match(/(\d{1,2}(?::\d{2})?\s*(am|pm))\s*\(([^)]+)\)/i);
         if (timeOnlyMatch) {
           resetsAt = `${timeOnlyMatch[1]} (${timeOnlyMatch[3]})`;
         }
       }
 
       if (!percentMatch) return null;
+      const resetData = resetsAt ? this.parseResetTime(resetsAt) : null;
       return {
         percent: parseFloat(percentMatch[1]),
         resetsAt,
-        resetsIn: resetsAt ? this.parseResetTime(resetsAt) : null,
+        resetsIn: resetData?.text || null,
+        resetsInSeconds: resetData?.seconds || null,
       };
     };
 
@@ -212,11 +234,13 @@ class ClaudeAgent extends BaseAgent {
       const weeklyMatch = clean.match(/Current week[\s\S]*?(\d+)\s*%\s*used[\s\S]*?Resets\s+([^\n]+)/i);
       if (weeklyMatch) {
         const resetsAt = weeklyMatch[2].trim();
+        const resetData = this.parseResetTime(resetsAt);
         usage.weekly = {
           percent: parseFloat(weeklyMatch[1]),
           label: 'Current week',
           resetsAt,
-          resetsIn: this.parseResetTime(resetsAt),
+          resetsIn: resetData?.text || null,
+          resetsInSeconds: resetData?.seconds || null,
         };
       } else {
         const weeklyPercentMatch = clean.match(/Current week[^%]*?(\d+)\s*%\s*used/i);
@@ -226,6 +250,7 @@ class ClaudeAgent extends BaseAgent {
             label: 'Current week',
             resetsAt: null,
             resetsIn: null,
+            resetsInSeconds: null,
           };
         }
       }
