@@ -12,13 +12,13 @@ function statusPage(status) {
       <div class="agent-card ${statusClass}">
         <h2>${name.charAt(0).toUpperCase() + name.slice(1)}</h2>
         <div class="usage">${usageHtml}</div>
-        <div class="meta">
-          <span class="last-updated">Updated: ${lastUpdate}</span>
+        <div class="card-footer">
           ${data.error ? `<span class="error-msg">${data.error}</span>` : ''}
+          <button onclick="refresh('${name}')" ${data.isRefreshing ? 'disabled' : ''}>
+            ${data.isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+          <span class="last-updated">Updated: ${lastUpdate}</span>
         </div>
-        <button onclick="refresh('${name}')" ${data.isRefreshing ? 'disabled' : ''}>
-          ${data.isRefreshing ? 'Refreshing...' : 'Refresh'}
-        </button>
       </div>
     `;
   }).join('');
@@ -57,6 +57,8 @@ function statusPage(status) {
       border-radius: 12px;
       padding: 20px;
       border-left: 4px solid #7f5af0;
+      display: flex;
+      flex-direction: column;
     }
     .agent-card.error { border-left-color: #e53e3e; }
     .agent-card.refreshing { border-left-color: #ecc94b; }
@@ -64,7 +66,7 @@ function statusPage(status) {
       margin: 0 0 15px 0;
       color: #7f5af0;
     }
-    .usage { margin-bottom: 15px; }
+    .usage { margin-bottom: 15px; flex: 1; }
     .usage-item {
       display: flex;
       justify-content: space-between;
@@ -96,15 +98,23 @@ function statusPage(status) {
       border-radius: 4px;
       transition: width 0.3s;
     }
-    .meta {
+    .card-footer {
+      margin-top: auto;
+      padding-top: 15px;
+      border-top: 1px solid #2d3748;
+    }
+    .card-footer .last-updated {
+      display: block;
       font-size: 12px;
       color: #718096;
-      margin-bottom: 15px;
+      margin-top: 10px;
+      text-align: center;
     }
     .error-msg {
       display: block;
       color: #e53e3e;
-      margin-top: 5px;
+      margin-bottom: 10px;
+      font-size: 13px;
     }
     button {
       width: 100%;
@@ -120,6 +130,20 @@ function statusPage(status) {
     button:disabled {
       background: #4a5568;
       cursor: not-allowed;
+    }
+    button .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
     .refresh-all {
       text-align: center;
@@ -142,19 +166,35 @@ function statusPage(status) {
     </div>
   </div>
   <script>
+    function setButtonLoading(btn, loading) {
+      btn.disabled = loading;
+      if (loading) {
+        btn.dataset.originalText = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner"></span>Refreshing...';
+      } else {
+        btn.innerHTML = btn.dataset.originalText || 'Refresh';
+      }
+    }
     async function refresh(agent) {
+      const btn = event.target;
+      setButtonLoading(btn, true);
       try {
         await fetch('/refresh/' + agent, { method: 'POST' });
         location.reload();
       } catch (e) {
+        setButtonLoading(btn, false);
         alert('Failed to refresh: ' + e.message);
       }
     }
     async function refreshAll() {
+      const btn = event.target;
+      const allBtns = document.querySelectorAll('button');
+      allBtns.forEach(b => setButtonLoading(b, true));
       try {
         await fetch('/refresh', { method: 'POST' });
         location.reload();
       } catch (e) {
+        allBtns.forEach(b => setButtonLoading(b, false));
         alert('Failed to refresh: ' + e.message);
       }
     }
