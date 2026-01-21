@@ -29,18 +29,19 @@ function statusPage(status) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LLM Limit Watcher</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #1a1a2e;
+      font-family: 'Inter', 'Montserrat', 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #343A40;
       color: #eee;
       margin: 0;
       padding: 20px;
     }
     h1 {
       text-align: center;
-      color: #7f5af0;
+      color: #1D8A8A;
       margin-bottom: 30px;
     }
     .container {
@@ -53,10 +54,10 @@ function statusPage(status) {
       gap: 20px;
     }
     .agent-card {
-      background: #16213e;
+      background: #2d3339;
       border-radius: 12px;
       padding: 20px;
-      border-left: 4px solid #7f5af0;
+      border-left: 4px solid #1D8A8A;
       display: flex;
       flex-direction: column;
     }
@@ -64,7 +65,7 @@ function statusPage(status) {
     .agent-card.refreshing { border-left-color: #ecc94b; }
     .agent-card h2 {
       margin: 0 0 15px 0;
-      color: #7f5af0;
+      color: #1D8A8A;
     }
     .usage { margin-bottom: 15px; flex: 1; }
     .usage-item {
@@ -119,14 +120,14 @@ function statusPage(status) {
     button {
       width: 100%;
       padding: 10px;
-      background: #7f5af0;
+      background: #1D8A8A;
       color: white;
       border: none;
       border-radius: 6px;
       cursor: pointer;
       font-size: 14px;
     }
-    button:hover:not(:disabled) { background: #6b46c1; }
+    button:hover:not(:disabled) { background: #166d6d; }
     button:disabled {
       background: #4a5568;
       cursor: not-allowed;
