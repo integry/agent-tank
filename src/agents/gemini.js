@@ -78,7 +78,13 @@ class GeminiAgent extends BaseAgent {
 
         // Avoid duplicates
         if (!usage.models.find(m => m.model === model)) {
-          usage.models.push({ model, usageLeft, resetsIn });
+          usage.models.push({
+            model,
+            usageLeft,
+            resetsIn,
+            // Normalized fields for consistent display
+            percentUsed: parseFloat((100 - usageLeft).toFixed(1)),
+          });
         }
       }
     }

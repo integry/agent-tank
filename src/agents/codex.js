@@ -151,6 +151,53 @@ class CodexAgent extends BaseAgent {
     return output.includes('5h limit') && output.includes('Weekly limit');
   }
 
+  // Convert reset timestamp to duration string (e.g., "5h 30m")
+  parseResetTime(resetStr) {
+    const now = new Date();
+    let resetDate;
+
+    // Format: "HH:MM" (today) or "HH:MM on DD Mon"
+    const timeOnDateMatch = resetStr.match(/(\d{1,2}):(\d{2})\s*on\s*(\d{1,2})\s*(\w+)/i);
+    const timeOnlyMatch = resetStr.match(/^(\d{1,2}):(\d{2})$/);
+
+    if (timeOnDateMatch) {
+      const [, hours, minutes, day, month] = timeOnDateMatch;
+      const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const monthIndex = monthNames.indexOf(month.toLowerCase().substring(0, 3));
+      resetDate = new Date(now.getFullYear(), monthIndex, parseInt(day), parseInt(hours), parseInt(minutes));
+      // If the date is in the past, it's next year
+      if (resetDate < now) {
+        resetDate.setFullYear(resetDate.getFullYear() + 1);
+      }
+    } else if (timeOnlyMatch) {
+      const [, hours, minutes] = timeOnlyMatch;
+      resetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(hours), parseInt(minutes));
+      // If time is in the past, it's tomorrow
+      if (resetDate < now) {
+        resetDate.setDate(resetDate.getDate() + 1);
+      }
+    } else {
+      return resetStr; // Return original if can't parse
+    }
+
+    const diffMs = resetDate - now;
+    if (diffMs <= 0) return 'soon';
+
+    const diffMins = Math.floor(diffMs / 60000);
+    const hours = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+
+    if (hours > 24) {
+      const days = Math.floor(hours / 24);
+      const remainingHours = hours % 24;
+      return `${days}d ${remainingHours}h`;
+    } else if (hours > 0) {
+      return `${hours}h ${mins}m`;
+    } else {
+      return `${mins}m`;
+    }
+  }
+
   parseOutput(output) {
     const clean = this.stripAnsi(output);
     const usage = {
@@ -161,20 +208,30 @@ class CodexAgent extends BaseAgent {
     // Parse 5h limit: "5h limit:   [████...] XX% left (resets HH:MM)"
     const fiveHourMatch = clean.match(/5h limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i);
     if (fiveHourMatch) {
+      const percentLeft = parseFloat(fiveHourMatch[1]);
+      const resetsAt = fiveHourMatch[2].trim();
       usage.fiveHour = {
-        percentLeft: parseFloat(fiveHourMatch[1]),
-        resetsAt: fiveHourMatch[2].trim(),
+        percentLeft,
+        resetsAt,
         label: '5h limit',
+        // Normalized fields for consistent display
+        percentUsed: 100 - percentLeft,
+        resetsIn: this.parseResetTime(resetsAt),
       };
     }
 
     // Parse Weekly limit: "Weekly limit:   [░░...] XX% left (resets HH:MM)"
     const weeklyMatch = clean.match(/Weekly limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i);
     if (weeklyMatch) {
+      const percentLeft = parseFloat(weeklyMatch[1]);
+      const resetsAt = weeklyMatch[2].trim();
       usage.weekly = {
-        percentLeft: parseFloat(weeklyMatch[1]),
-        resetsAt: weeklyMatch[2].trim(),
+        percentLeft,
+        resetsAt,
         label: 'Weekly limit',
+        // Normalized fields for consistent display
+        percentUsed: 100 - percentLeft,
+        resetsIn: this.parseResetTime(resetsAt),
       };
     }
 

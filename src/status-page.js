@@ -215,45 +215,48 @@ function formatUsage(agentName, usage) {
   if (agentName === 'claude') {
     if (usage.session) {
       html += usageItem('Session', usage.session.percent, '% used', true);
-      if (usage.session.resetsAt) {
-        html += `<div class="usage-item reset-info"><span class="usage-label">↳ Resets</span><span class="usage-value">${usage.session.resetsAt}</span></div>`;
+      if (usage.session.resetsIn) {
+        html += resetInfoItem(usage.session.resetsIn, usage.session.resetsAt);
       }
     }
     if (usage.weeklyAll) {
       html += usageItem('Weekly (all)', usage.weeklyAll.percent, '% used', true);
-      if (usage.weeklyAll.resetsAt) {
-        html += `<div class="usage-item reset-info"><span class="usage-label">↳ Resets</span><span class="usage-value">${usage.weeklyAll.resetsAt}</span></div>`;
+      if (usage.weeklyAll.resetsIn) {
+        html += resetInfoItem(usage.weeklyAll.resetsIn, usage.weeklyAll.resetsAt);
       }
     }
     if (usage.weeklySonnet) {
       html += usageItem('Weekly (Sonnet)', usage.weeklySonnet.percent, '% used', true);
+      if (usage.weeklySonnet.resetsIn) {
+        html += resetInfoItem(usage.weeklySonnet.resetsIn, usage.weeklySonnet.resetsAt);
+      }
     }
     if (usage.weekly) {
       html += usageItem('Weekly', usage.weekly.percent, '% used', true);
-      if (usage.weekly.resetsAt) {
-        html += `<div class="usage-item reset-info"><span class="usage-label">↳ Resets</span><span class="usage-value">${usage.weekly.resetsAt}</span></div>`;
+      if (usage.weekly.resetsIn) {
+        html += resetInfoItem(usage.weekly.resetsIn, usage.weekly.resetsAt);
       }
     }
   } else if (agentName === 'gemini') {
     if (usage.models && usage.models.length > 0) {
       for (const model of usage.models) {
-        html += usageItem(model.model, model.usageLeft, '% left', false);
+        html += usageItem(model.model, model.percentUsed, '% used', true);
         if (model.resetsIn) {
-          html += `<div class="usage-item reset-info"><span class="usage-label">↳ Resets in</span><span class="usage-value">${model.resetsIn}</span></div>`;
+          html += resetInfoItem(model.resetsIn);
         }
       }
     }
   } else if (agentName === 'codex') {
     if (usage.fiveHour) {
-      html += usageItem('5h limit', usage.fiveHour.percentLeft, '% left', false);
-      if (usage.fiveHour.resetsAt) {
-        html += `<div class="usage-item reset-info"><span class="usage-label">↳ Resets</span><span class="usage-value">${usage.fiveHour.resetsAt}</span></div>`;
+      html += usageItem('5h limit', usage.fiveHour.percentUsed, '% used', true);
+      if (usage.fiveHour.resetsIn) {
+        html += resetInfoItem(usage.fiveHour.resetsIn, usage.fiveHour.resetsAt);
       }
     }
     if (usage.weekly) {
-      html += usageItem('Weekly', usage.weekly.percentLeft, '% left', false);
-      if (usage.weekly.resetsAt) {
-        html += `<div class="usage-item reset-info"><span class="usage-label">↳ Resets</span><span class="usage-value">${usage.weekly.resetsAt}</span></div>`;
+      html += usageItem('Weekly', usage.weekly.percentUsed, '% used', true);
+      if (usage.weekly.resetsIn) {
+        html += resetInfoItem(usage.weekly.resetsIn, usage.weekly.resetsAt);
       }
     }
     if (usage.model) {
@@ -285,6 +288,11 @@ function usageItem(label, value, suffix, isUsed) {
       <div class="progress-fill" style="width: ${progressPercent}%; background: ${progressColor};"></div>
     </div>
   `;
+}
+
+function resetInfoItem(resetsIn, originalValue) {
+  const tooltip = originalValue ? ` title="${originalValue}"` : '';
+  return `<div class="usage-item reset-info"${tooltip}><span class="usage-label">↳ Resets in</span><span class="usage-value">${resetsIn}</span></div>`;
 }
 
 module.exports = { statusPage };

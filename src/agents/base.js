@@ -58,12 +58,13 @@ class BaseAgent {
 
       let shell;
       try {
+        const env = this.getEnv ? this.getEnv() : { ...process.env, TERM: 'xterm-256color' };
         shell = pty.spawn(this.command, this.args, {
           name: 'xterm-color',
           cols: 120,
           rows: 40,
           cwd: '/tmp',
-          env: { ...process.env, TERM: 'xterm-256color' },
+          env,
         });
       } catch (spawnErr) {
         console.error(`[${this.name}] Failed to spawn:`, spawnErr.message);
