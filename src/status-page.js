@@ -29,7 +29,7 @@ function statusPage(status) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LLM Limit Watcher</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       /* Dark mode colors (default) */
@@ -105,7 +105,8 @@ function statusPage(status) {
     .usage-item {
       display: flex;
       justify-content: space-between;
-      padding: 8px 0;
+      align-items: center;
+      padding: 10px 0;
       border-bottom: 1px solid var(--border-color);
     }
     .usage-item:last-child { border-bottom: none; }
@@ -116,11 +117,33 @@ function statusPage(status) {
     }
     .usage-item.reset-info .usage-label { font-size: 12px; }
     .usage-item.reset-info .usage-value { font-weight: normal; color: var(--text-secondary); }
-    .usage-label { color: var(--text-secondary); }
-    .usage-value { font-weight: bold; }
+    .usage-label {
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 400;
+    }
+    .usage-value {
+      font-weight: 600;
+      display: flex;
+      align-items: baseline;
+      gap: 2px;
+    }
+    .usage-percent {
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .usage-suffix {
+      font-size: 14px;
+      font-weight: 500;
+      opacity: 0.8;
+    }
     .usage-value.high { color: #48bb78; }
+    .usage-value.high .usage-percent { color: #48bb78; }
     .usage-value.medium { color: #ecc94b; }
+    .usage-value.medium .usage-percent { color: #ecc94b; }
     .usage-value.low { color: #e53e3e; }
+    .usage-value.low .usage-percent { color: #e53e3e; }
     .progress-bar {
       height: 8px;
       background: var(--bg-secondary);
@@ -370,7 +393,7 @@ function usageItem(label, value, suffix, isUsed) {
   return `
     <div class="usage-item">
       <span class="usage-label">${label}</span>
-      <span class="usage-value ${colorClass}">${value}${suffix}</span>
+      <span class="usage-value ${colorClass}"><span class="usage-percent">${value}</span><span class="usage-suffix">${suffix}</span></span>
     </div>
     <div class="progress-bar">
       <div class="progress-fill" style="width: ${progressPercent}%; background: ${progressColor};"></div>
