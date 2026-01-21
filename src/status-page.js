@@ -272,13 +272,16 @@ function resetInfoItem(resetsIn, originalValue, cycleType) {
     const elapsedSeconds = cycleDuration - resetsInSeconds;
     const elapsedPercent = Math.min(100, Math.max(0, (elapsedSeconds / cycleDuration) * 100));
 
-    timeProgressHtml = `
-    <div class="time-progress-bar" title="Time elapsed in cycle: ${Math.round(elapsedPercent)}%">
+    timeProgressHtml = `<div class="time-progress-bar" title="Time elapsed in cycle: ${Math.round(elapsedPercent)}%">
       <div class="time-progress-fill" style="width: ${elapsedPercent}%;"></div>
     </div>`;
   }
 
-  return `<div class="usage-item reset-info"${tooltip}><span class="usage-label">↳ Resets in</span><span class="usage-value">${resetsIn}</span></div>${timeProgressHtml}`;
+  // Wrap in container so the time bar can be positioned behind the reset text
+  return `<div class="reset-info-wrapper">
+    ${timeProgressHtml}
+    <div class="usage-item reset-info"${tooltip}><span class="usage-label">↳ Resets in</span><span class="usage-value">${resetsIn}</span></div>
+  </div>`;
 }
 
 module.exports = { statusPage };
