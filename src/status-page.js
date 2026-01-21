@@ -157,25 +157,25 @@ function formatUsage(agentName, usage) {
     if (usage.session) {
       html += usageItem('Session', usage.session.percent, '% used', true);
       if (usage.session.resetsIn) {
-        html += resetInfoItem(usage.session.resetsIn, usage.session.resetsAt);
+        html += resetInfoItem(usage.session.resetsIn, usage.session.resetsAt, 'session');
       }
     }
     if (usage.weeklyAll) {
       html += usageItem('Weekly (all)', usage.weeklyAll.percent, '% used', true);
       if (usage.weeklyAll.resetsIn) {
-        html += resetInfoItem(usage.weeklyAll.resetsIn, usage.weeklyAll.resetsAt);
+        html += resetInfoItem(usage.weeklyAll.resetsIn, usage.weeklyAll.resetsAt, 'weekly');
       }
     }
     if (usage.weeklySonnet) {
       html += usageItem('Weekly (Sonnet)', usage.weeklySonnet.percent, '% used', true);
       if (usage.weeklySonnet.resetsIn) {
-        html += resetInfoItem(usage.weeklySonnet.resetsIn, usage.weeklySonnet.resetsAt);
+        html += resetInfoItem(usage.weeklySonnet.resetsIn, usage.weeklySonnet.resetsAt, 'weekly');
       }
     }
     if (usage.weekly) {
       html += usageItem('Weekly', usage.weekly.percent, '% used', true);
       if (usage.weekly.resetsIn) {
-        html += resetInfoItem(usage.weekly.resetsIn, usage.weekly.resetsAt);
+        html += resetInfoItem(usage.weekly.resetsIn, usage.weekly.resetsAt, 'weekly');
       }
     }
   } else if (agentName === 'gemini') {
@@ -183,7 +183,7 @@ function formatUsage(agentName, usage) {
       for (const model of usage.models) {
         html += usageItem(model.model, model.percentUsed, '% used', true);
         if (model.resetsIn) {
-          html += resetInfoItem(model.resetsIn);
+          html += resetInfoItem(model.resetsIn, null, 'sessionGemini');
         }
       }
     }
@@ -191,13 +191,13 @@ function formatUsage(agentName, usage) {
     if (usage.fiveHour) {
       html += usageItem('5h limit', usage.fiveHour.percentUsed, '% used', true);
       if (usage.fiveHour.resetsIn) {
-        html += resetInfoItem(usage.fiveHour.resetsIn, usage.fiveHour.resetsAt);
+        html += resetInfoItem(usage.fiveHour.resetsIn, usage.fiveHour.resetsAt, 'fiveHour');
       }
     }
     if (usage.weekly) {
       html += usageItem('Weekly', usage.weekly.percentUsed, '% used', true);
       if (usage.weekly.resetsIn) {
-        html += resetInfoItem(usage.weekly.resetsIn, usage.weekly.resetsAt);
+        html += resetInfoItem(usage.weekly.resetsIn, usage.weekly.resetsAt, 'weekly');
       }
     }
     if (usage.model) {
@@ -231,9 +231,57 @@ function usageItem(label, value, suffix, isUsed) {
   `;
 }
 
-function resetInfoItem(resetsIn, originalValue) {
+// Cycle duration constants in seconds
+const CYCLE_DURATIONS = {
+  session: 5 * 60 * 60,        // 5 hours = 18000 seconds
+  sessionGemini: 24 * 60 * 60, // 24 hours = 86400 seconds (Gemini uses 24h sessions)
+  weekly: 7 * 24 * 60 * 60,    // 7 days = 604800 seconds
+  fiveHour: 5 * 60 * 60        // 5 hours = 18000 seconds
+};
+
+// Parse "Resets in" time string to seconds
+function parseResetsInToSeconds(resetsIn) {
+  if (!resetsIn || typeof resetsIn !== 'string') return null;
+
+  let totalSeconds = 0;
+
+  // Match patterns like "2h 30m", "5 hours", "3d 12h", "45 minutes", etc.
+  const dayMatch = resetsIn.match(/(\d+)\s*d(?:ay)?s?/i);
+  const hourMatch = resetsIn.match(/(\d+)\s*h(?:our)?s?/i);
+  const minMatch = resetsIn.match(/(\d+)\s*m(?:in(?:ute)?)?s?/i);
+  const secMatch = resetsIn.match(/(\d+)\s*s(?:ec(?:ond)?)?s?/i);
+
+  if (dayMatch) totalSeconds += parseInt(dayMatch[1], 10) * 24 * 60 * 60;
+  if (hourMatch) totalSeconds += parseInt(hourMatch[1], 10) * 60 * 60;
+  if (minMatch) totalSeconds += parseInt(minMatch[1], 10) * 60;
+  if (secMatch) totalSeconds += parseInt(secMatch[1], 10);
+
+  return totalSeconds > 0 ? totalSeconds : null;
+}
+
+function resetInfoItem(resetsIn, originalValue, cycleType) {
   const tooltip = originalValue ? ` title="${originalValue}"` : '';
-  return `<div class="usage-item reset-info"${tooltip}><span class="usage-label">↳ Resets in</span><span class="usage-value">${resetsIn}</span></div>`;
+
+  // Calculate elapsed time progress bar
+  let timeProgressHtml = '';
+  const resetsInSeconds = parseResetsInToSeconds(resetsIn);
+  const cycleDuration = cycleType ? CYCLE_DURATIONS[cycleType] : null;
+
+  if (resetsInSeconds !== null && cycleDuration) {
+    // Calculate elapsed percentage: (cycleDuration - remaining) / cycleDuration * 100
+    const elapsedSeconds = cycleDuration - resetsInSeconds;
+    const elapsedPercent = Math.min(100, Math.max(0, (elapsedSeconds / cycleDuration) * 100));
+
+    timeProgressHtml = `<div class="time-progress-bar" title="Time elapsed in cycle: ${Math.round(elapsedPercent)}%">
+      <div class="time-progress-fill" style="width: ${elapsedPercent}%;"></div>
+    </div>`;
+  }
+
+  // Wrap in container so the time bar can be positioned below the reset text
+  return `<div class="reset-info-wrapper">
+    <div class="usage-item reset-info"${tooltip}><span class="usage-label">↳ Resets in</span><span class="usage-value">${resetsIn}</span></div>
+    ${timeProgressHtml}
+  </div>`;
 }
 
 module.exports = { statusPage };

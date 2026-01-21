@@ -82,16 +82,22 @@ h1 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border-color);
+  padding: 10px 0 4px 0;
 }
 
 .usage-item:last-child { border-bottom: none; }
 
 .usage-item.reset-info {
-  padding: 4px 0 8px 12px;
+  padding: 0 0 0 12px;
   font-size: 13px;
   border-bottom: none;
+}
+
+/* Container for reset info + time progress bar */
+.reset-info-wrapper {
+  position: relative;
+  margin-top: 8px;
+  margin-bottom: 12px;
 }
 
 .usage-item.reset-info .usage-label { font-size: 12px; }
@@ -133,7 +139,7 @@ h1 {
   height: 8px;
   background: var(--bg-secondary);
   border-radius: 4px;
-  margin-top: 5px;
+  margin-top: 2px;
   overflow: hidden;
 }
 
@@ -296,4 +302,31 @@ body.light-mode .agent-codex {
 .agent-gemini h2,
 .agent-codex h2 {
   color: var(--agent-brand);
+}
+
+/* Time elapsed progress bar - subtle, thin bar positioned below reset info */
+.time-progress-bar {
+  position: relative;
+  margin-top: 4px;
+  margin-left: 12px;
+  height: 3px;
+  background: rgba(113, 128, 150, 0.2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.time-progress-fill {
+  height: 100%;
+  background: rgba(113, 128, 150, 0.5);
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+/* Light mode adjustments for time progress bar */
+body.light-mode .time-progress-bar {
+  background: rgba(113, 128, 150, 0.15);
+}
+
+body.light-mode .time-progress-fill {
+  background: rgba(113, 128, 150, 0.4);
 }
