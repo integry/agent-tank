@@ -72,6 +72,13 @@ function statusPage(status) {
       border-bottom: 1px solid #2d3748;
     }
     .usage-item:last-child { border-bottom: none; }
+    .usage-item.reset-info {
+      padding: 4px 0 8px 12px;
+      font-size: 13px;
+      border-bottom: none;
+    }
+    .usage-item.reset-info .usage-label { font-size: 12px; }
+    .usage-item.reset-info .usage-value { font-weight: normal; color: #a0aec0; }
     .usage-label { color: #a0aec0; }
     .usage-value { font-weight: bold; }
     .usage-value.high { color: #48bb78; }
@@ -168,33 +175,46 @@ function formatUsage(agentName, usage) {
   if (agentName === 'claude') {
     if (usage.session) {
       html += usageItem('Session', usage.session.percent, '% used', true);
+      if (usage.session.resetsAt) {
+        html += `<div class="usage-item reset-info"><span class="usage-label">↳ Resets</span><span class="usage-value">${usage.session.resetsAt}</span></div>`;
+      }
     }
     if (usage.weeklyAll) {
       html += usageItem('Weekly (all)', usage.weeklyAll.percent, '% used', true);
+      if (usage.weeklyAll.resetsAt) {
+        html += `<div class="usage-item reset-info"><span class="usage-label">↳ Resets</span><span class="usage-value">${usage.weeklyAll.resetsAt}</span></div>`;
+      }
     }
     if (usage.weeklySonnet) {
       html += usageItem('Weekly (Sonnet)', usage.weeklySonnet.percent, '% used', true);
     }
     if (usage.weekly) {
       html += usageItem('Weekly', usage.weekly.percent, '% used', true);
-    }
-    if (usage.resets && usage.resets.length > 0) {
-      html += `<div class="usage-item"><span class="usage-label">Resets</span><span class="usage-value">${usage.resets[0]}</span></div>`;
+      if (usage.weekly.resetsAt) {
+        html += `<div class="usage-item reset-info"><span class="usage-label">↳ Resets</span><span class="usage-value">${usage.weekly.resetsAt}</span></div>`;
+      }
     }
   } else if (agentName === 'gemini') {
     if (usage.models && usage.models.length > 0) {
       for (const model of usage.models) {
         html += usageItem(model.model, model.usageLeft, '% left', false);
+        if (model.resetsIn) {
+          html += `<div class="usage-item reset-info"><span class="usage-label">↳ Resets in</span><span class="usage-value">${model.resetsIn}</span></div>`;
+        }
       }
     }
   } else if (agentName === 'codex') {
     if (usage.fiveHour) {
       html += usageItem('5h limit', usage.fiveHour.percentLeft, '% left', false);
-      html += `<div class="usage-item"><span class="usage-label">Resets</span><span class="usage-value">${usage.fiveHour.resetsAt}</span></div>`;
+      if (usage.fiveHour.resetsAt) {
+        html += `<div class="usage-item reset-info"><span class="usage-label">↳ Resets</span><span class="usage-value">${usage.fiveHour.resetsAt}</span></div>`;
+      }
     }
     if (usage.weekly) {
       html += usageItem('Weekly', usage.weekly.percentLeft, '% left', false);
-      html += `<div class="usage-item"><span class="usage-label">Resets</span><span class="usage-value">${usage.weekly.resetsAt}</span></div>`;
+      if (usage.weekly.resetsAt) {
+        html += `<div class="usage-item reset-info"><span class="usage-label">↳ Resets</span><span class="usage-value">${usage.weekly.resetsAt}</span></div>`;
+      }
     }
     if (usage.model) {
       html += `<div class="usage-item"><span class="usage-label">Model</span><span class="usage-value">${usage.model}</span></div>`;

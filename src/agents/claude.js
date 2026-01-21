@@ -71,23 +71,44 @@ class ClaudeAgent extends BaseAgent {
       weeklySonnet: null,
     };
 
-    // Parse session usage - format: "Current session" ... "XX% used"
-    // The percentage appears after the progress bar on next line
-    const sessionMatch = clean.match(/Current session[\s\S]*?(\d+)\s*%\s*used/i);
+    // Parse session usage - format: "Current session" ... "XX% used" ... "Resets <time>"
+    const sessionMatch = clean.match(/Current session[\s\S]*?(\d+)\s*%\s*used[\s\S]*?Resets\s+([^\n]+)/i);
     if (sessionMatch) {
       usage.session = {
         percent: parseFloat(sessionMatch[1]),
         label: 'Current session',
+        resetsAt: sessionMatch[2].trim(),
       };
+    } else {
+      // Fallback - just get percent without reset time
+      const sessionPercentMatch = clean.match(/Current session[\s\S]*?(\d+)\s*%\s*used/i);
+      if (sessionPercentMatch) {
+        usage.session = {
+          percent: parseFloat(sessionPercentMatch[1]),
+          label: 'Current session',
+          resetsAt: null,
+        };
+      }
     }
 
-    // Parse weekly usage (all models)
-    const weeklyAllMatch = clean.match(/Current week \(all models\)[\s\S]*?(\d+)\s*%\s*used/i);
+    // Parse weekly usage (all models) - format includes "Resets <time>" after percentage
+    const weeklyAllMatch = clean.match(/Current week \(all models\)[\s\S]*?(\d+)\s*%\s*used[\s\S]*?Resets\s+([^\n]+)/i);
     if (weeklyAllMatch) {
       usage.weeklyAll = {
         percent: parseFloat(weeklyAllMatch[1]),
         label: 'Current week (all models)',
+        resetsAt: weeklyAllMatch[2].trim(),
       };
+    } else {
+      // Fallback - just get percent without reset time
+      const weeklyAllPercentMatch = clean.match(/Current week \(all models\)[\s\S]*?(\d+)\s*%\s*used/i);
+      if (weeklyAllPercentMatch) {
+        usage.weeklyAll = {
+          percent: parseFloat(weeklyAllPercentMatch[1]),
+          label: 'Current week (all models)',
+          resetsAt: null,
+        };
+      }
     }
 
     // Parse weekly usage (Sonnet only)
@@ -101,20 +122,23 @@ class ClaudeAgent extends BaseAgent {
 
     // Legacy format fallback
     if (!usage.weeklyAll && !usage.weeklySonnet) {
-      const weeklyMatch = clean.match(/Current week[^%]*?(\d+)\s*%\s*used/i);
+      const weeklyMatch = clean.match(/Current week[\s\S]*?(\d+)\s*%\s*used[\s\S]*?Resets\s+([^\n]+)/i);
       if (weeklyMatch) {
         usage.weekly = {
           percent: parseFloat(weeklyMatch[1]),
           label: 'Current week',
+          resetsAt: weeklyMatch[2].trim(),
         };
+      } else {
+        const weeklyPercentMatch = clean.match(/Current week[^%]*?(\d+)\s*%\s*used/i);
+        if (weeklyPercentMatch) {
+          usage.weekly = {
+            percent: parseFloat(weeklyPercentMatch[1]),
+            label: 'Current week',
+            resetsAt: null,
+          };
+        }
       }
-    }
-
-    // Extract reset times
-    const resetMatches = clean.matchAll(/Resets\s+([^\n]+)/gi);
-    usage.resets = [];
-    for (const match of resetMatches) {
-      usage.resets.push(match[1].trim());
     }
 
     return usage;
