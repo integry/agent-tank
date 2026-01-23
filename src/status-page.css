@@ -330,3 +330,15 @@ body.light-mode .time-progress-bar {
 body.light-mode .time-progress-fill {
   background: rgba(113, 128, 150, 0.4);
 }
+
+/* Version update indicator */
+.version-update {
+  font-size: 12px;
+  font-weight: 500;
+  color: #ecc94b;
+  margin-left: 4px;
+}
+
+body.light-mode .version-update {
+  color: #d69e2e;
+}

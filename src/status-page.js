@@ -203,6 +203,13 @@ function formatUsage(agentName, usage) {
     if (usage.model) {
       html += `<div class="usage-item"><span class="usage-label">Model</span><span class="usage-value">${usage.model}</span></div>`;
     }
+    if (usage.version) {
+      let versionText = usage.version.current || 'Unknown';
+      if (usage.version.latest && usage.version.latest !== usage.version.current) {
+        versionText += ` <span class="version-update">(${usage.version.latest} available)</span>`;
+      }
+      html += `<div class="usage-item"><span class="usage-label">Version</span><span class="usage-value">${versionText}</span></div>`;
+    }
   }
 
   return html || '<p class="usage-item">No usage data</p>';
