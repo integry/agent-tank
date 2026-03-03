@@ -188,20 +188,28 @@ function formatUsage(agentName, usage) {
       }
     }
   } else if (agentName === 'codex') {
-    if (usage.fiveHour) {
-      html += usageItem('5h limit', usage.fiveHour.percentUsed, '% used', true);
-      if (usage.fiveHour.resetsIn) {
-        html += resetInfoItem(usage.fiveHour.resetsIn, usage.fiveHour.resetsAt, 'fiveHour');
-      }
+    // Build list of models: main model first, then any additional model-specific limits
+    const models = [];
+    if (usage.fiveHour || usage.weekly) {
+      models.push({ name: usage.model || 'Default', fiveHour: usage.fiveHour, weekly: usage.weekly });
     }
-    if (usage.weekly) {
-      html += usageItem('Weekly', usage.weekly.percentUsed, '% used', true);
-      if (usage.weekly.resetsIn) {
-        html += resetInfoItem(usage.weekly.resetsIn, usage.weekly.resetsAt, 'weekly');
-      }
+    if (usage.modelLimits) {
+      models.push(...usage.modelLimits);
     }
-    if (usage.model) {
-      html += `<div class="usage-item"><span class="usage-label">Model</span><span class="usage-value">${usage.model}</span></div>`;
+    for (const ml of models) {
+      html += `<div class="usage-item"><span class="usage-label" style="font-weight:600;margin-top:0.5em">${ml.name}</span></div>`;
+      if (ml.fiveHour) {
+        html += usageItem('5h limit', ml.fiveHour.percentUsed, '% used', true);
+        if (ml.fiveHour.resetsIn) {
+          html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour');
+        }
+      }
+      if (ml.weekly) {
+        html += usageItem('Weekly', ml.weekly.percentUsed, '% used', true);
+        if (ml.weekly.resetsIn) {
+          html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly');
+        }
+      }
     }
   }
 

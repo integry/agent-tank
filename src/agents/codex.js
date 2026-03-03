@@ -325,6 +325,66 @@ class CodexAgent extends BaseAgent {
       };
     }
 
+    // Parse model-specific limit sections (e.g. "GPT-5.3-Codex-Spark limit:")
+    // These appear after the main limits with their own 5h/Weekly entries
+    // The header line may have box-drawing chars and trailing whitespace:
+    //   │ GPT-5.3-Codex-Spark limit:                    │
+    const modelHeaderRegex = /([\w][\w.-]+)\s+limit:\s*[│╮╯]?/gi;
+    const limitRegex = /5h limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i;
+    const weeklyLimitRegex = /Weekly limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i;
+
+    const modelLimits = [];
+    let headerMatch;
+    while ((headerMatch = modelHeaderRegex.exec(clean)) !== null) {
+      const name = headerMatch[1];
+      // Skip the known non-model headers (5h, Weekly are limit types, not model names)
+      if (/^(5h|Weekly)$/i.test(name)) continue;
+
+      // Extract the section after this header until the next model header or end of box
+      const sectionStart = headerMatch.index + headerMatch[0].length;
+      // Look for the next model-name header or end of box
+      // Only match model-name headers (contain a dash), not "5h limit" or "Weekly limit"
+      const remaining = clean.substring(sectionStart);
+      const nextHeader = remaining.search(/[\w][\w.-]*-[\w.-]+\s+limit:/i);
+      const endBox = remaining.indexOf('╰');
+      let sectionEnd = remaining.length;
+      if (nextHeader > 0 && (endBox < 0 || nextHeader < endBox)) sectionEnd = nextHeader;
+      else if (endBox > 0) sectionEnd = endBox;
+      const content = remaining.substring(0, sectionEnd);
+
+      const entry = { name };
+      const fh = content.match(limitRegex);
+      if (fh) {
+        const percentLeft = parseFloat(fh[1]);
+        const resetsAt = fh[2].trim();
+        const resetData = this.parseResetTime(resetsAt);
+        entry.fiveHour = {
+          percentLeft, resetsAt, label: '5h limit',
+          percentUsed: 100 - percentLeft,
+          resetsIn: resetData?.text || null,
+          resetsInSeconds: resetData?.seconds || null,
+        };
+      }
+      const wk = content.match(weeklyLimitRegex);
+      if (wk) {
+        const percentLeft = parseFloat(wk[1]);
+        const resetsAt = wk[2].trim();
+        const resetData = this.parseResetTime(resetsAt);
+        entry.weekly = {
+          percentLeft, resetsAt, label: 'Weekly limit',
+          percentUsed: 100 - percentLeft,
+          resetsIn: resetData?.text || null,
+          resetsInSeconds: resetData?.seconds || null,
+        };
+      }
+      if (entry.fiveHour || entry.weekly) {
+        modelLimits.push(entry);
+      }
+    }
+    if (modelLimits.length > 0) {
+      usage.modelLimits = modelLimits;
+    }
+
     // Extract model info
     const modelMatch = clean.match(/Model:\s*(gpt-[\w.-]+)/i);
     if (modelMatch) {
