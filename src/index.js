@@ -8,8 +8,10 @@ const { statusPage } = require('./status-page.js');
 class LLMWatcher {
   constructor(options = {}) {
     this.port = options.port || 3456;
+    this.host = options.host || '127.0.0.1';
     this.autoDiscover = options.autoDiscover !== false;
     this.requestedAgents = options.agents || null;
+    this.auth = options.auth || {};
     this.agents = new Map();
     this.server = null;
   }
@@ -106,6 +108,35 @@ class LLMWatcher {
     return agent.getStatus();
   }
 
+  authenticate(req, url) {
+    const hasBasicAuth = this.auth.user && this.auth.pass;
+    const hasTokenAuth = !!this.auth.token;
+
+    // No auth configured — allow all
+    if (!hasBasicAuth && !hasTokenAuth) return true;
+
+    const authHeader = req.headers['authorization'] || '';
+
+    // Check Bearer token
+    if (hasTokenAuth && authHeader.startsWith('Bearer ')) {
+      if (authHeader.slice(7) === this.auth.token) return true;
+    }
+
+    // Check query param token
+    if (hasTokenAuth && url.searchParams.get('token') === this.auth.token) {
+      return true;
+    }
+
+    // Check Basic auth
+    if (hasBasicAuth && authHeader.startsWith('Basic ')) {
+      const decoded = Buffer.from(authHeader.slice(6), 'base64').toString();
+      const [user, pass] = decoded.split(':');
+      if (user === this.auth.user && pass === this.auth.pass) return true;
+    }
+
+    return false;
+  }
+
   startServer() {
     this.server = http.createServer(async (req, res) => {
       const url = new URL(req.url, `http://localhost:${this.port}`);
@@ -118,6 +149,13 @@ class LLMWatcher {
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
         res.end();
+        return;
+      }
+
+      if (!this.authenticate(req, url)) {
+        res.setHeader('WWW-Authenticate', 'Basic realm="LLM Limit Watcher"');
+        res.writeHead(401);
+        res.end(JSON.stringify({ error: 'Unauthorized' }));
         return;
       }
 
@@ -186,10 +224,16 @@ class LLMWatcher {
       }
     });
 
-    this.server.listen(this.port, () => {
-      console.log(`LLM Limit Watcher running at http://localhost:${this.port}`);
-      console.log(`  Status page: http://localhost:${this.port}/`);
-      console.log(`  JSON API:    http://localhost:${this.port}/status`);
+    this.server.listen(this.port, this.host, () => {
+      if (this.auth.user && this.auth.pass) {
+        console.log(`Authentication: basic auth (user: ${this.auth.user})`);
+      }
+      if (this.auth.token) {
+        console.log('Authentication: API key');
+      }
+      console.log(`Listening on: ${this.host}:${this.port}`);
+      console.log(`  Status page: http://${this.host}:${this.port}/`);
+      console.log(`  JSON API:    http://${this.host}:${this.port}/status`);
     });
   }
 
