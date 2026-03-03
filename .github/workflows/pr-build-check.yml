@@ -1,0 +1,76 @@
+name: Lint Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint
+        id: lint
+        continue-on-error: true
+        run: |
+          npm run lint -- --max-warnings 0 2>&1 | tee lint_log.txt
+          exit ${PIPESTATUS[0]}
+
+      - name: Post Failure Comment
+        if: steps.lint.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const prNumber = context.issue.number;
+            const runUrl = 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId;
+
+            let log = '';
+            try { log = fs.readFileSync('lint_log.txt', 'utf8'); }
+            catch (e) { log = 'Log file missing.'; }
+
+            if (log.length > 60000) {
+              log = log.substring(0, 60000) + "\n\n...(truncated)";
+            }
+
+            const body = [
+              '### ❌ Lint Failed',
+              'Linting errors were detected.',
+              '',
+              '<details>',
+              '<summary>View Logs</summary>',
+              '',
+              '~~~text',
+              log,
+              '~~~',
+              '</details>',
+              '',
+              '**[View Workflow](' + runUrl + ')**'
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: body
+            });
+
+      - name: Fail Job
+        if: steps.lint.outcome == 'failure'
+        run: exit 1

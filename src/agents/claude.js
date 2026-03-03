@@ -160,7 +160,7 @@ class ClaudeAgent extends BaseAgent {
     return { text, seconds: diffSeconds };
   }
 
-  sendCommands(shell, output) {
+  sendCommands(shell, _output) {
     console.log(`[${this.name}] Sending /usage command...`);
     // Clear any partial input first with Escape
     setTimeout(() => {

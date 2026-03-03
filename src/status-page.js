@@ -146,72 +146,73 @@ ${styles}
 </html>`;
 }
 
+function formatClaudeUsage(usage) {
+  let html = '';
+  const sections = [
+    { data: usage.session, label: 'Session', cycle: 'session' },
+    { data: usage.weeklyAll, label: 'Weekly (all)', cycle: 'weekly' },
+    { data: usage.weeklySonnet, label: 'Weekly (Sonnet)', cycle: 'weekly' },
+    { data: usage.weekly, label: 'Weekly', cycle: 'weekly' },
+  ];
+  for (const { data, label, cycle } of sections) {
+    if (data) {
+      html += usageItem(label, data.percent, '% used', true);
+      if (data.resetsIn) {
+        html += resetInfoItem(data.resetsIn, data.resetsAt, cycle);
+      }
+    }
+  }
+  return html;
+}
+
+function formatGeminiUsage(usage) {
+  let html = '';
+  if (usage.models && usage.models.length > 0) {
+    for (const model of usage.models) {
+      html += usageItem(model.model, model.percentUsed, '% used', true);
+      if (model.resetsIn) {
+        html += resetInfoItem(model.resetsIn, null, 'sessionGemini');
+      }
+    }
+  }
+  return html;
+}
+
+function formatCodexUsage(usage) {
+  let html = '';
+  const models = [];
+  if (usage.fiveHour || usage.weekly) {
+    models.push({ name: usage.model || 'Default', fiveHour: usage.fiveHour, weekly: usage.weekly });
+  }
+  if (usage.modelLimits) {
+    models.push(...usage.modelLimits);
+  }
+  for (const ml of models) {
+    html += `<div class="usage-item"><span class="usage-label" style="font-weight:600;margin-top:0.5em">${ml.name}</span></div>`;
+    if (ml.fiveHour) {
+      html += usageItem('5h limit', ml.fiveHour.percentUsed, '% used', true);
+      if (ml.fiveHour.resetsIn) {
+        html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour');
+      }
+    }
+    if (ml.weekly) {
+      html += usageItem('Weekly', ml.weekly.percentUsed, '% used', true);
+      if (ml.weekly.resetsIn) {
+        html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly');
+      }
+    }
+  }
+  return html;
+}
+
 function formatUsage(agentName, usage) {
   if (!usage) {
     return '<p class="usage-item">No data available</p>';
   }
 
-  let html = '';
-
-  if (agentName === 'claude') {
-    if (usage.session) {
-      html += usageItem('Session', usage.session.percent, '% used', true);
-      if (usage.session.resetsIn) {
-        html += resetInfoItem(usage.session.resetsIn, usage.session.resetsAt, 'session');
-      }
-    }
-    if (usage.weeklyAll) {
-      html += usageItem('Weekly (all)', usage.weeklyAll.percent, '% used', true);
-      if (usage.weeklyAll.resetsIn) {
-        html += resetInfoItem(usage.weeklyAll.resetsIn, usage.weeklyAll.resetsAt, 'weekly');
-      }
-    }
-    if (usage.weeklySonnet) {
-      html += usageItem('Weekly (Sonnet)', usage.weeklySonnet.percent, '% used', true);
-      if (usage.weeklySonnet.resetsIn) {
-        html += resetInfoItem(usage.weeklySonnet.resetsIn, usage.weeklySonnet.resetsAt, 'weekly');
-      }
-    }
-    if (usage.weekly) {
-      html += usageItem('Weekly', usage.weekly.percent, '% used', true);
-      if (usage.weekly.resetsIn) {
-        html += resetInfoItem(usage.weekly.resetsIn, usage.weekly.resetsAt, 'weekly');
-      }
-    }
-  } else if (agentName === 'gemini') {
-    if (usage.models && usage.models.length > 0) {
-      for (const model of usage.models) {
-        html += usageItem(model.model, model.percentUsed, '% used', true);
-        if (model.resetsIn) {
-          html += resetInfoItem(model.resetsIn, null, 'sessionGemini');
-        }
-      }
-    }
-  } else if (agentName === 'codex') {
-    // Build list of models: main model first, then any additional model-specific limits
-    const models = [];
-    if (usage.fiveHour || usage.weekly) {
-      models.push({ name: usage.model || 'Default', fiveHour: usage.fiveHour, weekly: usage.weekly });
-    }
-    if (usage.modelLimits) {
-      models.push(...usage.modelLimits);
-    }
-    for (const ml of models) {
-      html += `<div class="usage-item"><span class="usage-label" style="font-weight:600;margin-top:0.5em">${ml.name}</span></div>`;
-      if (ml.fiveHour) {
-        html += usageItem('5h limit', ml.fiveHour.percentUsed, '% used', true);
-        if (ml.fiveHour.resetsIn) {
-          html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour');
-        }
-      }
-      if (ml.weekly) {
-        html += usageItem('Weekly', ml.weekly.percentUsed, '% used', true);
-        if (ml.weekly.resetsIn) {
-          html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly');
-        }
-      }
-    }
-  }
+  const formatters = { claude: formatClaudeUsage, gemini: formatGeminiUsage, codex: formatCodexUsage };
+  const formatter = formatters[agentName];
+  const html = formatter ? formatter(usage) : '';
 
   return html || '<p class="usage-item">No usage data</p>';
 }

@@ -72,7 +72,7 @@ class GeminiAgent extends BaseAgent {
     return totalSeconds > 0 ? totalSeconds : null;
   }
 
-  sendCommands(shell, output) {
+  sendCommands(shell, _output) {
     console.log(`[${this.name}] Sending /stats command...`);
     // Send /stats command
     setTimeout(() => {

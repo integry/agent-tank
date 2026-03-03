@@ -74,7 +74,7 @@ function getClaudeVersion() {
         full: match[0]
       };
     }
-  } catch (err) {
+  } catch {
     // Version check failed
   }
   return null;
@@ -92,7 +92,7 @@ function getGeminiVersion() {
         full: match[0]
       };
     }
-  } catch (err) {
+  } catch {
     // Version check failed
   }
   return null;
@@ -110,7 +110,7 @@ function getCodexVersion() {
         full: match[0]
       };
     }
-  } catch (err) {
+  } catch {
     // Version check failed
   }
   return null;

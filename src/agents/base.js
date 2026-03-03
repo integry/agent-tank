@@ -159,37 +159,40 @@ class BaseAgent {
     return 30000; // 30 seconds default
   }
 
-  isReadyForCommands(output) {
+  isReadyForCommands(_output) {
     return false; // Override in subclasses
   }
 
-  hasCompleteOutput(output) {
+  hasCompleteOutput(_output) {
     return false; // Override in subclasses
   }
 
-  sendCommands(shell, output) {
+  sendCommands(_shell, _output) {
     // Override in subclasses
   }
 
-  parseOutput(output) {
+  parseOutput(_output) {
     // Override in subclasses
     return null;
   }
 
   // Helper to strip ANSI codes and control sequences
+  // eslint-disable-next-line no-control-regex
+  static ANSI_CURSOR_RIGHT = /\x1B\[(\d+)C/g;
+  // eslint-disable-next-line no-control-regex
+  static ANSI_ESCAPE_SEQ = /\x1B\[[0-9;?]*[a-zA-Z]/g;
+  // eslint-disable-next-line no-control-regex
+  static ANSI_OSC_SEQ = /\x1B\][^\x07]*\x07/g;
+  // eslint-disable-next-line no-control-regex
+  static ANSI_REMAINING = /\x1B[^[\]]*?[a-zA-Z]/g;
+
   stripAnsi(str) {
     return str
-      // Convert cursor-right movement (ESC[nC) to equivalent spaces
-      .replace(/\x1B\[(\d+)C/g, (_, n) => ' '.repeat(parseInt(n)))
-      // Standard ANSI escape sequences (colors, cursor movement, etc.)
-      .replace(/\x1B\[[0-9;?]*[a-zA-Z]/g, '')
-      // OSC sequences (title bar, etc.)
-      .replace(/\x1B\][^\x07]*\x07/g, '')
-      // Any remaining escape sequences
-      .replace(/\x1B[^[\]]*?[a-zA-Z]/g, '')
-      // Carriage returns
+      .replace(BaseAgent.ANSI_CURSOR_RIGHT, (_, n) => ' '.repeat(parseInt(n)))
+      .replace(BaseAgent.ANSI_ESCAPE_SEQ, '')
+      .replace(BaseAgent.ANSI_OSC_SEQ, '')
+      .replace(BaseAgent.ANSI_REMAINING, '')
       .replace(/\r/g, '')
-      // Multiple spaces to single space (helps after cursor positioning is stripped)
       .replace(/  +/g, ' ');
   }
 }

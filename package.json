@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node bin/llm-limit-watcher.js",
     "dev": "node bin/llm-limit-watcher.js",
+    "lint": "eslint src/ bin/",
     "install": "node scripts/install.js || true",
     "rebuild": "PYTHON=$(which python3.11 || which python3.10 || which python3.9 || which python3.8 || which python3) npm rebuild node-pty"
   },
@@ -39,6 +40,11 @@
   "homepage": "https://github.com/integry/llm-limit-watcher#readme",
   "dependencies": {
     "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.3",
+    "eslint": "^9.39.3",
+    "globals": "^15.15.0"
   },
   "engines": {
     "node": ">=18.0.0"

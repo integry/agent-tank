@@ -75,7 +75,7 @@ class CodexAgent extends BaseAgent {
     }
 
     // Extract current version from header: "OpenAI Codex (v0.87.0)"
-    const currentMatch = clean.match(/OpenAI Codex[^\(]*\(v?([\d.]+)\)/i);
+    const currentMatch = clean.match(/OpenAI Codex[^(]*\(v?([\d.]+)\)/i);
     if (currentMatch) {
       versionInfo.current = currentMatch[1];
     }
@@ -100,7 +100,6 @@ class CodexAgent extends BaseAgent {
     return Object.keys(versionInfo).length > 0 ? versionInfo : null;
   }
 
-  // Override to handle Codex's specific prompt flow
   async runCommand() {
     const pty = require('node-pty');
 
@@ -170,8 +169,7 @@ class CodexAgent extends BaseAgent {
           shell.write('\x1b[1;1R');
         }
 
-        // Handle approval prompt for non-git directories (only once)
-        // But NOT if this is part of an update screen (which has its own handler)
+        // Handle approval prompt (skip if update screen is active)
         const cleanOutput = this.stripAnsi(output);
         const isUpdateScreen = /u?pdate available/i.test(cleanOutput) && /[\d.]+\s*->\s*[\d.]+/.test(cleanOutput);
         if (!continuationHandled && !isUpdateScreen && output.includes('Press enter to continue')) {
@@ -229,8 +227,6 @@ class CodexAgent extends BaseAgent {
     return output.includes('5h limit') && output.includes('Weekly limit');
   }
 
-  // Convert reset timestamp to duration object with string and seconds
-  // Returns: { text: "5h 30m", seconds: 19800 } or null
   parseResetTime(resetStr) {
     if (!resetStr) return null;
 
@@ -283,6 +279,20 @@ class CodexAgent extends BaseAgent {
     return { text, seconds: diffSeconds };
   }
 
+  parseLimitEntry(match, label) {
+    const percentLeft = parseFloat(match[1]);
+    const resetsAt = match[2].trim();
+    const resetData = this.parseResetTime(resetsAt);
+    return {
+      percentLeft,
+      resetsAt,
+      label,
+      percentUsed: 100 - percentLeft,
+      resetsIn: resetData?.text || null,
+      resetsInSeconds: resetData?.seconds || null,
+    };
+  }
+
   parseOutput(output) {
     const clean = this.stripAnsi(output);
     const usage = {
@@ -291,44 +301,17 @@ class CodexAgent extends BaseAgent {
       version: this.parseVersionInfo(output),
     };
 
-    // Parse 5h limit: "5h limit:   [████...] XX% left (resets HH:MM)"
     const fiveHourMatch = clean.match(/5h limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i);
     if (fiveHourMatch) {
-      const percentLeft = parseFloat(fiveHourMatch[1]);
-      const resetsAt = fiveHourMatch[2].trim();
-      const resetData = this.parseResetTime(resetsAt);
-      usage.fiveHour = {
-        percentLeft,
-        resetsAt,
-        label: '5h limit',
-        // Normalized fields for consistent display
-        percentUsed: 100 - percentLeft,
-        resetsIn: resetData?.text || null,
-        resetsInSeconds: resetData?.seconds || null,
-      };
+      usage.fiveHour = this.parseLimitEntry(fiveHourMatch, '5h limit');
     }
 
-    // Parse Weekly limit: "Weekly limit:   [░░...] XX% left (resets HH:MM)"
     const weeklyMatch = clean.match(/Weekly limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i);
     if (weeklyMatch) {
-      const percentLeft = parseFloat(weeklyMatch[1]);
-      const resetsAt = weeklyMatch[2].trim();
-      const resetData = this.parseResetTime(resetsAt);
-      usage.weekly = {
-        percentLeft,
-        resetsAt,
-        label: 'Weekly limit',
-        // Normalized fields for consistent display
-        percentUsed: 100 - percentLeft,
-        resetsIn: resetData?.text || null,
-        resetsInSeconds: resetData?.seconds || null,
-      };
+      usage.weekly = this.parseLimitEntry(weeklyMatch, 'Weekly limit');
     }
 
     // Parse model-specific limit sections (e.g. "GPT-5.3-Codex-Spark limit:")
-    // These appear after the main limits with their own 5h/Weekly entries
-    // The header line may have box-drawing chars and trailing whitespace:
-    //   │ GPT-5.3-Codex-Spark limit:                    │
     const modelHeaderRegex = /([\w][\w.-]+)\s+limit:\s*[│╮╯]?/gi;
     const limitRegex = /5h limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i;
     const weeklyLimitRegex = /Weekly limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i;
@@ -337,13 +320,9 @@ class CodexAgent extends BaseAgent {
     let headerMatch;
     while ((headerMatch = modelHeaderRegex.exec(clean)) !== null) {
       const name = headerMatch[1];
-      // Skip the known non-model headers (5h, Weekly are limit types, not model names)
       if (/^(5h|Weekly)$/i.test(name)) continue;
 
-      // Extract the section after this header until the next model header or end of box
       const sectionStart = headerMatch.index + headerMatch[0].length;
-      // Look for the next model-name header or end of box
-      // Only match model-name headers (contain a dash), not "5h limit" or "Weekly limit"
       const remaining = clean.substring(sectionStart);
       const nextHeader = remaining.search(/[\w][\w.-]*-[\w.-]+\s+limit:/i);
       const endBox = remaining.indexOf('╰');
@@ -355,27 +334,11 @@ class CodexAgent extends BaseAgent {
       const entry = { name };
       const fh = content.match(limitRegex);
       if (fh) {
-        const percentLeft = parseFloat(fh[1]);
-        const resetsAt = fh[2].trim();
-        const resetData = this.parseResetTime(resetsAt);
-        entry.fiveHour = {
-          percentLeft, resetsAt, label: '5h limit',
-          percentUsed: 100 - percentLeft,
-          resetsIn: resetData?.text || null,
-          resetsInSeconds: resetData?.seconds || null,
-        };
+        entry.fiveHour = this.parseLimitEntry(fh, '5h limit');
       }
       const wk = content.match(weeklyLimitRegex);
       if (wk) {
-        const percentLeft = parseFloat(wk[1]);
-        const resetsAt = wk[2].trim();
-        const resetData = this.parseResetTime(resetsAt);
-        entry.weekly = {
-          percentLeft, resetsAt, label: 'Weekly limit',
-          percentUsed: 100 - percentLeft,
-          resetsIn: resetData?.text || null,
-          resetsInSeconds: resetData?.seconds || null,
-        };
+        entry.weekly = this.parseLimitEntry(wk, 'Weekly limit');
       }
       if (entry.fiveHour || entry.weekly) {
         modelLimits.push(entry);
@@ -385,13 +348,11 @@ class CodexAgent extends BaseAgent {
       usage.modelLimits = modelLimits;
     }
 
-    // Extract model info
     const modelMatch = clean.match(/Model:\s*(gpt-[\w.-]+)/i);
     if (modelMatch) {
       usage.model = modelMatch[1].trim();
     }
 
-    // Extract account info
     const accountMatch = clean.match(/Account:\s*(\S+@\S+)/i);
     if (accountMatch) {
       usage.account = accountMatch[1].trim();
