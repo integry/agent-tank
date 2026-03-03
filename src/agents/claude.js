@@ -6,21 +6,25 @@ class ClaudeAgent extends BaseAgent {
   }
 
   getTimeout() {
-    return 20000; // 20 seconds - extra time for trust prompt
+    return 30000; // 30 seconds - extra time for trust prompt and usage data loading
   }
 
   // Use dumb terminal to avoid cursor positioning that corrupts text
   getEnv() {
-    return { ...process.env, TERM: 'dumb', NO_COLOR: '1' };
+    const env = { ...process.env, TERM: 'dumb', NO_COLOR: '1' };
+    // Remove CLAUDECODE to allow spawning inside a Claude Code session
+    delete env.CLAUDECODE;
+    return env;
   }
 
   isReadyForCommands(output) {
+    const clean = this.stripAnsi(output);
     // Claude shows various prompts when ready
-    // Look for the prompt character or shortcuts hint
-    return output.includes('? for shortcuts') ||
-           output.includes('> ') ||
-           output.includes('Try "') ||
-           (output.includes('>') && output.includes('───'));
+    // Look for the prompt character (❯ or >) or shortcuts hint
+    return clean.includes('? for shortcuts') ||
+           clean.includes('❯') ||
+           clean.includes('> ') ||
+           clean.includes('Try "');
   }
 
   handleTrustPrompt(shell, output) {
@@ -50,15 +54,39 @@ class ClaudeAgent extends BaseAgent {
 
   hasCompleteOutput(output) {
     const clean = this.stripAnsi(output);
-    // Look for session, weekly data, AND ensure we have timezone info (indicates reset times are complete)
+
+    // Basic requirements - must have actual usage data, not just the loading screen
     const hasSession = clean.includes('Current session');
     const hasWeekly = clean.includes('Current week');
     const hasPercentUsed = clean.includes('% used');
-    // Check for timezone pattern which indicates reset times are fully loaded
-    // The output includes "(Europe/London)" or similar after each reset time
-    const hasTimezone = (clean.match(/\([A-Za-z]+\/[A-Za-z_]+\)/g) || []).length >= 2;
 
-    return hasSession && hasWeekly && hasPercentUsed && hasTimezone;
+    if (!hasSession || !hasWeekly || !hasPercentUsed) {
+      return false;
+    }
+
+    // If "all models" section exists, wait for "Sonnet only" section to render
+    const hasAllModels = /Current\s+week\s*\(?\s*all\s+models/i.test(clean);
+    if (hasAllModels) {
+      const hasSonnetOnly = /Current\s+week\s*\(?\s*Sonnet\s+only/i.test(clean);
+      if (!hasSonnetOnly) {
+        return false;
+      }
+      // Both sections exist, check we have at least one timezone per section
+      const allModelsIdx = clean.search(/Current\s+week\s*\(?\s*all\s+models/i);
+      const sonnetOnlyIdx = clean.search(/Current\s+week\s*\(?\s*Sonnet\s+only/i);
+      const allModelsSection = clean.substring(allModelsIdx, sonnetOnlyIdx);
+      const sonnetSection = clean.substring(sonnetOnlyIdx);
+
+      const allModelsHasTimezone = /\([A-Za-z]+\/[A-Za-z_]+\)/.test(allModelsSection);
+      const sonnetHasTimezone = /\([A-Za-z]+\/[A-Za-z_]+\)/.test(sonnetSection);
+
+      return allModelsHasTimezone && sonnetHasTimezone;
+    }
+
+    // Fallback for legacy format (single "Current week" without model qualifiers)
+    // Check for timezone pattern which indicates reset times are fully loaded
+    const hasTimezone = /\([A-Za-z]+\/[A-Za-z_]+\)/.test(clean);
+    return hasTimezone;
   }
 
   // Convert reset timestamp to duration object with string and seconds
@@ -209,21 +237,24 @@ class ClaudeAgent extends BaseAgent {
     };
 
     // Parse session (between "Current session" and "Current week")
-    const sessionSection = extractSection('Current session', 'Current week');
+    // Use resilient patterns to handle whitespace/newline variations from PTY redraws
+    const sessionSection = extractSection('Current\\s+session', 'Current\\s+week');
     const sessionData = parseSection(sessionSection);
     if (sessionData) {
       usage.session = { label: 'Current session', ...sessionData };
     }
 
     // Parse weekly (all models) - between "Current week (all models)" and "Current week (Sonnet"
-    const weeklyAllSection = extractSection('Current week \\(all models\\)', 'Current week \\(Sonnet');
+    // Use flexible whitespace matching: Current week (all models) with optional spaces
+    const weeklyAllSection = extractSection('Current\\s+week\\s*\\(?\\s*all\\s+models\\s*\\)?', 'Current\\s+week\\s*\\(?\\s*Sonnet');
     const weeklyAllData = parseSection(weeklyAllSection);
     if (weeklyAllData) {
       usage.weeklyAll = { label: 'Current week (all models)', ...weeklyAllData };
     }
 
     // Parse weekly (Sonnet only) - from "Current week (Sonnet only)" to end or next section
-    const weeklySonnetSection = extractSection('Current week \\(Sonnet only\\)', 'esc to cancel|Current week \\(');
+    // Use flexible whitespace matching and lookahead for end markers
+    const weeklySonnetSection = extractSection('Current\\s+week\\s*\\(?\\s*Sonnet\\s+only\\s*\\)?', 'esc\\s+to\\s+cancel|Current\\s+week\\s*\\(');
     const weeklySonnetData = parseSection(weeklySonnetSection);
     if (weeklySonnetData) {
       usage.weeklySonnet = { label: 'Current week (Sonnet only)', ...weeklySonnetData };
@@ -231,9 +262,14 @@ class ClaudeAgent extends BaseAgent {
 
     // Legacy format fallback
     if (!usage.weeklyAll && !usage.weeklySonnet) {
-      const weeklyMatch = clean.match(/Current week[\s\S]*?(\d+)\s*%\s*used[\s\S]*?Resets\s+([^\n]+)/i);
+      // Use lookahead to prevent greedy matching across un-newline-separated PTY redraw streams
+      // Match reset time until we hit "esc to cancel", another "current week" section, or end of string
+      const weeklyMatch = clean.match(/Current\s+week[\s\S]*?(\d+)\s*%\s*used[\s\S]*?Resets\s+([\s\S]*?)(?=esc\s+to\s+cancel|current\s+week|$)/i);
       if (weeklyMatch) {
-        const resetsAt = weeklyMatch[2].trim();
+        // Extract the reset time - find timezone pattern to get clean reset string
+        const resetSection = weeklyMatch[2];
+        const timezoneMatch = resetSection.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*\([^)]+\)|\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*\([^)]+\))/i);
+        const resetsAt = timezoneMatch ? timezoneMatch[1].trim() : resetSection.trim().split(/\s{2,}/)[0];
         const resetData = this.parseResetTime(resetsAt);
         usage.weekly = {
           percent: parseFloat(weeklyMatch[1]),
@@ -243,7 +279,7 @@ class ClaudeAgent extends BaseAgent {
           resetsInSeconds: resetData?.seconds || null,
         };
       } else {
-        const weeklyPercentMatch = clean.match(/Current week[^%]*?(\d+)\s*%\s*used/i);
+        const weeklyPercentMatch = clean.match(/Current\s+week[^%]*?(\d+)\s*%\s*used/i);
         if (weeklyPercentMatch) {
           usage.weekly = {
             percent: parseFloat(weeklyPercentMatch[1]),
