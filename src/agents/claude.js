@@ -6,21 +6,25 @@ class ClaudeAgent extends BaseAgent {
   }
 
   getTimeout() {
-    return 20000; // 20 seconds - extra time for trust prompt
+    return 30000; // 30 seconds - extra time for trust prompt and usage data loading
   }
 
   // Use dumb terminal to avoid cursor positioning that corrupts text
   getEnv() {
-    return { ...process.env, TERM: 'dumb', NO_COLOR: '1' };
+    const env = { ...process.env, TERM: 'dumb', NO_COLOR: '1' };
+    // Remove CLAUDECODE to allow spawning inside a Claude Code session
+    delete env.CLAUDECODE;
+    return env;
   }
 
   isReadyForCommands(output) {
+    const clean = this.stripAnsi(output);
     // Claude shows various prompts when ready
-    // Look for the prompt character or shortcuts hint
-    return output.includes('? for shortcuts') ||
-           output.includes('> ') ||
-           output.includes('Try "') ||
-           (output.includes('>') && output.includes('───'));
+    // Look for the prompt character (❯ or >) or shortcuts hint
+    return clean.includes('? for shortcuts') ||
+           clean.includes('❯') ||
+           clean.includes('> ') ||
+           clean.includes('Try "');
   }
 
   handleTrustPrompt(shell, output) {
@@ -51,13 +55,7 @@ class ClaudeAgent extends BaseAgent {
   hasCompleteOutput(output) {
     const clean = this.stripAnsi(output);
 
-    // Check for the "Esc to cancel" end marker which indicates complete rendering
-    const hasEndMarker = /esc\s+to\s+cancel/i.test(clean);
-    if (hasEndMarker) {
-      return true;
-    }
-
-    // Basic requirements
+    // Basic requirements - must have actual usage data, not just the loading screen
     const hasSession = clean.includes('Current session');
     const hasWeekly = clean.includes('Current week');
     const hasPercentUsed = clean.includes('% used');
@@ -67,7 +65,6 @@ class ClaudeAgent extends BaseAgent {
     }
 
     // If "all models" section exists, wait for "Sonnet only" section to render
-    // This prevents premature exit while the terminal UI is still drawing
     const hasAllModels = /Current\s+week\s*\(?\s*all\s+models/i.test(clean);
     if (hasAllModels) {
       const hasSonnetOnly = /Current\s+week\s*\(?\s*Sonnet\s+only/i.test(clean);
@@ -75,7 +72,6 @@ class ClaudeAgent extends BaseAgent {
         return false;
       }
       // Both sections exist, check we have at least one timezone per section
-      // Use a more robust check: look for timezone patterns in each section
       const allModelsIdx = clean.search(/Current\s+week\s*\(?\s*all\s+models/i);
       const sonnetOnlyIdx = clean.search(/Current\s+week\s*\(?\s*Sonnet\s+only/i);
       const allModelsSection = clean.substring(allModelsIdx, sonnetOnlyIdx);

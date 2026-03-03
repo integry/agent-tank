@@ -179,6 +179,8 @@ class BaseAgent {
   // Helper to strip ANSI codes and control sequences
   stripAnsi(str) {
     return str
+      // Convert cursor-right movement (ESC[nC) to equivalent spaces
+      .replace(/\x1B\[(\d+)C/g, (_, n) => ' '.repeat(parseInt(n)))
       // Standard ANSI escape sequences (colors, cursor movement, etc.)
       .replace(/\x1B\[[0-9;?]*[a-zA-Z]/g, '')
       // OSC sequences (title bar, etc.)
