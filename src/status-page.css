@@ -42,6 +42,10 @@ body {
   margin: 0;
   padding: 0;
   transition: background-color 0.3s ease, color 0.3s ease;
+  /* Holy Grail Flexbox layout for sticky footer */
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Top Navigation Bar */
@@ -120,12 +124,20 @@ body.light-mode .top-nav .theme-toggle-btn {
   max-width: 1200px;
   margin: 0 auto;
   padding: 24px;
+  /* Flex grow to fill available space and push footer to bottom */
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .agents {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 20px;
+  /* Top-align cards with generous spacing below the header */
+  margin-top: 48px;
+  /* Align to top, not center - scalable for multiple rows */
+  align-content: start;
 }
 
 .agent-card {
@@ -530,8 +542,9 @@ body.light-mode .usage-item.zero-usage:hover {
 
 .footer {
   text-align: center;
-  margin-top: 40px;
-  padding: 20px 0;
+  /* Push footer to bottom using auto margin */
+  margin-top: auto;
+  padding: 24px 0;
   font-size: 13px;
   color: var(--text-tertiary);
 }
