@@ -1,138 +1,15 @@
 // Client-side JavaScript for auto-refresh system
 // This module exports a string containing the XHR-based auto-refresh code
 
+const { colorHelpers, timeHelpers, metricExtractors } = require('./client-auto-refresh-helpers');
+
 const autoRefreshScript = `
     // ===== Auto-Refresh System (XHR-based) =====
     // Fetches /status endpoint and updates the DOM without page reload
 
-    // Color helper functions (mirrored from server-side usage-formatters.js)
-    function getColorClassFromPercent(value) {
-      if (value < 50) return 'high';
-      if (value < 80) return 'medium';
-      return 'low';
-    }
-
-    function getStatusDotClassFromPercent(value) {
-      if (value <= 50) return 'status-green';
-      if (value <= 80) return 'status-yellow';
-      return 'status-red';
-    }
-
-    function getProgressColorFromPercent(value) {
-      if (value < 50) return '#48bb78';
-      if (value < 80) return '#ecc94b';
-      return '#e53e3e';
-    }
-
-    // Parse "Resets in" time string to seconds (mirrored from server-side)
-    function parseResetsInToSeconds(resetsIn) {
-      if (!resetsIn || typeof resetsIn !== 'string') return null;
-      let totalSeconds = 0;
-      const dayMatch = resetsIn.match(/(\\d+)\\s*d(?:ay)?s?/i);
-      const hourMatch = resetsIn.match(/(\\d+)\\s*h(?:our)?s?/i);
-      const minMatch = resetsIn.match(/(\\d+)\\s*m(?:in(?:ute)?)?s?/i);
-      const secMatch = resetsIn.match(/(\\d+)\\s*s(?:ec(?:ond)?)?s?/i);
-      if (dayMatch) totalSeconds += parseInt(dayMatch[1], 10) * 24 * 60 * 60;
-      if (hourMatch) totalSeconds += parseInt(hourMatch[1], 10) * 60 * 60;
-      if (minMatch) totalSeconds += parseInt(minMatch[1], 10) * 60;
-      if (secMatch) totalSeconds += parseInt(secMatch[1], 10);
-      return totalSeconds > 0 ? totalSeconds : null;
-    }
-
-    // Cycle duration constants (mirrored from server-side)
-    const CYCLE_DURATIONS = {
-      session: 5 * 60 * 60,
-      sessionGemini: 24 * 60 * 60,
-      weekly: 7 * 24 * 60 * 60,
-      fiveHour: 5 * 60 * 60
-    };
-
-    // Extract metrics from Claude usage data
-    function extractClaudeMetrics(usage) {
-      const metrics = [];
-      const sections = [
-        { data: usage.session, label: 'Session', cycle: 'session' },
-        { data: usage.weeklyAll, label: 'Weekly (all)', cycle: 'weekly' },
-        { data: usage.weeklySonnet, label: 'Weekly (Sonnet)', cycle: 'weekly' },
-        { data: usage.weekly, label: 'Weekly', cycle: 'weekly' }
-      ];
-      for (const { data, label, cycle } of sections) {
-        if (data) {
-          const metricId = \`claude-\${label.toLowerCase().replace(/[^a-z0-9]/g, '-')}\`;
-          metrics.push({
-            metricId,
-            agent: 'claude',
-            label,
-            percent: data.percent ?? 0,
-            resetsIn: data.resetsIn || '',
-            resetsAt: data.resetsAt || '',
-            cycle
-          });
-        }
-      }
-      return metrics;
-    }
-
-    // Extract metrics from Gemini usage data
-    function extractGeminiMetrics(usage) {
-      const metrics = [];
-      if (usage.models && usage.models.length > 0) {
-        for (const model of usage.models) {
-          const modelName = model.model.toLowerCase();
-          const metricId = \`gemini-\${modelName.replace(/[^a-z0-9]/g, '-')}\`;
-          metrics.push({
-            metricId,
-            agent: 'gemini',
-            label: modelName,
-            percent: model.percentUsed ?? 0,
-            resetsIn: model.resetsIn || '',
-            resetsAt: model.resetsAt || '',
-            cycle: 'sessionGemini'
-          });
-        }
-      }
-      return metrics;
-    }
-
-    // Extract metrics from Codex usage data
-    function extractCodexMetrics(usage) {
-      const metrics = [];
-      const models = [];
-      if (usage.fiveHour || usage.weekly) {
-        models.push({ name: usage.model || 'Default', fiveHour: usage.fiveHour, weekly: usage.weekly });
-      }
-      if (usage.modelLimits) {
-        models.push(...usage.modelLimits);
-      }
-      for (const ml of models) {
-        const modelSlug = ml.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-        if (ml.fiveHour) {
-          metrics.push({
-            metricId: \`codex-\${modelSlug}-5h\`,
-            agent: 'codex',
-            label: '5h limit',
-            modelName: ml.name,
-            percent: ml.fiveHour.percentUsed ?? 0,
-            resetsIn: ml.fiveHour.resetsIn || '',
-            resetsAt: ml.fiveHour.resetsAt || '',
-            cycle: 'fiveHour'
-          });
-        }
-        if (ml.weekly) {
-          metrics.push({
-            metricId: \`codex-\${modelSlug}-weekly\`,
-            agent: 'codex',
-            label: 'Weekly',
-            modelName: ml.name,
-            percent: ml.weekly.percentUsed ?? 0,
-            resetsIn: ml.weekly.resetsIn || '',
-            resetsAt: ml.weekly.resetsAt || '',
-            cycle: 'weekly'
-          });
-        }
-      }
-      return metrics;
-    }
+${colorHelpers}
+${timeHelpers}
+${metricExtractors}
 
     // Update a single metric's DOM elements
     function updateMetricDOM(metric) {
@@ -364,7 +241,7 @@ const autoRefreshScript = `
 
         const config = await response.json();
         const backendEnabled = config.autoRefresh?.enabled ?? false;
-        const backendInterval = config.autoRefresh?.interval ?? 0; // in seconds
+        const backendInterval = config.autoRefresh?.interval ?? 0;
         const lastRefreshedAt = config.lastRefreshedAt;
 
         // If backend auto-refresh is disabled, disable frontend auto-refresh too
@@ -377,23 +254,17 @@ const autoRefreshScript = `
 
         // Update frontend config to match backend
         autoRefreshConfig.enabled = true;
-        autoRefreshConfig.interval = backendInterval * 1000; // Convert to milliseconds
+        autoRefreshConfig.interval = backendInterval * 1000;
 
         // Calculate delay to sync with backend refresh cycle
-        // Frontend should refresh shortly (2 seconds) after backend has refreshed
-        let initialDelay = 2000; // default 2 seconds
+        let initialDelay = 2000;
         if (lastRefreshedAt) {
           const lastRefreshTime = new Date(lastRefreshedAt).getTime();
           const now = Date.now();
           const timeSinceLastRefresh = now - lastRefreshTime;
           const intervalMs = backendInterval * 1000;
-
-          // Calculate time until next backend refresh
           const timeUntilNextRefresh = intervalMs - (timeSinceLastRefresh % intervalMs);
-          // Add 2 seconds buffer to ensure backend has completed
           initialDelay = timeUntilNextRefresh + 2000;
-
-          // If we're very close to the next refresh, wait for the following one
           if (timeUntilNextRefresh < 1000) {
             initialDelay = intervalMs + 2000;
           }
@@ -401,28 +272,21 @@ const autoRefreshScript = `
 
         console.log('[Auto-refresh] Backend interval:', backendInterval, 'seconds');
         console.log('[Auto-refresh] Initial delay:', Math.round(initialDelay / 1000), 'seconds');
-
-        // Start with calculated delay, then continue at regular interval
         startAutoRefreshWithDelay(initialDelay, autoRefreshConfig.interval);
       } catch (error) {
         console.error('[Auto-refresh] Error fetching config:', error);
-        // Fall back to default config
         startAutoRefreshWithConfig(autoRefreshConfig.enabled, autoRefreshConfig.interval);
       }
     }
 
     // Start auto-refresh with a specific initial delay and then regular interval
     function startAutoRefreshWithDelay(initialDelay, interval) {
-      // Clear any existing timer
       if (autoRefreshTimer) {
         clearInterval(autoRefreshTimer);
         autoRefreshTimer = null;
       }
-
-      // Wait for initial delay, then perform first refresh and start interval
       setTimeout(async () => {
         await performAutoRefresh();
-        // Now start regular interval
         autoRefreshTimer = setInterval(performAutoRefresh, interval);
         console.log('[Auto-refresh] Regular interval started:', interval, 'ms');
       }, initialDelay);
@@ -434,33 +298,11 @@ const autoRefreshScript = `
         console.log('[Auto-refresh] Disabled by configuration');
         return;
       }
-
-      // Clear any existing timer
       if (autoRefreshTimer) {
         clearInterval(autoRefreshTimer);
       }
-
-      // Start polling
       autoRefreshTimer = setInterval(performAutoRefresh, intervalMs);
       console.log('[Auto-refresh] Started with interval:', intervalMs, 'ms');
-    }
-
-    // Start auto-refresh polling (legacy function for backwards compatibility)
-    function startAutoRefresh() {
-      // Don't start if disabled or interval is 0
-      if (!autoRefreshConfig.enabled || autoRefreshConfig.interval === 0) {
-        console.log('[Auto-refresh] Disabled by configuration');
-        return;
-      }
-
-      // Clear any existing timer
-      if (autoRefreshTimer) {
-        clearInterval(autoRefreshTimer);
-      }
-
-      // Start polling
-      autoRefreshTimer = setInterval(performAutoRefresh, autoRefreshConfig.interval);
-      console.log('[Auto-refresh] Started with interval:', autoRefreshConfig.interval, 'ms');
     }
 
     // Stop auto-refresh polling
