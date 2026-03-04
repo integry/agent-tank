@@ -22,6 +22,24 @@ const refreshIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
   <path d="M21 3v5h-5"/>
 </svg>`;
 
+// Crosshair/target icon for tracking metrics
+const trackIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="10"/>
+  <circle cx="12" cy="12" r="6"/>
+  <circle cx="12" cy="12" r="2"/>
+  <line x1="12" y1="2" x2="12" y2="6"/>
+  <line x1="12" y1="18" x2="12" y2="22"/>
+  <line x1="2" y1="12" x2="6" y2="12"/>
+  <line x1="18" y1="12" x2="22" y2="12"/>
+</svg>`;
+
+// Monitor icon for top nav toggle
+const monitorIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+  <line x1="8" y1="21" x2="16" y2="21"/>
+  <line x1="12" y1="17" x2="12" y2="21"/>
+</svg>`;
+
 function statusPage(status) {
   const agents = Object.entries(status);
 
@@ -84,6 +102,10 @@ ${styles}
     <div class="top-nav-right">
       ${globalLastChecked ? `<span class="last-checked">Last checked: ${globalLastChecked}</span>` : ''}
       <button class="refresh-all-btn" onclick="refreshAll(event)">Refresh All</button>
+      <button class="monitor-toggle-btn" onclick="toggleMonitor()" id="monitor-toggle-btn" title="Enable background monitoring">
+        ${monitorIcon}
+        <span id="monitor-text">Monitor</span>
+      </button>
       <button class="theme-toggle-btn" onclick="toggleTheme()" id="theme-toggle-btn">
         <span id="theme-icon">☀️</span>
         <span id="theme-text">Light</span>
@@ -200,6 +222,270 @@ ${styles}
     }
     // Auto-refresh every 5 minutes
     setTimeout(() => location.reload(), 5 * 60 * 1000);
+
+    // ===== Background Monitor Feature =====
+
+    // State management
+    let monitorEnabled = false;
+    let trackedMetric = null;
+    let notificationSent = false;
+    let originalFavicon = null;
+
+    // Initialize monitor on page load
+    function initMonitor() {
+      // Restore monitor state from localStorage
+      monitorEnabled = localStorage.getItem('monitorEnabled') === 'true';
+      const savedMetric = localStorage.getItem('trackedMetric');
+      if (savedMetric) {
+        try {
+          trackedMetric = JSON.parse(savedMetric);
+        } catch (e) {
+          trackedMetric = null;
+        }
+      }
+      notificationSent = localStorage.getItem('notificationSent') === 'true';
+
+      // Save original favicon
+      const existingFavicon = document.querySelector('link[rel="icon"]');
+      if (existingFavicon) {
+        originalFavicon = existingFavicon.href;
+      }
+
+      // Update UI to reflect saved state
+      updateMonitorButton();
+
+      // Restore tracked metric button state
+      if (trackedMetric && monitorEnabled) {
+        const trackBtn = document.querySelector(\`[data-metric-id="\${trackedMetric.metricId}"]\`);
+        if (trackBtn) {
+          trackBtn.classList.add('tracking');
+          // Update trackedMetric with fresh data from the page
+          trackedMetric.percent = parseInt(trackBtn.dataset.percent, 10);
+          trackedMetric.color = trackBtn.dataset.color;
+          trackedMetric.resetsIn = trackBtn.dataset.resetsIn;
+          localStorage.setItem('trackedMetric', JSON.stringify(trackedMetric));
+          updateFaviconAndTitle();
+          checkAndNotify();
+        } else {
+          // Metric no longer exists, clear tracking
+          clearTracking();
+        }
+      }
+    }
+
+    // Toggle monitor on/off globally
+    function toggleMonitor() {
+      monitorEnabled = !monitorEnabled;
+      localStorage.setItem('monitorEnabled', monitorEnabled.toString());
+
+      if (monitorEnabled) {
+        // Request notification permission
+        if ('Notification' in window && Notification.permission === 'default') {
+          Notification.requestPermission();
+        }
+      } else {
+        // Clear tracking when monitor is disabled
+        clearTracking();
+        restoreOriginalState();
+      }
+
+      updateMonitorButton();
+    }
+
+    // Update monitor button UI
+    function updateMonitorButton() {
+      const btn = document.getElementById('monitor-toggle-btn');
+      const text = document.getElementById('monitor-text');
+      if (!btn || !text) return;
+
+      if (monitorEnabled) {
+        btn.classList.add('active');
+        btn.title = 'Disable background monitoring';
+        text.textContent = 'Monitoring';
+      } else {
+        btn.classList.remove('active');
+        btn.title = 'Enable background monitoring';
+        text.textContent = 'Monitor';
+      }
+    }
+
+    // Toggle tracking on a specific metric
+    function toggleTracking(btn) {
+      if (!monitorEnabled) {
+        // Auto-enable monitor when user clicks track
+        monitorEnabled = true;
+        localStorage.setItem('monitorEnabled', 'true');
+        updateMonitorButton();
+
+        // Request notification permission
+        if ('Notification' in window && Notification.permission === 'default') {
+          Notification.requestPermission();
+        }
+      }
+
+      const metricId = btn.dataset.metricId;
+
+      // If already tracking this metric, untrack it
+      if (trackedMetric && trackedMetric.metricId === metricId) {
+        clearTracking();
+        restoreOriginalState();
+        return;
+      }
+
+      // Clear previous tracking
+      const prevTracked = document.querySelector('.track-btn.tracking');
+      if (prevTracked) {
+        prevTracked.classList.remove('tracking');
+      }
+
+      // Set new tracking
+      btn.classList.add('tracking');
+      trackedMetric = {
+        metricId: metricId,
+        agent: btn.dataset.agent,
+        label: btn.dataset.label,
+        percent: parseInt(btn.dataset.percent, 10),
+        color: btn.dataset.color,
+        resetsIn: btn.dataset.resetsIn
+      };
+
+      // Reset notification state for new metric
+      notificationSent = false;
+      localStorage.setItem('notificationSent', 'false');
+
+      // Save to localStorage
+      localStorage.setItem('trackedMetric', JSON.stringify(trackedMetric));
+
+      // Update favicon and title
+      updateFaviconAndTitle();
+      checkAndNotify();
+    }
+
+    // Clear tracking state
+    function clearTracking() {
+      const prevTracked = document.querySelector('.track-btn.tracking');
+      if (prevTracked) {
+        prevTracked.classList.remove('tracking');
+      }
+      trackedMetric = null;
+      localStorage.removeItem('trackedMetric');
+      notificationSent = false;
+      localStorage.removeItem('notificationSent');
+    }
+
+    // Restore original favicon and title
+    function restoreOriginalState() {
+      document.title = 'LLM Limit Watcher';
+
+      // Remove canvas favicon and restore original
+      const canvasFavicon = document.querySelector('link[rel="icon"]');
+      if (canvasFavicon) {
+        canvasFavicon.remove();
+      }
+
+      if (originalFavicon) {
+        const link = document.createElement('link');
+        link.rel = 'icon';
+        link.href = originalFavicon;
+        document.head.appendChild(link);
+      }
+    }
+
+    // Update favicon with Canvas-generated progress ring
+    function updateFaviconAndTitle() {
+      if (!trackedMetric || !monitorEnabled) return;
+
+      const { percent, color, resetsIn, agent, label } = trackedMetric;
+
+      // Update page title: [74%] 1h 22m | Claude
+      const agentName = agent.charAt(0).toUpperCase() + agent.slice(1);
+      const resetsPart = resetsIn ? \` \${resetsIn}\` : '';
+      document.title = \`[\${percent}%]\${resetsPart} | \${agentName}\`;
+
+      // Generate favicon using Canvas API
+      generateProgressFavicon(percent, color);
+    }
+
+    // Generate circular progress ring favicon using Canvas API
+    function generateProgressFavicon(percent, color) {
+      const canvas = document.createElement('canvas');
+      const size = 64; // Favicon size
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+
+      const centerX = size / 2;
+      const centerY = size / 2;
+      const radius = (size / 2) - 4;
+      const lineWidth = 6;
+
+      // Clear canvas
+      ctx.clearRect(0, 0, size, size);
+
+      // Draw background circle (track)
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+      ctx.strokeStyle = 'rgba(128, 128, 128, 0.3)';
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+
+      // Draw progress arc
+      const startAngle = -Math.PI / 2; // Start at top
+      const endAngle = startAngle + (2 * Math.PI * percent / 100);
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      // Draw percentage text in center
+      ctx.fillStyle = color;
+      ctx.font = 'bold 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(\`\${percent}\`, centerX, centerY);
+
+      // Convert to favicon
+      const faviconUrl = canvas.toDataURL('image/png');
+
+      // Update or create favicon link
+      let faviconLink = document.querySelector('link[rel="icon"]');
+      if (!faviconLink) {
+        faviconLink = document.createElement('link');
+        faviconLink.rel = 'icon';
+        document.head.appendChild(faviconLink);
+      }
+      faviconLink.href = faviconUrl;
+    }
+
+    // Check and send notification if metric hits 90%
+    function checkAndNotify() {
+      if (!trackedMetric || !monitorEnabled) return;
+      if (notificationSent) return; // Only notify once per metric
+
+      const { percent, agent, label } = trackedMetric;
+
+      if (percent >= 90) {
+        // Mark as notified to prevent duplicates
+        notificationSent = true;
+        localStorage.setItem('notificationSent', 'true');
+
+        // Send browser notification
+        if ('Notification' in window && Notification.permission === 'granted') {
+          const agentName = agent.charAt(0).toUpperCase() + agent.slice(1);
+          new Notification('LLM Limit Warning', {
+            body: \`\${agentName} \${label} is at \${percent}% usage!\`,
+            icon: '/favicon.ico',
+            tag: 'llm-limit-warning'
+          });
+        }
+      }
+    }
+
+    // Initialize monitor on page load
+    initMonitor();
   </script>
 </body>
 </html>`;
@@ -217,8 +503,9 @@ function formatClaudeUsage(usage) {
     if (data) {
       const percent = data.percent ?? 0;
       const isZero = percent === 0;
+      const resetsIn = data.resetsIn || '';
       html += '<div class="model-container">';
-      html += usageItem(label, percent, '% used', { isZero });
+      html += usageItem(label, percent, '% used', { isZero, agentName: 'claude', resetsIn });
       if (data.resetsIn && !isZero) {
         html += resetInfoItem(data.resetsIn, data.resetsAt, cycle, isZero);
       }
@@ -236,8 +523,9 @@ function formatGeminiUsage(usage) {
       const isZero = percent === 0;
       // Use lowercase model name with model-name styling
       const modelName = model.model.toLowerCase();
+      const resetsIn = model.resetsIn || '';
       html += '<div class="model-container">';
-      html += usageItem(modelName, percent, '% used', { isZero, isModelName: true });
+      html += usageItem(modelName, percent, '% used', { isZero, isModelName: true, agentName: 'gemini', resetsIn });
       if (model.resetsIn && !isZero) {
         html += resetInfoItem(model.resetsIn, null, 'sessionGemini', isZero);
       }
@@ -259,12 +547,14 @@ function formatCodexUsage(usage) {
   for (const ml of models) {
     // Use model-subheading class for Codex models to create visual grouping (keeps ALL CAPS)
     // CSS :first-child handles the first item styling automatically
+    const modelSlug = ml.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
     html += `<div class="usage-item model-subheading"><span class="usage-label">${ml.name.toUpperCase()}</span></div>`;
     if (ml.fiveHour) {
       const fiveHourPercent = ml.fiveHour.percentUsed ?? 0;
       const isZero = fiveHourPercent === 0;
+      const resetsIn = ml.fiveHour.resetsIn || '';
       html += '<div class="model-container">';
-      html += usageItem('5h limit', fiveHourPercent, '% used', { isZero });
+      html += usageItem('5h limit', fiveHourPercent, '% used', { isZero, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-5h` });
       if (ml.fiveHour.resetsIn && !isZero) {
         html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', isZero);
       }
@@ -273,8 +563,9 @@ function formatCodexUsage(usage) {
     if (ml.weekly) {
       const weeklyPercent = ml.weekly.percentUsed ?? 0;
       const isZero = weeklyPercent === 0;
+      const resetsIn = ml.weekly.resetsIn || '';
       html += '<div class="model-container">';
-      html += usageItem('Weekly', weeklyPercent, '% used', { isZero });
+      html += usageItem('Weekly', weeklyPercent, '% used', { isZero, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-weekly` });
       if (ml.weekly.resetsIn && !isZero) {
         html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', isZero);
       }
@@ -297,7 +588,7 @@ function formatUsage(agentName, usage) {
 }
 
 function usageItem(label, value, suffix, options = {}) {
-  const { isUsed = true, isZero = false, isModelName = false } = options;
+  const { isUsed = true, isZero = false, isModelName = false, agentName = '', resetsIn = '', metricId = '' } = options;
   // For "used" percentages, higher is worse. For "left" percentages, lower is worse.
   let colorClass;
   if (isUsed) {
@@ -311,10 +602,24 @@ function usageItem(label, value, suffix, options = {}) {
   const zeroClass = isZero ? ' zero-usage' : '';
   const labelClass = isModelName ? 'usage-label model-name' : 'usage-label';
 
+  // Generate unique metric ID for tracking
+  const trackingId = metricId || `${agentName}-${label.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+
+  // Track button with data attributes for client-side tracking
+  const trackButton = `<button class="track-btn"
+    data-metric-id="${trackingId}"
+    data-agent="${agentName}"
+    data-label="${label}"
+    data-percent="${value}"
+    data-color="${progressColor}"
+    data-resets-in="${resetsIn}"
+    onclick="toggleTracking(this)"
+    title="Track this metric in tab">${trackIcon}</button>`;
+
   return `
     <div class="usage-item${zeroClass}">
       <span class="${labelClass}">${label}</span>
-      <span class="usage-value ${colorClass}"><span class="usage-percent">${value}</span><span class="usage-suffix">${suffix}</span></span>
+      <span class="usage-value ${colorClass}"><span class="usage-percent">${value}</span><span class="usage-suffix">${suffix}</span>${trackButton}</span>
     </div>
     <div class="progress-bar${zeroClass}">
       <div class="progress-fill" style="width: ${progressPercent}%; background: ${progressColor};"></div>

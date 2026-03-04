@@ -598,3 +598,101 @@ body.light-mode .footer {
 .footer-version {
   font-variant-numeric: tabular-nums;
 }
+
+/* ===== Background Monitor Feature ===== */
+
+/* Track button - inline target icon for pinning metrics */
+.track-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  margin-left: 8px;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+/* Show on hover of parent usage-item */
+.usage-item:hover .track-btn {
+  opacity: 1;
+}
+
+.track-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+/* Active/tracking state - always visible with accent color */
+.track-btn.tracking {
+  opacity: 1;
+  color: #48bb78;
+}
+
+.track-btn.tracking:hover {
+  color: #38a169;
+  background: rgba(72, 187, 120, 0.1);
+}
+
+.track-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Monitor toggle button in top nav */
+.monitor-toggle-btn {
+  padding: 8px 12px;
+  font-size: 13px;
+  width: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-secondary);
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+body.light-mode .monitor-toggle-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+}
+
+.monitor-toggle-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* Monitor active state */
+.monitor-toggle-btn.active {
+  background: rgba(72, 187, 120, 0.15);
+  border-color: #48bb78;
+  color: #48bb78;
+}
+
+body.light-mode .monitor-toggle-btn.active {
+  background: rgba(72, 187, 120, 0.1);
+  border-color: #48bb78;
+  color: #38a169;
+}
+
+.monitor-toggle-btn.active:hover:not(:disabled) {
+  background: rgba(72, 187, 120, 0.25);
+}
+
+.monitor-toggle-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Hide default favicon when using canvas-generated one */
+.favicon-canvas {
+  display: none;
+}
