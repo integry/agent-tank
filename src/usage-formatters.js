@@ -71,7 +71,17 @@ function usageItem(label, value, suffix, options = {}) {
   const progressPercent = isUsed ? value : (100 - value);
   const progressColor = colorClass === 'high' ? '#48bb78' : colorClass === 'medium' ? '#ecc94b' : '#e53e3e';
   const zeroClass = isZero ? ' zero-usage' : '';
-  const labelClass = isModelName ? 'usage-label model-name' : 'usage-label';
+
+  // Determine status dot color based on usage tier: 0-50% green, 51-80% yellow, 81-100% red
+  const statusDotClass = value <= 50 ? 'status-green' : value <= 80 ? 'status-yellow' : 'status-red';
+
+  // For model names, add status dot and pill wrapper
+  let labelHtml;
+  if (isModelName) {
+    labelHtml = `<span class="usage-label model-name"><span class="model-pill"><span class="status-dot ${statusDotClass}"></span>${label}</span></span>`;
+  } else {
+    labelHtml = `<span class="usage-label">${label}</span>`;
+  }
 
   // Generate unique metric ID for tracking
   const trackingId = metricId || `${agentName}-${label.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
@@ -89,7 +99,7 @@ function usageItem(label, value, suffix, options = {}) {
 
   return `
     <div class="usage-item${zeroClass}">
-      <span class="${labelClass}">${label}</span>
+      ${labelHtml}
       <span class="usage-value ${colorClass}"><span class="usage-percent">${value}</span><span class="usage-suffix">${suffix}</span>${trackButton}</span>
     </div>
     <div class="progress-bar${zeroClass}">

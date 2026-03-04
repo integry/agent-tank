@@ -1,35 +1,45 @@
 :root {
-  /* Dark mode colors (default) */
-  --bg-primary: #111827;
-  --bg-card: #1f2937;
-  --bg-secondary: #374151;
-  --text-primary: #f9fafb;
-  --text-secondary: #9ca3af;
-  --text-tertiary: #6b7280;
-  --accent-primary: #111827;
-  --accent-hover: #374151;
-  --border-color: #374151;
-  --disabled-bg: #4b5563;
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --card-border: #374151;
-  --progress-track: rgba(255, 255, 255, 0.08);
+  /* Dark mode colors (default) - Industrial aesthetic */
+  --bg-primary: #0d1117;
+  --bg-card: #161b22;
+  --bg-secondary: #21262d;
+  --text-primary: #f0f6fc;
+  --text-secondary: #8b949e;
+  --text-tertiary: #6e7681;
+  --accent-primary: #161b22;
+  --accent-hover: #21262d;
+  --border-color: #30363d;
+  --disabled-bg: #484f58;
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --card-border: #30363d;
+  --progress-track: rgba(255, 255, 255, 0.06);
+  /* Industrial/tank specific */
+  --tank-glass: rgba(255, 255, 255, 0.08);
+  --tank-glow: rgba(72, 187, 120, 0.3);
+  --dot-grid-color: rgba(255, 255, 255, 0.03);
+  /* Monospace font for numbers */
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
 }
 
 body.light-mode {
-  /* Light mode colors */
-  --bg-primary: #f9fafb;
+  /* Light mode colors - Industrial aesthetic */
+  --bg-primary: #f6f8fa;
   --bg-card: #ffffff;
-  --bg-secondary: #f3f4f6;
-  --text-primary: #111827;
-  --text-secondary: #6b7280;
-  --text-tertiary: #9ca3af;
-  --accent-primary: #111827;
-  --accent-hover: #374151;
-  --border-color: #e5e7eb;
-  --disabled-bg: #d1d5db;
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --card-border: #e5e7eb;
-  --progress-track: #f3f4f6;
+  --bg-secondary: #f0f3f6;
+  --text-primary: #1f2328;
+  --text-secondary: #656d76;
+  --text-tertiary: #8b949e;
+  --accent-primary: #1f2328;
+  --accent-hover: #32383f;
+  --border-color: #d0d7de;
+  --disabled-bg: #afb8c1;
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --card-border: #d0d7de;
+  --progress-track: #e6e8eb;
+  /* Industrial/tank specific */
+  --tank-glass: rgba(0, 0, 0, 0.04);
+  --tank-glow: rgba(72, 187, 120, 0.2);
+  --dot-grid-color: rgba(0, 0, 0, 0.03);
 }
 
 * { box-sizing: border-box; }
@@ -64,13 +74,29 @@ body {
 .top-nav-left {
   display: flex;
   align-items: center;
+  gap: 12px;
+}
+
+/* Tank logo styling */
+.tank-logo {
+  width: 28px;
+  height: 28px;
+  color: var(--text-primary);
+  opacity: 0.9;
 }
 
 .top-nav-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
   margin: 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.top-nav-title .brand-emphasis {
+  color: var(--text-primary);
+  font-weight: 700;
 }
 
 .top-nav-right {
@@ -154,13 +180,17 @@ body.light-mode .top-nav .theme-toggle-btn {
 
 .agent-card {
   background: var(--bg-card);
-  border-radius: 8px;
-  padding: 24px 20px 20px 20px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 32px 24px 28px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: var(--card-shadow);
   display: flex;
   flex-direction: column;
   transition: background-color 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  /* Dot-grid background for industrial panel look */
+  background-image: radial-gradient(var(--dot-grid-color) 1px, transparent 1px);
+  background-size: 16px 16px;
+  position: relative;
 }
 
 body.light-mode .agent-card {
@@ -208,7 +238,7 @@ body.light-mode .agent-card {
 }
 
 .usage-item.reset-info .usage-label { font-size: 12px; text-transform: none; }
-.usage-item.reset-info .usage-value { font-weight: normal; color: var(--text-secondary); }
+.usage-item.reset-info .usage-value { font-family: var(--font-mono); font-weight: 500; color: var(--text-secondary); }
 
 .usage-label {
   color: var(--text-tertiary);
@@ -222,13 +252,51 @@ body.light-mode .agent-card {
   color: #d1d5db;
   font-weight: 500;
   text-transform: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 body.light-mode .usage-label.model-name {
   color: #374151;
 }
 
+/* Status dot indicator for model usage tier */
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.status-dot.status-green {
+  background-color: #48bb78;
+  color: #48bb78;
+}
+
+.status-dot.status-yellow {
+  background-color: #ecc94b;
+  color: #ecc94b;
+}
+
+.status-dot.status-red {
+  background-color: #e53e3e;
+  color: #e53e3e;
+}
+
+/* Pill background for model labels */
+.model-pill {
+  background: var(--bg-secondary);
+  padding: 4px 10px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .usage-value {
+  font-family: var(--font-mono);
   font-weight: 600;
   display: flex;
   align-items: baseline;
@@ -237,14 +305,16 @@ body.light-mode .usage-label.model-name {
 }
 
 .usage-percent {
-  font-size: 24px;
+  font-family: var(--font-mono);
+  font-size: 26px;
   font-weight: 700;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
 
 .usage-suffix {
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-tertiary);
 }
@@ -257,17 +327,60 @@ body.light-mode .usage-label.model-name {
 .usage-value.low .usage-percent { color: #e53e3e; }
 
 .progress-bar {
-  height: 6px;
-  background: var(--progress-track);
-  border-radius: 9999px;
-  margin-top: 4px;
+  height: 16px;
+  background: var(--tank-glass);
+  border-radius: 8px;
+  margin-top: 8px;
   overflow: hidden;
+  position: relative;
+  /* Glass vial effect with inset shadow */
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 -1px 2px rgba(255, 255, 255, 0.05);
+  /* Measurement tick marks every 20% */
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent calc(20% - 1px),
+      rgba(255, 255, 255, 0.1) calc(20% - 1px),
+      rgba(255, 255, 255, 0.1) 20%
+    );
+  background-color: var(--tank-glass);
+}
+
+body.light-mode .progress-bar {
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.1),
+    inset 0 -1px 2px rgba(255, 255, 255, 0.5);
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent calc(20% - 1px),
+      rgba(0, 0, 0, 0.08) calc(20% - 1px),
+      rgba(0, 0, 0, 0.08) 20%
+    );
 }
 
 .progress-fill {
   height: 100%;
-  border-radius: 9999px;
-  transition: width 0.3s;
+  border-radius: 6px;
+  transition: width 0.3s ease;
+  position: relative;
+  /* Liquid effect with inner glow and gradient */
+  box-shadow:
+    inset 0 -2px 4px rgba(0, 0, 0, 0.2),
+    inset 0 2px 4px rgba(255, 255, 255, 0.15),
+    0 0 8px var(--tank-glow);
+  /* Subtle gradient for liquid depth effect */
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    transparent 40%,
+    rgba(0, 0, 0, 0.1) 100%
+  );
+  background-blend-mode: overlay;
 }
 
 .card-footer {
@@ -491,17 +604,34 @@ body.light-mode .time-progress-fill {
 
 /* Progress bar for zero usage: show track but no fill, but keep track visible */
 .progress-bar.zero-usage {
-  background: #f1f5f9;
+  background-color: var(--tank-glass);
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent calc(20% - 1px),
+      rgba(255, 255, 255, 0.05) calc(20% - 1px),
+      rgba(255, 255, 255, 0.05) 20%
+    );
 }
 
 .progress-bar.zero-usage .progress-fill {
   width: 0 !important;
   background: transparent !important;
+  box-shadow: none !important;
 }
 
-/* Dark mode: lighter track for zero usage progress bars */
-body:not(.light-mode) .progress-bar.zero-usage {
-  background: rgba(255, 255, 255, 0.08);
+/* Light mode: zero usage progress bars */
+body.light-mode .progress-bar.zero-usage {
+  background-color: var(--tank-glass);
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent calc(20% - 1px),
+      rgba(0, 0, 0, 0.04) calc(20% - 1px),
+      rgba(0, 0, 0, 0.04) 20%
+    );
 }
 
 /* Reset info for zero usage: grey text */
