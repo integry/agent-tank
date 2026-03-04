@@ -64,8 +64,10 @@ ${styles}
 <body>
   <nav class="top-nav">
     <div class="top-nav-left">
-      ${tankIcon}
-      <h1 class="top-nav-title">AGENT <span class="brand-emphasis">TANK</span></h1>
+      <a href="https://agenttank.io" target="_blank" rel="noopener noreferrer" class="logo-link">
+        ${tankIcon}
+        <h1 class="top-nav-title">AGENT <span class="brand-emphasis">TANK</span></h1>
+      </a>
     </div>
     <div class="top-nav-right">
       ${globalLastChecked ? `<span class="last-checked">Last checked: ${globalLastChecked}</span>` : ''}
