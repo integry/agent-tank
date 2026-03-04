@@ -208,10 +208,12 @@ function formatClaudeUsage(usage) {
     if (data) {
       const percent = data.percent ?? 0;
       const isZero = percent === 0;
+      html += '<div class="model-container">';
       html += usageItem(label, percent, '% used', { isZero });
-      if (data.resetsIn) {
+      if (data.resetsIn && !isZero) {
         html += resetInfoItem(data.resetsIn, data.resetsAt, cycle, isZero);
       }
+      html += '</div>';
     }
   }
   return html;
@@ -223,10 +225,14 @@ function formatGeminiUsage(usage) {
     for (const model of usage.models) {
       const percent = model.percentUsed ?? 0;
       const isZero = percent === 0;
-      html += usageItem(model.model, percent, '% used', { isZero });
-      if (model.resetsIn) {
+      // Use lowercase model name with model-name styling
+      const modelName = model.model.toLowerCase();
+      html += '<div class="model-container">';
+      html += usageItem(modelName, percent, '% used', { isZero, isModelName: true });
+      if (model.resetsIn && !isZero) {
         html += resetInfoItem(model.resetsIn, null, 'sessionGemini', isZero);
       }
+      html += '</div>';
     }
   }
   return html;
@@ -242,24 +248,28 @@ function formatCodexUsage(usage) {
     models.push(...usage.modelLimits);
   }
   for (const ml of models) {
-    // Use model-subheading class for Codex models to create visual grouping
+    // Use model-subheading class for Codex models to create visual grouping (keeps ALL CAPS)
     // CSS :first-child handles the first item styling automatically
-    html += `<div class="usage-item model-subheading"><span class="usage-label">${ml.name}</span></div>`;
+    html += `<div class="usage-item model-subheading"><span class="usage-label">${ml.name.toUpperCase()}</span></div>`;
     if (ml.fiveHour) {
       const fiveHourPercent = ml.fiveHour.percentUsed ?? 0;
       const isZero = fiveHourPercent === 0;
+      html += '<div class="model-container">';
       html += usageItem('5h limit', fiveHourPercent, '% used', { isZero });
-      if (ml.fiveHour.resetsIn) {
+      if (ml.fiveHour.resetsIn && !isZero) {
         html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', isZero);
       }
+      html += '</div>';
     }
     if (ml.weekly) {
       const weeklyPercent = ml.weekly.percentUsed ?? 0;
       const isZero = weeklyPercent === 0;
+      html += '<div class="model-container">';
       html += usageItem('Weekly', weeklyPercent, '% used', { isZero });
-      if (ml.weekly.resetsIn) {
+      if (ml.weekly.resetsIn && !isZero) {
         html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', isZero);
       }
+      html += '</div>';
     }
   }
   return html;
@@ -278,7 +288,7 @@ function formatUsage(agentName, usage) {
 }
 
 function usageItem(label, value, suffix, options = {}) {
-  const { isUsed = true, isZero = false } = options;
+  const { isUsed = true, isZero = false, isModelName = false } = options;
   // For "used" percentages, higher is worse. For "left" percentages, lower is worse.
   let colorClass;
   if (isUsed) {
@@ -290,10 +300,11 @@ function usageItem(label, value, suffix, options = {}) {
   const progressPercent = isUsed ? value : (100 - value);
   const progressColor = colorClass === 'high' ? '#48bb78' : colorClass === 'medium' ? '#ecc94b' : '#e53e3e';
   const zeroClass = isZero ? ' zero-usage' : '';
+  const labelClass = isModelName ? 'usage-label model-name' : 'usage-label';
 
   return `
     <div class="usage-item${zeroClass}">
-      <span class="usage-label">${label}</span>
+      <span class="${labelClass}">${label}</span>
       <span class="usage-value ${colorClass}"><span class="usage-percent">${value}</span><span class="usage-suffix">${suffix}</span></span>
     </div>
     <div class="progress-bar${zeroClass}">
