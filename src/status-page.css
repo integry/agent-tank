@@ -122,8 +122,8 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: transparent;
+  border: 1px solid var(--border-color);
   color: var(--text-secondary);
   border-radius: 6px;
   transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
@@ -134,7 +134,7 @@ body {
 .top-nav .monitor-toggle-btn:active:not(:disabled),
 .top-nav .theme-toggle-btn:active:not(:disabled) {
   transform: scale(0.98);
-  background: #151d2a;
+  background: var(--bg-secondary);
 }
 
 /* Refresh All button specific */
@@ -166,18 +166,18 @@ body {
 }
 
 body.light-mode .top-nav .refresh-all-btn {
-  background: var(--accent-primary);
+  background: transparent;
   border: 1px solid var(--border-color);
-  color: white;
+  color: var(--text-secondary);
 }
 
 body.light-mode .top-nav .refresh-all-btn:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: var(--bg-secondary);
   box-shadow: 0 0 12px rgba(20, 184, 166, 0.3);
 }
 
 body.light-mode .top-nav .refresh-all-btn:active:not(:disabled) {
-  background: #0f172a;
+  background: var(--bg-secondary);
 }
 
 /* Theme toggle button specific */
