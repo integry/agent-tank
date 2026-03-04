@@ -15,6 +15,14 @@ class LLMWatcher {
     this.auth = options.auth || {};
     this.agents = new Map();
     this.server = null;
+
+    // Auto-refresh configuration (backend periodic refresh)
+    this.autoRefresh = {
+      enabled: options.autoRefreshEnabled !== false, // Default: true
+      interval: options.autoRefreshInterval ?? 60,   // Default: 60 seconds, 0 = disabled
+    };
+    this.autoRefreshTimer = null;
+    this.lastRefreshedAt = null;
   }
 
   async start() {
@@ -71,6 +79,35 @@ class LLMWatcher {
     // Initial fetch
     console.log('Fetching initial usage data...');
     await this.refreshAll();
+
+    // Start backend auto-refresh if enabled
+    this.startAutoRefresh();
+  }
+
+  startAutoRefresh() {
+    // Stop any existing timer
+    this.stopAutoRefresh();
+
+    // Check if auto-refresh should be enabled
+    if (!this.autoRefresh.enabled || this.autoRefresh.interval <= 0) {
+      console.log('Backend auto-refresh: disabled');
+      return;
+    }
+
+    const intervalMs = this.autoRefresh.interval * 1000;
+    console.log(`Backend auto-refresh: every ${this.autoRefresh.interval} seconds`);
+
+    this.autoRefreshTimer = setInterval(async () => {
+      console.log('[Auto-refresh] Refreshing all agents...');
+      await this.refreshAll();
+    }, intervalMs);
+  }
+
+  stopAutoRefresh() {
+    if (this.autoRefreshTimer) {
+      clearInterval(this.autoRefreshTimer);
+      this.autoRefreshTimer = null;
+    }
   }
 
   createAgent(name) {
@@ -95,6 +132,7 @@ class LLMWatcher {
       })
     );
     await Promise.all(promises);
+    this.lastRefreshedAt = new Date().toISOString();
     console.log('All agents refresh complete\n');
   }
 
@@ -191,6 +229,20 @@ class LLMWatcher {
           return;
         }
 
+        if (req.method === 'GET' && path === '/config') {
+          const config = {
+            autoRefresh: {
+              enabled: this.autoRefresh.enabled && this.autoRefresh.interval > 0,
+              interval: this.autoRefresh.interval, // in seconds
+            },
+            lastRefreshedAt: this.lastRefreshedAt,
+          };
+          res.setHeader('Content-Type', 'application/json');
+          res.writeHead(200);
+          res.end(JSON.stringify(config, null, 2));
+          return;
+        }
+
         if (req.method === 'GET' && path.startsWith('/status/')) {
           const agentName = path.slice(8);
           const status = this.getAgentStatus(agentName);
@@ -252,6 +304,7 @@ class LLMWatcher {
   }
 
   stop() {
+    this.stopAutoRefresh();
     for (const agent of this.agents.values()) {
       agent.killProcess();
     }
