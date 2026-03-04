@@ -16,33 +16,51 @@ const agentIcons = {
   </svg>`
 };
 
+// Inline SVG refresh icon for card headers
+const refreshIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+  <path d="M21 3v5h-5"/>
+</svg>`;
+
 function statusPage(status) {
   const agents = Object.entries(status);
+
+  // Calculate the maximum lastUpdated timestamp across all agents for global display
+  const maxLastUpdated = agents.reduce((max, [, data]) => {
+    if (data.lastUpdated) {
+      const ts = new Date(data.lastUpdated).getTime();
+      return ts > max ? ts : max;
+    }
+    return max;
+  }, 0);
+
+  const globalLastChecked = maxLastUpdated > 0
+    ? new Date(maxLastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null;
 
   const agentCards = agents.map(([name, data]) => {
     const usageHtml = formatUsage(name, data.usage);
     const statusClass = data.error ? 'error' : data.isRefreshing ? 'refreshing' : 'ok';
-    const lastUpdate = data.lastUpdated
-      ? new Date(data.lastUpdated).toLocaleString()
-      : 'Never';
 
     const icon = agentIcons[name] || '';
     const displayName = name.charAt(0).toUpperCase() + name.slice(1);
+
+    // Only show card-footer if there's an error
+    const footerHtml = data.error
+      ? `<div class="card-footer"><span class="error-msg">${data.error}</span></div>`
+      : '';
 
     return `
       <div class="agent-card ${statusClass} agent-${name}">
         <h2 class="agent-heading">
           ${icon}
           <span>${displayName}</span>
+          <button class="refresh-icon-btn" onclick="refresh('${name}')" ${data.isRefreshing ? 'disabled' : ''} title="Refresh ${displayName}">
+            ${refreshIcon}
+          </button>
         </h2>
         <div class="usage">${usageHtml}</div>
-        <div class="card-footer">
-          ${data.error ? `<span class="error-msg">${data.error}</span>` : ''}
-          <button onclick="refresh('${name}')" ${data.isRefreshing ? 'disabled' : ''}>
-            ${data.isRefreshing ? 'Refreshing...' : 'Refresh'}
-          </button>
-          <span class="last-updated">Updated: ${lastUpdate}</span>
-        </div>
+        ${footerHtml}
       </div>
     `;
   }).join('');
@@ -67,6 +85,7 @@ ${styles}
   </div>
   <div class="container">
     <h1>LLM Limit Watcher</h1>
+    ${globalLastChecked ? `<div class="last-updated-global">Last checked: ${globalLastChecked}</div>` : ''}
     <div class="refresh-all">
       <button onclick="refreshAll()">Refresh All</button>
     </div>
@@ -116,26 +135,52 @@ ${styles}
         btn.innerHTML = btn.dataset.originalText || 'Refresh';
       }
     }
+    function setRefreshIconLoading(btn, loading) {
+      btn.disabled = loading;
+      if (loading) {
+        btn.classList.add('spinning');
+      } else {
+        btn.classList.remove('spinning');
+      }
+    }
     async function refresh(agent) {
-      const btn = event.target;
-      setButtonLoading(btn, true);
+      // Handle clicks on the refresh icon button (may be SVG or button)
+      const btn = event.target.closest('button');
+      if (!btn) return;
+
+      // Check if it's a refresh-icon-btn (inline icon) or regular button
+      const isIconBtn = btn.classList.contains('refresh-icon-btn');
+
+      if (isIconBtn) {
+        setRefreshIconLoading(btn, true);
+      } else {
+        setButtonLoading(btn, true);
+      }
+
       try {
         await fetch('/refresh/' + agent, { method: 'POST' });
         location.reload();
       } catch (e) {
-        setButtonLoading(btn, false);
+        if (isIconBtn) {
+          setRefreshIconLoading(btn, false);
+        } else {
+          setButtonLoading(btn, false);
+        }
         alert('Failed to refresh: ' + e.message);
       }
     }
     async function refreshAll() {
-      const btn = event.target;
-      const allBtns = document.querySelectorAll('button');
-      allBtns.forEach(b => setButtonLoading(b, true));
+      const btn = event.target.closest('button');
+      const allRegularBtns = document.querySelectorAll('button:not(.refresh-icon-btn)');
+      const allIconBtns = document.querySelectorAll('.refresh-icon-btn');
+      allRegularBtns.forEach(b => setButtonLoading(b, true));
+      allIconBtns.forEach(b => setRefreshIconLoading(b, true));
       try {
         await fetch('/refresh', { method: 'POST' });
         location.reload();
       } catch (e) {
-        allBtns.forEach(b => setButtonLoading(b, false));
+        allRegularBtns.forEach(b => setButtonLoading(b, false));
+        allIconBtns.forEach(b => setRefreshIconLoading(b, false));
         alert('Failed to refresh: ' + e.message);
       }
     }
@@ -156,9 +201,10 @@ function formatClaudeUsage(usage) {
   ];
   for (const { data, label, cycle } of sections) {
     if (data) {
-      html += usageItem(label, data.percent, '% used', true);
+      const isZero = data.percent === 0;
+      html += usageItem(label, data.percent, '% used', true, isZero);
       if (data.resetsIn) {
-        html += resetInfoItem(data.resetsIn, data.resetsAt, cycle);
+        html += resetInfoItem(data.resetsIn, data.resetsAt, cycle, isZero);
       }
     }
   }
@@ -169,9 +215,10 @@ function formatGeminiUsage(usage) {
   let html = '';
   if (usage.models && usage.models.length > 0) {
     for (const model of usage.models) {
-      html += usageItem(model.model, model.percentUsed, '% used', true);
+      const isZero = model.percentUsed === 0;
+      html += usageItem(model.model, model.percentUsed, '% used', true, isZero);
       if (model.resetsIn) {
-        html += resetInfoItem(model.resetsIn, null, 'sessionGemini');
+        html += resetInfoItem(model.resetsIn, null, 'sessionGemini', isZero);
       }
     }
   }
@@ -187,18 +234,23 @@ function formatCodexUsage(usage) {
   if (usage.modelLimits) {
     models.push(...usage.modelLimits);
   }
-  for (const ml of models) {
-    html += `<div class="usage-item"><span class="usage-label" style="font-weight:600;margin-top:0.5em">${ml.name}</span></div>`;
+  for (let i = 0; i < models.length; i++) {
+    const ml = models[i];
+    // Use model-subheading class for Codex models to create visual grouping
+    const isFirst = i === 0;
+    html += `<div class="usage-item model-subheading${isFirst ? '' : ''}"><span class="usage-label">${ml.name}</span></div>`;
     if (ml.fiveHour) {
-      html += usageItem('5h limit', ml.fiveHour.percentUsed, '% used', true);
+      const isZero = ml.fiveHour.percentUsed === 0;
+      html += usageItem('5h limit', ml.fiveHour.percentUsed, '% used', true, isZero);
       if (ml.fiveHour.resetsIn) {
-        html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour');
+        html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', isZero);
       }
     }
     if (ml.weekly) {
-      html += usageItem('Weekly', ml.weekly.percentUsed, '% used', true);
+      const isZero = ml.weekly.percentUsed === 0;
+      html += usageItem('Weekly', ml.weekly.percentUsed, '% used', true, isZero);
       if (ml.weekly.resetsIn) {
-        html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly');
+        html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', isZero);
       }
     }
   }
@@ -217,7 +269,7 @@ function formatUsage(agentName, usage) {
   return html || '<p class="usage-item">No usage data</p>';
 }
 
-function usageItem(label, value, suffix, isUsed) {
+function usageItem(label, value, suffix, isUsed, isZero = false) {
   // For "used" percentages, higher is worse. For "left" percentages, lower is worse.
   let colorClass;
   if (isUsed) {
@@ -228,13 +280,14 @@ function usageItem(label, value, suffix, isUsed) {
 
   const progressPercent = isUsed ? value : (100 - value);
   const progressColor = colorClass === 'high' ? '#48bb78' : colorClass === 'medium' ? '#ecc94b' : '#e53e3e';
+  const zeroClass = isZero ? ' zero-usage' : '';
 
   return `
-    <div class="usage-item">
+    <div class="usage-item${zeroClass}">
       <span class="usage-label">${label}</span>
       <span class="usage-value ${colorClass}"><span class="usage-percent">${value}</span><span class="usage-suffix">${suffix}</span></span>
     </div>
-    <div class="progress-bar">
+    <div class="progress-bar${zeroClass}">
       <div class="progress-fill" style="width: ${progressPercent}%; background: ${progressColor};"></div>
     </div>
   `;
@@ -268,8 +321,9 @@ function parseResetsInToSeconds(resetsIn) {
   return totalSeconds > 0 ? totalSeconds : null;
 }
 
-function resetInfoItem(resetsIn, originalValue, cycleType) {
+function resetInfoItem(resetsIn, originalValue, cycleType, isZero = false) {
   const tooltip = originalValue ? ` title="${originalValue}"` : '';
+  const zeroClass = isZero ? ' zero-usage' : '';
 
   // Calculate elapsed time progress bar
   let timeProgressHtml = '';
@@ -281,13 +335,13 @@ function resetInfoItem(resetsIn, originalValue, cycleType) {
     const elapsedSeconds = cycleDuration - resetsInSeconds;
     const elapsedPercent = Math.min(100, Math.max(0, (elapsedSeconds / cycleDuration) * 100));
 
-    timeProgressHtml = `<div class="time-progress-bar" title="Time elapsed in cycle: ${Math.round(elapsedPercent)}%">
+    timeProgressHtml = `<div class="time-progress-bar${zeroClass}" title="Time elapsed in cycle: ${Math.round(elapsedPercent)}%">
       <div class="time-progress-fill" style="width: ${elapsedPercent}%;"></div>
     </div>`;
   }
 
   // Wrap in container so the time bar can be positioned below the reset text
-  return `<div class="reset-info-wrapper">
+  return `<div class="reset-info-wrapper${zeroClass}">
     <div class="usage-item reset-info"${tooltip}><span class="usage-label">↳ Resets in</span><span class="usage-value">${resetsIn}</span></div>
     ${timeProgressHtml}
   </div>`;
