@@ -16,33 +16,51 @@ const agentIcons = {
   </svg>`
 };
 
+// Inline SVG refresh icon for card headers
+const refreshIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+  <path d="M21 3v5h-5"/>
+</svg>`;
+
 function statusPage(status) {
   const agents = Object.entries(status);
+
+  // Calculate the maximum lastUpdated timestamp across all agents for global display
+  const maxLastUpdated = agents.reduce((max, [, data]) => {
+    if (data.lastUpdated) {
+      const ts = new Date(data.lastUpdated).getTime();
+      return ts > max ? ts : max;
+    }
+    return max;
+  }, 0);
+
+  const globalLastChecked = maxLastUpdated > 0
+    ? new Date(maxLastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null;
 
   const agentCards = agents.map(([name, data]) => {
     const usageHtml = formatUsage(name, data.usage);
     const statusClass = data.error ? 'error' : data.isRefreshing ? 'refreshing' : 'ok';
-    const lastUpdate = data.lastUpdated
-      ? new Date(data.lastUpdated).toLocaleString()
-      : 'Never';
 
     const icon = agentIcons[name] || '';
     const displayName = name.charAt(0).toUpperCase() + name.slice(1);
+
+    // Only show card-footer if there's an error
+    const footerHtml = data.error
+      ? `<div class="card-footer"><span class="error-msg">${data.error}</span></div>`
+      : '';
 
     return `
       <div class="agent-card ${statusClass} agent-${name}">
         <h2 class="agent-heading">
           ${icon}
           <span>${displayName}</span>
+          <button class="refresh-icon-btn" onclick="refresh('${name}', event)" ${data.isRefreshing ? 'disabled' : ''} title="Refresh ${displayName}">
+            ${refreshIcon}
+          </button>
         </h2>
         <div class="usage">${usageHtml}</div>
-        <div class="card-footer">
-          ${data.error ? `<span class="error-msg">${data.error}</span>` : ''}
-          <button onclick="refresh('${name}')" ${data.isRefreshing ? 'disabled' : ''}>
-            ${data.isRefreshing ? 'Refreshing...' : 'Refresh'}
-          </button>
-          <span class="last-updated">Updated: ${lastUpdate}</span>
-        </div>
+        ${footerHtml}
       </div>
     `;
   }).join('');
@@ -59,20 +77,35 @@ ${styles}
   </style>
 </head>
 <body>
-  <div class="theme-toggle">
-    <button onclick="toggleTheme()" id="theme-toggle-btn">
-      <span id="theme-icon">☀️</span>
-      <span id="theme-text">Light</span>
-    </button>
-  </div>
-  <div class="container">
-    <h1>LLM Limit Watcher</h1>
-    <div class="refresh-all">
-      <button onclick="refreshAll()">Refresh All</button>
+  <nav class="top-nav">
+    <div class="top-nav-left">
+      <h1 class="top-nav-title">LLM Limit Watcher</h1>
     </div>
+    <div class="top-nav-right">
+      ${globalLastChecked ? `<span class="last-checked">Last checked: ${globalLastChecked}</span>` : ''}
+      <button class="refresh-all-btn" onclick="refreshAll(event)">Refresh All</button>
+      <button class="theme-toggle-btn" onclick="toggleTheme()" id="theme-toggle-btn">
+        <span id="theme-icon">☀️</span>
+        <span id="theme-text">Light</span>
+      </button>
+    </div>
+  </nav>
+  <div class="container">
     <div class="agents">
       ${agentCards || '<p>No agents configured</p>'}
     </div>
+    <footer class="footer">
+      <div class="footer-left">
+        <span>LLM Limit Watcher &copy; ${new Date().getFullYear()} <a href="https://propr.dev">Rinalds Uzkalns</a></span>
+      </div>
+      <div class="footer-right">
+        <span class="footer-version"><a href="https://github.com/integry/llm-limit-watcher/releases">v1.0.0</a></span>
+        <span class="footer-separator">•</span>
+        <a href="https://github.com/integry/llm-limit-watcher/blob/main/CHANGELOG.md">Changelog</a>
+        <span class="footer-separator">•</span>
+        <a href="https://github.com/integry/llm-limit-watcher">GitHub</a>
+      </div>
+    </footer>
   </div>
   <script>
     // Theme management
@@ -116,26 +149,52 @@ ${styles}
         btn.innerHTML = btn.dataset.originalText || 'Refresh';
       }
     }
-    async function refresh(agent) {
-      const btn = event.target;
-      setButtonLoading(btn, true);
+    function setRefreshIconLoading(btn, loading) {
+      btn.disabled = loading;
+      if (loading) {
+        btn.classList.add('spinning');
+      } else {
+        btn.classList.remove('spinning');
+      }
+    }
+    async function refresh(agent, event) {
+      // Handle clicks on the refresh icon button (may be SVG or button)
+      const btn = event.target.closest('button');
+      if (!btn) return;
+
+      // Check if it's a refresh-icon-btn (inline icon) or regular button
+      const isIconBtn = btn.classList.contains('refresh-icon-btn');
+
+      if (isIconBtn) {
+        setRefreshIconLoading(btn, true);
+      } else {
+        setButtonLoading(btn, true);
+      }
+
       try {
         await fetch('/refresh/' + agent, { method: 'POST' });
         location.reload();
       } catch (e) {
-        setButtonLoading(btn, false);
+        if (isIconBtn) {
+          setRefreshIconLoading(btn, false);
+        } else {
+          setButtonLoading(btn, false);
+        }
         alert('Failed to refresh: ' + e.message);
       }
     }
-    async function refreshAll() {
-      const btn = event.target;
-      const allBtns = document.querySelectorAll('button');
-      allBtns.forEach(b => setButtonLoading(b, true));
+    async function refreshAll(event) {
+      const btn = event.target.closest('button');
+      const refreshAllBtn = document.querySelector('.refresh-all-btn');
+      const allIconBtns = document.querySelectorAll('.refresh-icon-btn');
+      if (refreshAllBtn) setButtonLoading(refreshAllBtn, true);
+      allIconBtns.forEach(b => setRefreshIconLoading(b, true));
       try {
         await fetch('/refresh', { method: 'POST' });
         location.reload();
       } catch (e) {
-        allBtns.forEach(b => setButtonLoading(b, false));
+        if (refreshAllBtn) setButtonLoading(refreshAllBtn, false);
+        allIconBtns.forEach(b => setRefreshIconLoading(b, false));
         alert('Failed to refresh: ' + e.message);
       }
     }
@@ -156,10 +215,14 @@ function formatClaudeUsage(usage) {
   ];
   for (const { data, label, cycle } of sections) {
     if (data) {
-      html += usageItem(label, data.percent, '% used', true);
-      if (data.resetsIn) {
-        html += resetInfoItem(data.resetsIn, data.resetsAt, cycle);
+      const percent = data.percent ?? 0;
+      const isZero = percent === 0;
+      html += '<div class="model-container">';
+      html += usageItem(label, percent, '% used', { isZero });
+      if (data.resetsIn && !isZero) {
+        html += resetInfoItem(data.resetsIn, data.resetsAt, cycle, isZero);
       }
+      html += '</div>';
     }
   }
   return html;
@@ -169,10 +232,16 @@ function formatGeminiUsage(usage) {
   let html = '';
   if (usage.models && usage.models.length > 0) {
     for (const model of usage.models) {
-      html += usageItem(model.model, model.percentUsed, '% used', true);
-      if (model.resetsIn) {
-        html += resetInfoItem(model.resetsIn, null, 'sessionGemini');
+      const percent = model.percentUsed ?? 0;
+      const isZero = percent === 0;
+      // Use lowercase model name with model-name styling
+      const modelName = model.model.toLowerCase();
+      html += '<div class="model-container">';
+      html += usageItem(modelName, percent, '% used', { isZero, isModelName: true });
+      if (model.resetsIn && !isZero) {
+        html += resetInfoItem(model.resetsIn, null, 'sessionGemini', isZero);
       }
+      html += '</div>';
     }
   }
   return html;
@@ -188,18 +257,28 @@ function formatCodexUsage(usage) {
     models.push(...usage.modelLimits);
   }
   for (const ml of models) {
-    html += `<div class="usage-item"><span class="usage-label" style="font-weight:600;margin-top:0.5em">${ml.name}</span></div>`;
+    // Use model-subheading class for Codex models to create visual grouping (keeps ALL CAPS)
+    // CSS :first-child handles the first item styling automatically
+    html += `<div class="usage-item model-subheading"><span class="usage-label">${ml.name.toUpperCase()}</span></div>`;
     if (ml.fiveHour) {
-      html += usageItem('5h limit', ml.fiveHour.percentUsed, '% used', true);
-      if (ml.fiveHour.resetsIn) {
-        html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour');
+      const fiveHourPercent = ml.fiveHour.percentUsed ?? 0;
+      const isZero = fiveHourPercent === 0;
+      html += '<div class="model-container">';
+      html += usageItem('5h limit', fiveHourPercent, '% used', { isZero });
+      if (ml.fiveHour.resetsIn && !isZero) {
+        html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', isZero);
       }
+      html += '</div>';
     }
     if (ml.weekly) {
-      html += usageItem('Weekly', ml.weekly.percentUsed, '% used', true);
-      if (ml.weekly.resetsIn) {
-        html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly');
+      const weeklyPercent = ml.weekly.percentUsed ?? 0;
+      const isZero = weeklyPercent === 0;
+      html += '<div class="model-container">';
+      html += usageItem('Weekly', weeklyPercent, '% used', { isZero });
+      if (ml.weekly.resetsIn && !isZero) {
+        html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', isZero);
       }
+      html += '</div>';
     }
   }
   return html;
@@ -217,7 +296,8 @@ function formatUsage(agentName, usage) {
   return html || '<p class="usage-item">No usage data</p>';
 }
 
-function usageItem(label, value, suffix, isUsed) {
+function usageItem(label, value, suffix, options = {}) {
+  const { isUsed = true, isZero = false, isModelName = false } = options;
   // For "used" percentages, higher is worse. For "left" percentages, lower is worse.
   let colorClass;
   if (isUsed) {
@@ -228,13 +308,15 @@ function usageItem(label, value, suffix, isUsed) {
 
   const progressPercent = isUsed ? value : (100 - value);
   const progressColor = colorClass === 'high' ? '#48bb78' : colorClass === 'medium' ? '#ecc94b' : '#e53e3e';
+  const zeroClass = isZero ? ' zero-usage' : '';
+  const labelClass = isModelName ? 'usage-label model-name' : 'usage-label';
 
   return `
-    <div class="usage-item">
-      <span class="usage-label">${label}</span>
+    <div class="usage-item${zeroClass}">
+      <span class="${labelClass}">${label}</span>
       <span class="usage-value ${colorClass}"><span class="usage-percent">${value}</span><span class="usage-suffix">${suffix}</span></span>
     </div>
-    <div class="progress-bar">
+    <div class="progress-bar${zeroClass}">
       <div class="progress-fill" style="width: ${progressPercent}%; background: ${progressColor};"></div>
     </div>
   `;
@@ -268,7 +350,12 @@ function parseResetsInToSeconds(resetsIn) {
   return totalSeconds > 0 ? totalSeconds : null;
 }
 
-function resetInfoItem(resetsIn, originalValue, cycleType) {
+function resetInfoItem(resetsIn, originalValue, cycleType, isZero = false) {
+  // If usage is at 0%, hide the "Resets in" row entirely - it's useless info when at full capacity
+  if (isZero) {
+    return '';
+  }
+
   const tooltip = originalValue ? ` title="${originalValue}"` : '';
 
   // Calculate elapsed time progress bar

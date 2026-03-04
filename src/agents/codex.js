@@ -34,17 +34,8 @@ class CodexAgent extends BaseAgent {
     return false;
   }
 
-  // Detect update notification screen and select Skip option
   handleUpdateScreen(shell, output) {
     const clean = this.stripAnsi(output);
-
-    // Detect Codex update screen format:
-    // "Update available! X.X.X -> Y.Y.Y"
-    // "› 1. Update now"
-    // "  2. Skip"
-    // "  3. Skip until next version"
-    // Note: First char may be cut off ("pdate available" instead of "Update available")
-    // Note: Text may be concatenated without proper spacing after ANSI stripping
     const hasUpdateAvailable = /u?pdate available/i.test(clean);
     const hasVersionArrow = /[\d.]+\s*->\s*[\d.]+/.test(clean);
     // Also check for "Skip" with various patterns - may appear as "2.Skip" or just "Skip"
@@ -100,126 +91,167 @@ class CodexAgent extends BaseAgent {
     return Object.keys(versionInfo).length > 0 ? versionInfo : null;
   }
 
-  async runCommand() {
-    const pty = require('node-pty');
+  isReadyForCommands(output) {
+    return this.isReadyForStatus(output);
+  }
 
+  isReadyForStatus(output) {
+    return output.includes('? for shortcuts') || output.includes('To get started');
+  }
+
+  sendCommands(shell, _output) {
+    console.log(`[${this.name}] Sending /status command...`);
+    setTimeout(() => shell.write('/status\r'), 100);
+  }
+
+  _handleAdditionalPrompts(shell, _data, output) {
+    if (!this._updateHandled && this.handleUpdateScreen(shell, output)) {
+      this._updateHandled = true;
+      return;
+    }
+    const cleanOutput = this.stripAnsi(output);
+    const isUpdateScreen = /u?pdate available/i.test(cleanOutput) && /[\d.]+\s*->\s*[\d.]+/.test(cleanOutput);
+    if (!this._continuationHandled && !isUpdateScreen && output.includes('Press enter to continue')) {
+      console.log(`[${this.name}] Detected continuation prompt`);
+      this._continuationHandled = true;
+      shell.write('\r');
+    }
+  }
+
+  handleInteractivePrompts(shell, data, output, state) {
+    if (!state.trustHandled && this.handleTrustPrompt(shell, output)) {
+      state.trustHandled = true;
+      return true;
+    }
+
+    if (!state.updateHandled && this.handleUpdateScreen(shell, output)) {
+      state.updateHandled = true;
+      return true;
+    }
+
+    this._respondToTerminalQueries(data, shell);
+
+    const cleanOutput = this.stripAnsi(output);
+    const isUpdateScreen = /u?pdate available/i.test(cleanOutput) && /[\d.]+\s*->\s*[\d.]+/.test(cleanOutput);
+    if (!state.continuationHandled && !isUpdateScreen && output.includes('Press enter to continue')) {
+      console.log(`[${this.name}] Detected continuation prompt`);
+      state.continuationHandled = true;
+      shell.write('\r');
+    }
+
+    return false;
+  }
+
+  async spawnProcess() {
     return new Promise((resolve, reject) => {
-      let output = '';
-      let completed = false;
-      let statusSent = false;
-      let trustHandled = false;
-      let continuationHandled = false;
-      let updateHandled = false;
+      const pty = require('node-pty');
+      let spawnOutput = '';
+      const state = { trustHandled: false, continuationHandled: false, updateHandled: false };
 
-      console.log(`[${this.name}] Spawning: ${this.command} ${this.args.join(' ')}`);
+      console.log(`[${this.name}] Spawning persistent process: ${this.command} ${this.args.join(' ')}`);
 
-      const shell = pty.spawn(this.command, this.args, {
-        name: 'xterm-256color',
-        cols: 120,
-        rows: 40,
-        cwd: '/tmp',
-        env: { ...process.env, TERM: 'xterm-256color' },
-      });
+      try {
+        this.shell = pty.spawn(this.command, this.args, {
+          name: 'xterm-256color',
+          cols: 120,
+          rows: 40,
+          cwd: '/tmp',
+          env: { ...process.env, TERM: 'xterm-256color' },
+        });
+      } catch (spawnErr) {
+        console.error(`[${this.name}] Failed to spawn:`, spawnErr.message);
+        reject(new Error(`Failed to spawn ${this.command}: ${spawnErr.message}`));
+        return;
+      }
 
       const timer = setTimeout(() => {
-        if (!completed) {
-          completed = true;
-          console.log(`[${this.name}] Timeout after ${this.getTimeout()}ms, output length: ${output.length}`);
-          if (output.length > 0) {
-            console.log(`[${this.name}] Partial output:`, this.stripAnsi(output).substring(0, 500));
-            // Write full output for debugging
-            require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, output);
-            console.log(`[${this.name}] Full output written to /tmp/${this.name}-output.txt`);
-          }
-          shell.kill();
-          if (output.length > 100) {
-            resolve(output);
-          } else {
-            reject(new Error('Timeout waiting for usage data'));
-          }
+        console.error(`[${this.name}] Spawn timeout after ${this.getTimeout()}ms`);
+        this.killProcess();
+        reject(new Error('Timeout waiting for process to become ready'));
+      }, this.getTimeout());
+
+      const spawnDataHandler = this.shell.onData((data) => {
+        spawnOutput += data;
+
+        this.handleInteractivePrompts(this.shell, data, spawnOutput, state);
+
+        if (this.isReadyForStatus(spawnOutput)) {
+          console.log(`[${this.name}] Process ready for commands`);
+          clearTimeout(timer);
+          spawnDataHandler.dispose();
+          this.processReady = true;
+          this._setupPersistentDataHandler();
+          this._setupPersistentExitHandler();
+          resolve();
+        }
+      });
+
+      const spawnExitHandler = this.shell.onExit(({ exitCode }) => {
+        clearTimeout(timer);
+        spawnDataHandler.dispose();
+        spawnExitHandler.dispose();
+        this.shell = null;
+        this.processReady = false;
+        reject(new Error(`Process exited during spawn with code ${exitCode}`));
+      });
+    });
+  }
+
+  async sendCommandAndWait() {
+    return new Promise((resolve, reject) => {
+      this.output = '';
+      this._commandInFlight = true;
+      let retryTimer = null;
+      let settleTimer = null;
+
+      const finish = (result) => {
+        this._commandInFlight = false;
+        this._onDataCallback = null;
+        clearTimeout(timer);
+        if (retryTimer) clearInterval(retryTimer);
+        if (settleTimer) clearTimeout(settleTimer);
+        resolve(result);
+      };
+
+      const timer = setTimeout(() => {
+        if (retryTimer) clearInterval(retryTimer);
+        if (settleTimer) clearTimeout(settleTimer);
+        console.log(`[${this.name}] Command timeout after ${this.getTimeout()}ms, output length: ${this.output.length}`);
+        if (this.output.length > 0) {
+          console.log(`[${this.name}] Partial output:`, this.stripAnsi(this.output).substring(0, 500));
+          require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, this.output);
+        }
+        if (this.output.length > 100) {
+          finish(this.output);
+        } else {
+          this._commandInFlight = false;
+          this._onDataCallback = null;
+          reject(new Error('Timeout waiting for usage data'));
         }
       }, this.getTimeout());
 
-      shell.onData((data) => {
-        output += data;
+      // Start retry timer immediately — on first run the model may still
+      // be loading so /status won't return limits yet
+      retryTimer = setInterval(() => {
+        if (!this.hasCompleteOutput(this.output)) {
+          console.log(`[${this.name}] Retrying /status...`);
+          this.output = '';
+          this.shell.write('/status\r');
+        }
+      }, 500);
 
-        // Log first data received
-        if (output.length <= data.length) {
-          console.log(`[${this.name}] First data received (${data.length} chars)`);
-          if (data.length < 200) {
-            console.log(`[${this.name}] Initial output:`, this.stripAnsi(data).substring(0, 100));
+      this._onDataCallback = () => {
+        if (this.hasCompleteOutput(this.output)) {
+          // Delay to let additional model sections render
+          if (!settleTimer) {
+            console.log(`[${this.name}] Complete output detected, waiting to settle...`);
+            settleTimer = setTimeout(() => finish(this.output), 200);
           }
         }
+      };
 
-        // Handle trust prompt if needed (only once)
-        if (!trustHandled && this.handleTrustPrompt(shell, output)) {
-          trustHandled = true;
-          return;
-        }
-
-        // Handle update notification screen (only once)
-        if (!updateHandled && this.handleUpdateScreen(shell, output)) {
-          updateHandled = true;
-          return;
-        }
-
-        // Respond to cursor position query (CSI 6n)
-        if (data.includes('\x1b[6n') || data.includes('[6n')) {
-          console.log(`[${this.name}] Responding to cursor position query`);
-          shell.write('\x1b[1;1R');
-        }
-
-        // Handle approval prompt (skip if update screen is active)
-        const cleanOutput = this.stripAnsi(output);
-        const isUpdateScreen = /u?pdate available/i.test(cleanOutput) && /[\d.]+\s*->\s*[\d.]+/.test(cleanOutput);
-        if (!continuationHandled && !isUpdateScreen && output.includes('Press enter to continue')) {
-          console.log(`[${this.name}] Detected continuation prompt`);
-          continuationHandled = true;
-          shell.write('\r');
-        }
-
-        // Send /status when fully ready (model loaded and prompt shown)
-        if (!statusSent && (output.includes('gpt-') || output.includes('OpenAI Codex')) &&
-            (output.includes('? for shortcuts') || output.includes('To get started'))) {
-          console.log(`[${this.name}] Ready for commands, sending /status...`);
-          statusSent = true;
-          // Type /status then press Enter separately
-          setTimeout(() => {
-            shell.write('/status');
-          }, 1000);
-          setTimeout(() => {
-            shell.write('\r');
-          }, 1500);
-        }
-
-        // Check for complete output
-        if (statusSent && this.hasCompleteOutput(output)) {
-          console.log(`[${this.name}] Complete output detected, finishing...`);
-          setTimeout(() => {
-            if (!completed) {
-              completed = true;
-              clearTimeout(timer);
-              shell.kill();
-              resolve(output);
-            }
-          }, 300);
-        }
-      });
-
-      shell.onExit(({ exitCode }) => {
-        if (!completed) {
-          completed = true;
-          clearTimeout(timer);
-          console.log(`[${this.name}] Process exited with code ${exitCode}, output length: ${output.length}`);
-          // Save output for debugging
-          require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, output);
-          if (output) {
-            resolve(output);
-          } else {
-            reject(new Error(`Process exited with code ${exitCode}`));
-          }
-        }
-      });
+      console.log(`[${this.name}] Sending /status to persistent process...`);
+      setTimeout(() => this.shell.write('/status\r'), 100);
     });
   }
 

@@ -1,79 +1,184 @@
 :root {
   /* Dark mode colors (default) */
-  --bg-primary: #343A40;
-  --bg-card: #2d3339;
-  --bg-secondary: #2d3748;
-  --text-primary: #eee;
-  --text-secondary: #a0aec0;
-  --text-tertiary: #718096;
-  --accent-primary: #1D8A8A;
-  --accent-hover: #166d6d;
-  --border-color: #2d3748;
-  --disabled-bg: #4a5568;
-  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --bg-primary: #111827;
+  --bg-card: #1f2937;
+  --bg-secondary: #374151;
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --text-tertiary: #6b7280;
+  --accent-primary: #111827;
+  --accent-hover: #374151;
+  --border-color: #374151;
+  --disabled-bg: #4b5563;
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --card-border: #374151;
+  --progress-track: rgba(255, 255, 255, 0.08);
 }
 
 body.light-mode {
   /* Light mode colors */
-  --bg-primary: #f5f7f9;
+  --bg-primary: #f9fafb;
   --bg-card: #ffffff;
-  --bg-secondary: #e2e8f0;
-  --text-primary: #2d3748;
-  --text-secondary: #4a5568;
-  --text-tertiary: #718096;
-  --accent-primary: #1D8A8A;
-  --accent-hover: #166d6d;
-  --border-color: #e2e8f0;
-  --disabled-bg: #cbd5e0;
-  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --bg-secondary: #f3f4f6;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-tertiary: #9ca3af;
+  --accent-primary: #111827;
+  --accent-hover: #374151;
+  --border-color: #e5e7eb;
+  --disabled-bg: #d1d5db;
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --card-border: #e5e7eb;
+  --progress-track: #f3f4f6;
 }
 
 * { box-sizing: border-box; }
 
 body {
-  font-family: 'Inter', 'Montserrat', 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
   background: var(--bg-primary);
   color: var(--text-primary);
   margin: 0;
-  padding: 20px;
+  padding: 0;
   transition: background-color 0.3s ease, color 0.3s ease;
+  /* Holy Grail Flexbox layout for sticky footer */
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
-h1 {
-  text-align: center;
-  color: var(--accent-primary);
-  margin-bottom: 30px;
+/* Top Navigation Bar */
+.top-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.top-nav-left {
+  display: flex;
+  align-items: center;
+}
+
+.top-nav-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.top-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.top-nav .last-checked {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.top-nav .refresh-all-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  width: auto;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+body.light-mode .top-nav .refresh-all-btn {
+  background: var(--accent-primary);
+  border: none;
+}
+
+.top-nav .theme-toggle-btn {
+  padding: 8px 12px;
+  font-size: 13px;
+  width: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-secondary);
+}
+
+body.light-mode .top-nav .theme-toggle-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+}
+
+.top-nav .theme-toggle-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .container {
   max-width: 1200px;
   margin: 0 auto;
+  padding: 24px;
+  /* Flex grow to fill available space and push footer to bottom */
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  /* Ensure full width for grid children */
+  width: 100%;
 }
 
 .agents {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  /* Default: single column on mobile */
+  grid-template-columns: 1fr;
   gap: 20px;
+  /* Ensure grid fills container width for proper row layout */
+  width: 100%;
+  /* Top-align cards with generous spacing below the header */
+  margin-top: 48px;
+  /* Align to top, not center - scalable for multiple rows */
+  align-content: start;
+}
+
+/* Row layout for wider screens - 3 columns for 3 provider cards */
+@media (min-width: 768px) {
+  .agents {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .agent-card {
   background: var(--bg-card);
   border-radius: 8px;
-  padding: 20px;
-  border: none;
-  border-top: 4px solid var(--accent-primary);
+  padding: 24px 20px 20px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: var(--card-shadow);
   display: flex;
   flex-direction: column;
-  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
 }
 
-.agent-card.error { border-top-color: #e53e3e; }
-.agent-card.refreshing { border-top-color: #ecc94b; }
+body.light-mode .agent-card {
+  border: 1px solid var(--card-border);
+}
+
+.agent-card:hover {
+  border-color: var(--text-tertiary);
+}
+
+.agent-card.error { border-color: #e53e3e; }
+.agent-card.refreshing { border-color: #ecc94b; }
 
 .agent-card h2 {
-  margin: 0 0 15px 0;
-  color: var(--accent-primary);
+  margin: 0 0 20px 0;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .usage { margin-bottom: 15px; flex: 1; }
@@ -83,6 +188,7 @@ h1 {
   justify-content: space-between;
   align-items: center;
   padding: 10px 0 4px 0;
+  min-height: 48px;
 }
 
 .usage-item:last-child { border-bottom: none; }
@@ -91,6 +197,7 @@ h1 {
   padding: 0 0 0 12px;
   font-size: 13px;
   border-bottom: none;
+  min-height: auto;
 }
 
 /* Container for reset info + time progress bar */
@@ -100,13 +207,25 @@ h1 {
   margin-bottom: 12px;
 }
 
-.usage-item.reset-info .usage-label { font-size: 12px; }
+.usage-item.reset-info .usage-label { font-size: 12px; text-transform: none; }
 .usage-item.reset-info .usage-value { font-weight: normal; color: var(--text-secondary); }
 
 .usage-label {
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 400;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* Model name styling - dark grey (light mode) / light grey (dark mode), slightly bolder, lowercase */
+.usage-label.model-name {
+  color: #d1d5db;
+  font-weight: 500;
+  text-transform: none;
+}
+
+body.light-mode .usage-label.model-name {
+  color: #374151;
 }
 
 .usage-value {
@@ -114,18 +233,20 @@ h1 {
   display: flex;
   align-items: baseline;
   gap: 2px;
+  font-variant-numeric: tabular-nums;
 }
 
 .usage-percent {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
   line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
 .usage-suffix {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  opacity: 0.8;
+  color: var(--text-tertiary);
 }
 
 .usage-value.high { color: #48bb78; }
@@ -136,16 +257,16 @@ h1 {
 .usage-value.low .usage-percent { color: #e53e3e; }
 
 .progress-bar {
-  height: 8px;
-  background: var(--bg-secondary);
-  border-radius: 4px;
-  margin-top: 2px;
+  height: 6px;
+  background: var(--progress-track);
+  border-radius: 9999px;
+  margin-top: 4px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  border-radius: 4px;
+  border-radius: 9999px;
   transition: width 0.3s;
 }
 
@@ -205,31 +326,7 @@ button .spinner {
   to { transform: rotate(360deg); }
 }
 
-.refresh-all {
-  text-align: center;
-  margin-bottom: 20px;
-}
-
-.refresh-all button {
-  width: auto;
-  padding: 10px 30px;
-}
-
-.theme-toggle {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 1000;
-}
-
-.theme-toggle button {
-  width: auto;
-  padding: 8px 16px;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
+/* Legacy classes removed - controls now in top-nav */
 
 /* Agent heading with icon */
 .agent-heading {
@@ -276,12 +373,11 @@ button .spinner {
   color: var(--agent-brand);
 }
 
-/* Apply subtle brand backgrounds to agent cards */
+/* Agent cards have simple borders - brand colors only on icons */
 .agent-claude,
 .agent-gemini,
 .agent-codex {
-  background: linear-gradient(135deg, var(--agent-bg-subtle) 0%, var(--bg-card) 100%);
-  border-top-color: var(--agent-brand);
+  background: var(--bg-card);
 }
 
 /* Light mode adjustments for brand backgrounds */
@@ -297,11 +393,11 @@ body.light-mode .agent-codex {
   --agent-bg-subtle: rgba(16, 163, 127, 0.06);
 }
 
-/* Override accent color for agent headings with brand color */
+/* Agent headings use neutral color, only icons have brand colors */
 .agent-claude h2,
 .agent-gemini h2,
 .agent-codex h2 {
-  color: var(--agent-brand);
+  color: var(--text-primary);
 }
 
 /* Time elapsed progress bar - subtle, thin bar positioned below reset info */
@@ -329,4 +425,176 @@ body.light-mode .time-progress-bar {
 
 body.light-mode .time-progress-fill {
   background: rgba(113, 128, 150, 0.4);
+}
+
+/* Refresh icon button - inline in card header */
+.refresh-icon-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  margin-left: auto;
+  cursor: pointer;
+  color: var(--text-secondary);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.refresh-icon-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.refresh-icon-btn:hover:not(:disabled) svg {
+  stroke-width: 2.5;
+}
+
+.refresh-icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.refresh-icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.refresh-icon-btn.spinning svg {
+  animation: spin 0.8s linear infinite;
+}
+
+/* Global last-updated timestamp - now in nav bar, legacy class */
+.last-updated-global {
+  display: none;
+}
+
+/* Model container wrapper - consistent vertical spacing */
+.model-container {
+  margin-bottom: 24px;
+}
+
+.model-container:last-child {
+  margin-bottom: 0;
+}
+
+/* Zero usage - de-emphasized styling using color shift (not opacity for accessibility) */
+/* Only apply grey color to the percentage text, not the model name */
+.zero-usage .usage-value,
+.zero-usage .usage-percent,
+.zero-usage .usage-suffix {
+  color: #9ca3af !important;
+}
+
+/* Progress bar for zero usage: show track but no fill, but keep track visible */
+.progress-bar.zero-usage {
+  background: #f1f5f9;
+}
+
+.progress-bar.zero-usage .progress-fill {
+  width: 0 !important;
+  background: transparent !important;
+}
+
+/* Dark mode: lighter track for zero usage progress bars */
+body:not(.light-mode) .progress-bar.zero-usage {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Reset info for zero usage: grey text */
+.reset-info-wrapper.zero-usage .usage-value,
+.reset-info-wrapper.zero-usage .usage-label {
+  color: #9ca3af;
+}
+
+/* Time progress bar in zero state */
+.time-progress-bar.zero-usage .time-progress-fill {
+  background: rgba(156, 163, 175, 0.4);
+}
+
+/* Interactive hover for zero-usage items - subtle highlight */
+.usage-item.zero-usage:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+  border-radius: 4px;
+}
+
+body.light-mode .usage-item.zero-usage:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+/* Model subheading - Codex visual grouping (keeps ALL CAPS as category dividers) */
+.model-subheading {
+  margin-top: 2em;
+  padding-top: 1.25em;
+  border-top: 1px solid var(--border-color);
+  min-height: auto;
+}
+
+.model-subheading .usage-label {
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.model-subheading:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* Model container within Codex subheading - consistent spacing */
+.model-subheading + .model-container {
+  margin-top: 12px;
+}
+
+/* Footer - SaaS-style split layout */
+.footer {
+  /* Push footer to bottom using auto margin */
+  margin-top: auto;
+  padding: 16px 24px;
+  font-size: 0.75rem;
+  color: #475569;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border-color);
+}
+
+body.light-mode .footer {
+  color: #6b7280;
+}
+
+.footer-left,
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.footer-right {
+  gap: 1em;
+}
+
+.footer-separator {
+  color: inherit;
+  opacity: 0.5;
+}
+
+.footer a {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.footer a:hover {
+  color: var(--text-primary);
+}
+
+.footer-version {
+  font-variant-numeric: tabular-nums;
 }

@@ -9,6 +9,15 @@ class BaseAgent {
     this.lastUpdated = null;
     this.error = null;
     this.isRefreshing = false;
+
+    // Persistent process state
+    this.shell = null;
+    this.processReady = false;
+    this.output = '';
+    this.freshProcess = false;
+    this._onDataCallback = null;
+    this._commandInFlight = false;
+    this._disposables = [];
   }
 
   getStatus() {
@@ -47,6 +56,187 @@ class BaseAgent {
   }
 
   async runCommand() {
+    if (this.freshProcess) {
+      return this._runCommandFresh();
+    }
+
+    // Persistent mode: spawn if needed, then send command
+    if (!this.shell || !this.processReady) {
+      await this.spawnProcess();
+    }
+
+    return this.sendCommandAndWait();
+  }
+
+  async spawnProcess() {
+    return new Promise((resolve, reject) => {
+      let trustHandled = false;
+      let spawnOutput = '';
+
+      console.log(`[${this.name}] Spawning persistent process: ${this.command} ${this.args.join(' ')}`);
+
+      try {
+        const env = this.getEnv ? this.getEnv() : { ...process.env, TERM: 'xterm-256color' };
+        this.shell = pty.spawn(this.command, this.args, {
+          name: 'xterm-color',
+          cols: 120,
+          rows: 40,
+          cwd: '/tmp',
+          env,
+        });
+      } catch (spawnErr) {
+        console.error(`[${this.name}] Failed to spawn:`, spawnErr.message);
+        reject(new Error(`Failed to spawn ${this.command}: ${spawnErr.message}`));
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        console.error(`[${this.name}] Spawn timeout after ${this.getTimeout()}ms`);
+        this.killProcess();
+        reject(new Error('Timeout waiting for process to become ready'));
+      }, this.getTimeout());
+
+      const spawnDataHandler = this.shell.onData((data) => {
+        spawnOutput += data;
+
+        // Handle trust prompt during spawn (only once)
+        if (!trustHandled && this.handleTrustPrompt && this.handleTrustPrompt(this.shell, spawnOutput)) {
+          trustHandled = true;
+          return;
+        }
+
+        // Respond to terminal capability queries
+        this._respondToTerminalQueries(data);
+
+        // Check if ready for commands
+        if (this.isReadyForCommands(spawnOutput)) {
+          console.log(`[${this.name}] Process ready for commands`);
+          clearTimeout(timer);
+          spawnDataHandler.dispose();
+          this.processReady = true;
+          this._setupPersistentDataHandler();
+          this._setupPersistentExitHandler();
+          resolve();
+        }
+      });
+
+      const spawnExitHandler = this.shell.onExit(({ exitCode }) => {
+        clearTimeout(timer);
+        spawnDataHandler.dispose();
+        spawnExitHandler.dispose();
+        this.shell = null;
+        this.processReady = false;
+        reject(new Error(`Process exited during spawn with code ${exitCode}`));
+      });
+    });
+  }
+
+  async sendCommandAndWait() {
+    return new Promise((resolve, reject) => {
+      this.output = '';
+      this._commandInFlight = true;
+
+      const finish = (result) => {
+        this._commandInFlight = false;
+        this._onDataCallback = null;
+        clearTimeout(timer);
+        resolve(result);
+      };
+
+      const timer = setTimeout(() => {
+        console.log(`[${this.name}] Command timeout after ${this.getTimeout()}ms, output length: ${this.output.length}`);
+        if (this.output.length > 0) {
+          console.log(`[${this.name}] Partial output:`, this.stripAnsi(this.output).substring(0, 500));
+          require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, this.output);
+        }
+        if (this.output.length > 100) {
+          finish(this.output);
+        } else {
+          this._commandInFlight = false;
+          this._onDataCallback = null;
+          reject(new Error('Timeout waiting for usage data'));
+        }
+      }, this.getTimeout());
+
+      this._onDataCallback = () => {
+        if (this.hasCompleteOutput(this.output)) {
+          console.log(`[${this.name}] Complete output detected`);
+          // Small delay to capture any remaining output
+          setTimeout(() => finish(this.output), 100);
+        }
+      };
+
+      // Process is already at prompt, send commands immediately
+      console.log(`[${this.name}] Sending commands to persistent process...`);
+      this.sendCommands(this.shell, this.output);
+    });
+  }
+
+  _setupPersistentDataHandler() {
+    const handler = this.shell.onData((data) => {
+      this.output += data;
+
+      // Suppress terminal query responses while a command is in-flight
+      // to avoid corrupting the CLI's input buffer with interleaved writes
+      if (!this._commandInFlight) {
+        this._respondToTerminalQueries(data);
+      }
+
+      // Invoke command waiter callback if set
+      if (this._onDataCallback) {
+        this._onDataCallback(data);
+      }
+    });
+    this._disposables.push(handler);
+  }
+
+  _setupPersistentExitHandler() {
+    const handler = this.shell.onExit(({ exitCode }) => {
+      console.log(`[${this.name}] Persistent process exited with code ${exitCode}`);
+      this.shell = null;
+      this.processReady = false;
+      this._onDataCallback = null;
+      this._disposables = [];
+    });
+    this._disposables.push(handler);
+  }
+
+  _respondToTerminalQueries(data, target) {
+    const sh = target || this.shell;
+    if (!sh) return;
+    if (data.includes('\x1b[6n')) sh.write('\x1b[1;1R');        // cursor position
+    if (data.includes('\x1b[c')) sh.write('\x1b[?62;22c');      // device attributes
+    if (data.includes('\x1b[?u')) sh.write('\x1b[?0u');         // kitty keyboard
+    if (data.includes('\x1b]10;?')) sh.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\'); // fg color
+    if (data.includes('\x1b]11;?')) sh.write('\x1b]11;rgb:0000/0000/0000\x1b\\'); // bg color
+    if (data.includes('\x1b[>q')) sh.write('\x1bP>|xterm(1)\x1b\\');  // terminal version
+    if (data.includes('\x1b[>4;?m')) sh.write('\x1b[>4m');      // modified keys
+  }
+
+  // Hook for subclasses to handle additional prompts during fresh process startup
+  _handleAdditionalPrompts(_shell, _data, _output) {
+    // Override in subclasses (e.g. codex update screen, continuation prompts)
+  }
+
+  killProcess() {
+    if (this.shell) {
+      console.log(`[${this.name}] Killing persistent process`);
+      for (const d of this._disposables) {
+        d.dispose();
+      }
+      this._disposables = [];
+      this._onDataCallback = null;
+      this.processReady = false;
+      try {
+        this.shell.kill();
+      } catch (_e) {
+        // Process may already be dead
+      }
+      this.shell = null;
+    }
+  }
+
+  async _runCommandFresh() {
     return new Promise((resolve, reject) => {
       const timeout = this.getTimeout();
       let output = '';
@@ -105,17 +295,12 @@ class BaseAgent {
 
         // Handle trust prompt if agent has this method (only once)
         if (!trustHandled && this.handleTrustPrompt && this.handleTrustPrompt(shell, output)) {
-          // Trust prompt handled, wait for real prompt
           trustHandled = true;
           return;
         }
 
-        // Respond to cursor position query (CSI 6n) - some CLIs require this
-        // Query is: ESC[6n, Response should be: ESC[{row};{col}R
-        if (data.includes('\x1b[6n') || data.includes('[6n')) {
-          console.log(`[${this.name}] Responding to cursor position query`);
-          shell.write('\x1b[1;1R'); // Report cursor at row 1, col 1
-        }
+        this._respondToTerminalQueries(data, shell);
+        this._handleAdditionalPrompts(shell, data, output);
 
         // Send commands when ready
         if (!commandsSent && this.isReadyForCommands(output)) {
