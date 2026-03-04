@@ -53,6 +53,9 @@ class LLMWatcher {
       }
     }
 
+    // Start HTTP server immediately so it's available during agent loading
+    this.startServer();
+
     // Pre-spawn persistent processes in parallel before sending commands
     if (!this.freshProcess) {
       console.log('Spawning agent processes...');
@@ -68,9 +71,6 @@ class LLMWatcher {
     // Initial fetch
     console.log('Fetching initial usage data...');
     await this.refreshAll();
-
-    // Start HTTP server
-    this.startServer();
   }
 
   createAgent(name) {
