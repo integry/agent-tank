@@ -110,23 +110,14 @@ body {
   color: var(--text-tertiary);
 }
 
-.top-nav .refresh-all-btn {
-  padding: 8px 16px;
+/* Unified header button base styles */
+.top-nav .refresh-all-btn,
+.top-nav .monitor-toggle-btn,
+.top-nav .theme-toggle-btn {
+  height: 36px;
+  padding: 0 12px;
   font-size: 13px;
   font-weight: 500;
-  width: auto;
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-body.light-mode .top-nav .refresh-all-btn {
-  background: var(--accent-primary);
-  border: none;
-}
-
-.top-nav .theme-toggle-btn {
-  padding: 8px 12px;
-  font-size: 13px;
   width: auto;
   display: flex;
   align-items: center;
@@ -134,6 +125,71 @@ body.light-mode .top-nav .refresh-all-btn {
   background: #1e293b;
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: var(--text-secondary);
+  border-radius: 6px;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+}
+
+/* Interactive click feedback - press effect */
+.top-nav .refresh-all-btn:active:not(:disabled),
+.top-nav .monitor-toggle-btn:active:not(:disabled),
+.top-nav .theme-toggle-btn:active:not(:disabled) {
+  transform: scale(0.98);
+  background: #151d2a;
+}
+
+/* Refresh All button specific */
+.top-nav .refresh-all-btn {
+  --accent-glow: rgba(20, 184, 166, 0.4);
+}
+
+.top-nav .refresh-all-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 0 12px var(--accent-glow);
+  border-color: #14b8a6;
+}
+
+.top-nav .refresh-all-btn .sync-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* Syncing state for Refresh All */
+.top-nav .refresh-all-btn.syncing {
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.top-nav .refresh-all-btn.syncing .sync-icon {
+  animation: spin 0.8s linear infinite;
+}
+
+body.light-mode .top-nav .refresh-all-btn {
+  background: var(--accent-primary);
+  border: 1px solid var(--border-color);
+  color: white;
+}
+
+body.light-mode .top-nav .refresh-all-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: 0 0 12px rgba(20, 184, 166, 0.3);
+}
+
+body.light-mode .top-nav .refresh-all-btn:active:not(:disabled) {
+  background: #0f172a;
+}
+
+/* Theme toggle button specific */
+.top-nav .theme-toggle-btn {
+  --accent-glow: rgba(251, 191, 36, 0.4);
+}
+
+.top-nav .theme-toggle-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 0 12px var(--accent-glow);
+  border-color: #fbbf24;
 }
 
 body.light-mode .top-nav .theme-toggle-btn {
@@ -141,9 +197,12 @@ body.light-mode .top-nav .theme-toggle-btn {
   border: 1px solid var(--border-color);
 }
 
-.top-nav .theme-toggle-btn:hover:not(:disabled) {
+body.light-mode .top-nav .theme-toggle-btn:hover:not(:disabled) {
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.3);
+}
+
+body.light-mode .top-nav .theme-toggle-btn:active:not(:disabled) {
   background: var(--bg-secondary);
-  color: var(--text-primary);
 }
 
 .container {
@@ -776,28 +835,29 @@ body.light-mode .footer {
   height: 16px;
 }
 
-/* Monitor toggle button in top nav */
-.monitor-toggle-btn {
-  padding: 8px 12px;
-  font-size: 13px;
-  width: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: var(--text-secondary);
-  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+/* Monitor toggle button specific */
+.top-nav .monitor-toggle-btn {
+  --accent-glow: rgba(72, 187, 120, 0.4);
 }
 
-body.light-mode .monitor-toggle-btn {
+.top-nav .monitor-toggle-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 0 12px var(--accent-glow);
+  border-color: #48bb78;
+}
+
+body.light-mode .top-nav .monitor-toggle-btn {
   background: transparent;
   border: 1px solid var(--border-color);
 }
 
-.monitor-toggle-btn:hover:not(:disabled) {
+body.light-mode .top-nav .monitor-toggle-btn:hover:not(:disabled) {
+  box-shadow: 0 0 12px rgba(72, 187, 120, 0.3);
+}
+
+body.light-mode .top-nav .monitor-toggle-btn:active:not(:disabled) {
   background: var(--bg-secondary);
-  color: var(--text-primary);
 }
 
 /* Monitor active state */
@@ -820,6 +880,22 @@ body.light-mode .monitor-toggle-btn.active {
 .monitor-toggle-btn svg {
   width: 16px;
   height: 16px;
+}
+
+/* LED Status Indicator for Monitor button */
+.led-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background-color: #4b5563;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* LED active state - bright green with glow */
+.monitor-toggle-btn.active .led-indicator {
+  background-color: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
 }
 
 /* Hide default favicon when using canvas-generated one */

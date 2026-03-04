@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { agentIcons, refreshIcon, monitorIcon, tankIcon } = require('./icons');
+const { agentIcons, refreshIcon, monitorIcon, tankIcon, syncIcon } = require('./icons');
 const { formatUsage } = require('./usage-formatters');
 const { clientScript } = require('./client-script');
 
@@ -69,10 +69,14 @@ ${styles}
     </div>
     <div class="top-nav-right">
       ${globalLastChecked ? `<span class="last-checked">Last checked: ${globalLastChecked}</span>` : ''}
-      <button class="refresh-all-btn" onclick="refreshAll(event)">Refresh All</button>
+      <button class="refresh-all-btn" onclick="refreshAll(event)">
+        ${syncIcon}
+        <span class="btn-text">Refresh All</span>
+      </button>
       <button class="monitor-toggle-btn" onclick="toggleMonitor()" id="monitor-toggle-btn" title="Enable background monitoring">
         ${monitorIcon}
         <span id="monitor-text">Monitor</span>
+        <span class="led-indicator" id="led-indicator"></span>
       </button>
       <button class="theme-toggle-btn" onclick="toggleTheme()" id="theme-toggle-btn">
         <span id="theme-icon">☀️</span>

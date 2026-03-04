@@ -40,9 +40,26 @@ const clientScript = faviconScript + `
       btn.disabled = loading;
       if (loading) {
         btn.dataset.originalText = btn.innerHTML;
-        btn.innerHTML = '<span class="spinner"></span>Refreshing...';
+        // Check if this is the refresh-all-btn with sync icon
+        if (btn.classList.contains('refresh-all-btn')) {
+          btn.classList.add('syncing');
+          const textSpan = btn.querySelector('.btn-text');
+          if (textSpan) {
+            textSpan.textContent = 'Syncing...';
+          }
+        } else {
+          btn.innerHTML = '<span class="spinner"></span>Refreshing...';
+        }
       } else {
-        btn.innerHTML = btn.dataset.originalText || 'Refresh';
+        if (btn.classList.contains('refresh-all-btn')) {
+          btn.classList.remove('syncing');
+          const textSpan = btn.querySelector('.btn-text');
+          if (textSpan) {
+            textSpan.textContent = 'Refresh All';
+          }
+        } else {
+          btn.innerHTML = btn.dataset.originalText || 'Refresh';
+        }
       }
     }
     function setRefreshIconLoading(btn, loading) {
