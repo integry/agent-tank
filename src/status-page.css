@@ -348,9 +348,13 @@ body.light-mode .time-progress-fill {
   transition: color 0.2s ease, background-color 0.2s ease;
 }
 
-.refresh-icon-btn:hover {
+.refresh-icon-btn:hover:not(:disabled) {
   color: var(--accent-primary);
-  background: rgba(29, 138, 138, 0.1);
+  background: rgba(29, 138, 138, 0.15);
+}
+
+.refresh-icon-btn:hover:not(:disabled) svg {
+  stroke-width: 2.5;
 }
 
 .refresh-icon-btn:disabled {
@@ -372,6 +376,7 @@ body.light-mode .time-progress-fill {
   text-align: center;
   font-size: 13px;
   color: var(--text-tertiary);
+  margin-top: 5px;
   margin-bottom: 20px;
 }
 
@@ -379,12 +384,25 @@ body.light-mode .time-progress-fill {
 .zero-usage {
   opacity: 0.4;
   filter: grayscale(60%);
+  transition: opacity 0.2s ease, filter 0.2s ease, background-color 0.2s ease;
+}
+
+/* Interactive hover for zero-usage items - show they're still active */
+.zero-usage:hover {
+  opacity: 0.9;
+  filter: grayscale(0%);
+  background-color: rgba(0, 0, 0, 0.02);
+  border-radius: 4px;
+}
+
+body.light-mode .zero-usage:hover {
+  background-color: rgba(0, 0, 0, 0.03);
 }
 
 /* Model subheading - Codex visual grouping */
 .model-subheading {
-  margin-top: 1em;
-  padding-top: 0.75em;
+  margin-top: 1.5em;
+  padding-top: 1em;
   border-top: 1px solid var(--border-color);
   font-weight: 700;
   font-size: 14px;

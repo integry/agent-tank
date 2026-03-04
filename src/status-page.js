@@ -55,7 +55,7 @@ function statusPage(status) {
         <h2 class="agent-heading">
           ${icon}
           <span>${displayName}</span>
-          <button class="refresh-icon-btn" onclick="refresh('${name}')" ${data.isRefreshing ? 'disabled' : ''} title="Refresh ${displayName}">
+          <button class="refresh-icon-btn" onclick="refresh('${name}', event)" ${data.isRefreshing ? 'disabled' : ''} title="Refresh ${displayName}">
             ${refreshIcon}
           </button>
         </h2>
@@ -87,7 +87,7 @@ ${styles}
     <h1>LLM Limit Watcher</h1>
     ${globalLastChecked ? `<div class="last-updated-global">Last checked: ${globalLastChecked}</div>` : ''}
     <div class="refresh-all">
-      <button onclick="refreshAll()">Refresh All</button>
+      <button onclick="refreshAll(event)">Refresh All</button>
     </div>
     <div class="agents">
       ${agentCards || '<p>No agents configured</p>'}
@@ -146,7 +146,7 @@ ${styles}
         btn.classList.remove('spinning');
       }
     }
-    async function refresh(agent) {
+    async function refresh(agent, event) {
       // Handle clicks on the refresh icon button (may be SVG or button)
       const btn = event.target.closest('button');
       if (!btn) return;
@@ -172,7 +172,7 @@ ${styles}
         alert('Failed to refresh: ' + e.message);
       }
     }
-    async function refreshAll() {
+    async function refreshAll(event) {
       const btn = event.target.closest('button');
       const allRegularBtns = document.querySelectorAll('button:not(.refresh-icon-btn)');
       const allIconBtns = document.querySelectorAll('.refresh-icon-btn');
@@ -204,8 +204,9 @@ function formatClaudeUsage(usage) {
   ];
   for (const { data, label, cycle } of sections) {
     if (data) {
-      const isZero = data.percent === 0;
-      html += usageItem(label, data.percent, '% used', { isZero });
+      const percent = data.percent ?? 0;
+      const isZero = percent === 0;
+      html += usageItem(label, percent, '% used', { isZero });
       if (data.resetsIn) {
         html += resetInfoItem(data.resetsIn, data.resetsAt, cycle, isZero);
       }
@@ -218,8 +219,9 @@ function formatGeminiUsage(usage) {
   let html = '';
   if (usage.models && usage.models.length > 0) {
     for (const model of usage.models) {
-      const isZero = model.percentUsed === 0;
-      html += usageItem(model.model, model.percentUsed, '% used', { isZero });
+      const percent = model.percentUsed ?? 0;
+      const isZero = percent === 0;
+      html += usageItem(model.model, percent, '% used', { isZero });
       if (model.resetsIn) {
         html += resetInfoItem(model.resetsIn, null, 'sessionGemini', isZero);
       }
@@ -237,21 +239,22 @@ function formatCodexUsage(usage) {
   if (usage.modelLimits) {
     models.push(...usage.modelLimits);
   }
-  for (let i = 0; i < models.length; i++) {
-    const ml = models[i];
+  for (const ml of models) {
     // Use model-subheading class for Codex models to create visual grouping
-    const isFirst = i === 0;
-    html += `<div class="usage-item model-subheading${isFirst ? '' : ''}"><span class="usage-label">${ml.name}</span></div>`;
+    // CSS :first-child handles the first item styling automatically
+    html += `<div class="usage-item model-subheading"><span class="usage-label">${ml.name}</span></div>`;
     if (ml.fiveHour) {
-      const isZero = ml.fiveHour.percentUsed === 0;
-      html += usageItem('5h limit', ml.fiveHour.percentUsed, '% used', { isZero });
+      const fiveHourPercent = ml.fiveHour.percentUsed ?? 0;
+      const isZero = fiveHourPercent === 0;
+      html += usageItem('5h limit', fiveHourPercent, '% used', { isZero });
       if (ml.fiveHour.resetsIn) {
         html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', isZero);
       }
     }
     if (ml.weekly) {
-      const isZero = ml.weekly.percentUsed === 0;
-      html += usageItem('Weekly', ml.weekly.percentUsed, '% used', { isZero });
+      const weeklyPercent = ml.weekly.percentUsed ?? 0;
+      const isZero = weeklyPercent === 0;
+      html += usageItem('Weekly', weeklyPercent, '% used', { isZero });
       if (ml.weekly.resetsIn) {
         html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', isZero);
       }
