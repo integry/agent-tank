@@ -134,6 +134,8 @@ body.light-mode .top-nav .theme-toggle-btn {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 20px;
+  /* Ensure grid fills container width for proper row layout */
+  width: 100%;
   /* Top-align cards with generous spacing below the header */
   margin-top: 48px;
   /* Align to top, not center - scalable for multiple rows */
