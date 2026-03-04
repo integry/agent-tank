@@ -337,18 +337,6 @@ const clientScript = `
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      // Draw percentage text in center with background for readability
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, 16, 0, 2 * Math.PI);
-      ctx.fill();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 18px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(\`\${percent}\`, centerX, centerY);
-
       // Convert to favicon
       const faviconUrl = canvas.toDataURL('image/png');
 
