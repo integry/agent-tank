@@ -92,6 +92,9 @@ ${styles}
     <div class="agents">
       ${agentCards || '<p>No agents configured</p>'}
     </div>
+    <footer class="footer">
+      <a href="https://github.com/integry/llm-limit-watcher">LLM Limit Watcher</a> &copy; ${new Date().getFullYear()} <a href="https://propr.dev">Rinalds Uzkalns</a>. MIT License.
+    </footer>
   </div>
   <script>
     // Theme management

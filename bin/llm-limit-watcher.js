@@ -12,6 +12,7 @@ const options = {
   'auth-user': { type: 'string' },
   'auth-pass': { type: 'string' },
   'auth-token': { type: 'string' },
+  'fresh-process': { type: 'boolean', default: false },
   config: { type: 'string', short: 'c' },
   help: { type: 'boolean', short: 'h', default: false },
   'auto-discover': { type: 'boolean', default: true },
@@ -34,6 +35,7 @@ Options:
   --auth-user <user>    HTTP Basic Auth username
   --auth-pass <pass>    HTTP Basic Auth password
   --auth-token <token>  API key for Bearer token auth
+  --fresh-process       Spawn a new process per refresh (default: false)
   --config, -c          Path to config file (JSON)
   --auto-discover       Auto-discover available agents (default: true)
   --help, -h            Show this help message
@@ -43,6 +45,7 @@ Environment variables:
   LLM_WATCHER_PASS      Basic auth password (overrides --auth-pass)
   LLM_WATCHER_TOKEN     API key (overrides --auth-token)
   LLM_WATCHER_HOST      Bind address (overrides --host)
+  LLM_WATCHER_FRESH_PROCESS  Use fresh process per refresh ("1" or "true")
 
 Examples:
   llm-limit-watcher                          # Auto-discover and monitor all available
@@ -88,13 +91,28 @@ const auth = {
 
 const host = process.env.LLM_WATCHER_HOST || values.host || config.host;
 
+const freshProcessEnv = process.env.LLM_WATCHER_FRESH_PROCESS;
+const freshProcess = values['fresh-process'] ||
+  config.freshProcess ||
+  freshProcessEnv === '1' || freshProcessEnv === 'true';
+
 const watcher = new LLMWatcher({
   agents: agents.length > 0 ? agents : null, // null = auto-discover
   autoDiscover: values['auto-discover'] && agents.length === 0,
   port: parseInt(values.port || config.port || '3456', 10),
   host,
   auth,
+  freshProcess,
 });
+
+// Graceful shutdown
+const shutdown = () => {
+  console.log('\nShutting down...');
+  watcher.stop();
+  process.exit(0);
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 watcher.start().catch(err => {
   console.error('Failed to start:', err.message);

@@ -74,15 +74,15 @@ class GeminiAgent extends BaseAgent {
 
   sendCommands(shell, _output) {
     console.log(`[${this.name}] Sending /stats command...`);
-    // Send /stats command
-    setTimeout(() => {
-      shell.write('/stats\r');
-    }, 100);
-
-    // Handle autocomplete menu - select default (session stats)
-    setTimeout(() => {
-      shell.write('\r');
-    }, 300);
+    if (this.freshProcess) {
+      // Fresh mode: longer delays for autocomplete menu
+      setTimeout(() => shell.write('/stats\r'), 100);
+      setTimeout(() => shell.write('\r'), 300);
+    } else {
+      // Persistent mode: tighter delays
+      setTimeout(() => shell.write('/stats\r'), 50);
+      setTimeout(() => shell.write('\r'), 150);
+    }
   }
 
   parseOutput(output) {

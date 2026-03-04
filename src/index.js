@@ -11,6 +11,7 @@ class LLMWatcher {
     this.host = options.host || '127.0.0.1';
     this.autoDiscover = options.autoDiscover !== false;
     this.requestedAgents = options.agents || null;
+    this.freshProcess = options.freshProcess || false;
     this.auth = options.auth || {};
     this.agents = new Map();
     this.server = null;
@@ -46,17 +47,30 @@ class LLMWatcher {
     for (const name of agentNames) {
       const agent = this.createAgent(name);
       if (agent) {
+        agent.freshProcess = this.freshProcess;
         this.agents.set(name, agent);
-        console.log(`Created agent: ${name}`);
+        console.log(`Created agent: ${name}${this.freshProcess ? ' (fresh process mode)' : ''}`);
       }
+    }
+
+    // Start HTTP server immediately so it's available during agent loading
+    this.startServer();
+
+    // Pre-spawn persistent processes in parallel before sending commands
+    if (!this.freshProcess) {
+      console.log('Spawning agent processes...');
+      await Promise.all(
+        Array.from(this.agents.values()).map(agent =>
+          agent.spawnProcess().catch(err =>
+            console.error(`Error spawning ${agent.name}:`, err.message)
+          )
+        )
+      );
     }
 
     // Initial fetch
     console.log('Fetching initial usage data...');
     await this.refreshAll();
-
-    // Start HTTP server
-    this.startServer();
   }
 
   createAgent(name) {
@@ -238,6 +252,9 @@ class LLMWatcher {
   }
 
   stop() {
+    for (const agent of this.agents.values()) {
+      agent.killProcess();
+    }
     if (this.server) {
       this.server.close();
     }
