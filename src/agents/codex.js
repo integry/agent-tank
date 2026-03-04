@@ -34,17 +34,8 @@ class CodexAgent extends BaseAgent {
     return false;
   }
 
-  // Detect update notification screen and select Skip option
   handleUpdateScreen(shell, output) {
     const clean = this.stripAnsi(output);
-
-    // Detect Codex update screen format:
-    // "Update available! X.X.X -> Y.Y.Y"
-    // "› 1. Update now"
-    // "  2. Skip"
-    // "  3. Skip until next version"
-    // Note: First char may be cut off ("pdate available" instead of "Update available")
-    // Note: Text may be concatenated without proper spacing after ANSI stripping
     const hasUpdateAvailable = /u?pdate available/i.test(clean);
     const hasVersionArrow = /[\d.]+\s*->\s*[\d.]+/.test(clean);
     // Also check for "Skip" with various patterns - may appear as "2.Skip" or just "Skip"
@@ -100,8 +91,31 @@ class CodexAgent extends BaseAgent {
     return Object.keys(versionInfo).length > 0 ? versionInfo : null;
   }
 
+  isReadyForCommands(output) {
+    return this.isReadyForStatus(output);
+  }
+
   isReadyForStatus(output) {
     return output.includes('? for shortcuts') || output.includes('To get started');
+  }
+
+  sendCommands(shell, _output) {
+    console.log(`[${this.name}] Sending /status command...`);
+    setTimeout(() => shell.write('/status\r'), 100);
+  }
+
+  _handleAdditionalPrompts(shell, _data, output) {
+    if (!this._updateHandled && this.handleUpdateScreen(shell, output)) {
+      this._updateHandled = true;
+      return;
+    }
+    const cleanOutput = this.stripAnsi(output);
+    const isUpdateScreen = /u?pdate available/i.test(cleanOutput) && /[\d.]+\s*->\s*[\d.]+/.test(cleanOutput);
+    if (!this._continuationHandled && !isUpdateScreen && output.includes('Press enter to continue')) {
+      console.log(`[${this.name}] Detected continuation prompt`);
+      this._continuationHandled = true;
+      shell.write('\r');
+    }
   }
 
   handleInteractivePrompts(shell, data, output, state) {
@@ -115,12 +129,7 @@ class CodexAgent extends BaseAgent {
       return true;
     }
 
-    // Respond to terminal capability queries to avoid ~2s timeouts each
-    if (data.includes('\x1b[6n')) shell.write('\x1b[1;1R');        // cursor position
-    if (data.includes('\x1b[c')) shell.write('\x1b[?62;22c');      // device attributes
-    if (data.includes('\x1b[?u')) shell.write('\x1b[?0u');         // kitty keyboard
-    if (data.includes('\x1b]10;?')) shell.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\'); // fg color
-    if (data.includes('\x1b]11;?')) shell.write('\x1b]11;rgb:0000/0000/0000\x1b\\'); // bg color
+    this._respondToTerminalQueries(data, shell);
 
     const cleanOutput = this.stripAnsi(output);
     const isUpdateScreen = /u?pdate available/i.test(cleanOutput) && /[\d.]+\s*->\s*[\d.]+/.test(cleanOutput);
@@ -133,96 +142,116 @@ class CodexAgent extends BaseAgent {
     return false;
   }
 
-  async runCommand() {
-    const pty = require('node-pty');
-
+  async spawnProcess() {
     return new Promise((resolve, reject) => {
-      let output = '';
-      let completed = false;
-      let statusSent = false;
-      let retryTimer = null;
+      const pty = require('node-pty');
+      let spawnOutput = '';
       const state = { trustHandled: false, continuationHandled: false, updateHandled: false };
 
-      console.log(`[${this.name}] Spawning: ${this.command} ${this.args.join(' ')}`);
+      console.log(`[${this.name}] Spawning persistent process: ${this.command} ${this.args.join(' ')}`);
 
-      const shell = pty.spawn(this.command, this.args, {
-        name: 'xterm-256color',
-        cols: 120,
-        rows: 40,
-        cwd: '/tmp',
-        env: { ...process.env, TERM: 'xterm-256color' },
+      try {
+        this.shell = pty.spawn(this.command, this.args, {
+          name: 'xterm-256color',
+          cols: 120,
+          rows: 40,
+          cwd: '/tmp',
+          env: { ...process.env, TERM: 'xterm-256color' },
+        });
+      } catch (spawnErr) {
+        console.error(`[${this.name}] Failed to spawn:`, spawnErr.message);
+        reject(new Error(`Failed to spawn ${this.command}: ${spawnErr.message}`));
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        console.error(`[${this.name}] Spawn timeout after ${this.getTimeout()}ms`);
+        this.killProcess();
+        reject(new Error('Timeout waiting for process to become ready'));
+      }, this.getTimeout());
+
+      const spawnDataHandler = this.shell.onData((data) => {
+        spawnOutput += data;
+
+        this.handleInteractivePrompts(this.shell, data, spawnOutput, state);
+
+        if (this.isReadyForStatus(spawnOutput)) {
+          console.log(`[${this.name}] Process ready for commands`);
+          clearTimeout(timer);
+          spawnDataHandler.dispose();
+          this.processReady = true;
+          this._setupPersistentDataHandler();
+          this._setupPersistentExitHandler();
+          resolve();
+        }
       });
 
-      const cleanup = () => {
+      const spawnExitHandler = this.shell.onExit(({ exitCode }) => {
+        clearTimeout(timer);
+        spawnDataHandler.dispose();
+        spawnExitHandler.dispose();
+        this.shell = null;
+        this.processReady = false;
+        reject(new Error(`Process exited during spawn with code ${exitCode}`));
+      });
+    });
+  }
+
+  async sendCommandAndWait() {
+    return new Promise((resolve, reject) => {
+      this.output = '';
+      this._commandInFlight = true;
+      let retryTimer = null;
+      let settleTimer = null;
+
+      const finish = (result) => {
+        this._commandInFlight = false;
+        this._onDataCallback = null;
         clearTimeout(timer);
         if (retryTimer) clearInterval(retryTimer);
+        if (settleTimer) clearTimeout(settleTimer);
+        resolve(result);
       };
 
       const timer = setTimeout(() => {
-        if (!completed) {
-          completed = true;
-          cleanup();
-          console.log(`[${this.name}] Timeout after ${this.getTimeout()}ms, output length: ${output.length}`);
-          if (output.length > 0) {
-            console.log(`[${this.name}] Partial output:`, this.stripAnsi(output).substring(0, 500));
-            require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, output);
-          }
-          shell.kill();
-          if (output.length > 100) {
-            resolve(output);
-          } else {
-            reject(new Error('Timeout waiting for usage data'));
-          }
+        if (retryTimer) clearInterval(retryTimer);
+        if (settleTimer) clearTimeout(settleTimer);
+        console.log(`[${this.name}] Command timeout after ${this.getTimeout()}ms, output length: ${this.output.length}`);
+        if (this.output.length > 0) {
+          console.log(`[${this.name}] Partial output:`, this.stripAnsi(this.output).substring(0, 500));
+          require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, this.output);
+        }
+        if (this.output.length > 100) {
+          finish(this.output);
+        } else {
+          this._commandInFlight = false;
+          this._onDataCallback = null;
+          reject(new Error('Timeout waiting for usage data'));
         }
       }, this.getTimeout());
 
-      shell.onData((data) => {
-        output += data;
-
-        if (this.handleInteractivePrompts(shell, data, output, state)) return;
-
-        // Send /status when ready
-        if (!statusSent && this.isReadyForStatus(output)) {
-          console.log(`[${this.name}] Ready for commands, sending /status...`);
-          statusSent = true;
-          setTimeout(() => shell.write('/status'), 50);
-          setTimeout(() => shell.write('\r'), 150);
+      // Start retry timer immediately — on first run the model may still
+      // be loading so /status won't return limits yet
+      retryTimer = setInterval(() => {
+        if (!this.hasCompleteOutput(this.output)) {
+          console.log(`[${this.name}] Retrying /status...`);
+          this.output = '';
+          this.shell.write('/status\r');
         }
+      }, 1500);
 
-        // Retry /status every second if limits data wasn't available yet
-        if (statusSent && !retryTimer && output.includes('data not available yet')) {
-          console.log(`[${this.name}] Limits not available yet, retrying...`);
-          retryTimer = setInterval(() => {
-            if (completed) { clearInterval(retryTimer); return; }
-            console.log(`[${this.name}] Retrying /status...`);
-            shell.write('/status\r');
-          }, 500);
-        }
-
-        if (statusSent && this.hasCompleteOutput(output)) {
-          console.log(`[${this.name}] Complete output detected, finishing...`);
-          if (!completed) {
-            completed = true;
-            cleanup();
-            shell.kill();
-            resolve(output);
+      this._onDataCallback = () => {
+        if (this.hasCompleteOutput(this.output)) {
+          // Delay to let additional model sections render
+          if (!settleTimer) {
+            console.log(`[${this.name}] Complete output detected, waiting to settle...`);
+            settleTimer = setTimeout(() => finish(this.output), 500);
           }
         }
-      });
+      };
 
-      shell.onExit(({ exitCode }) => {
-        if (!completed) {
-          completed = true;
-          cleanup();
-          console.log(`[${this.name}] Process exited with code ${exitCode}, output length: ${output.length}`);
-          require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, output);
-          if (output) {
-            resolve(output);
-          } else {
-            reject(new Error(`Process exited with code ${exitCode}`));
-          }
-        }
-      });
+      console.log(`[${this.name}] Sending /status to persistent process...`);
+      setTimeout(() => this.shell.write('/status\r'), 100);
     });
   }
 

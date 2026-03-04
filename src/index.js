@@ -11,6 +11,7 @@ class LLMWatcher {
     this.host = options.host || '127.0.0.1';
     this.autoDiscover = options.autoDiscover !== false;
     this.requestedAgents = options.agents || null;
+    this.freshProcess = options.freshProcess || false;
     this.auth = options.auth || {};
     this.agents = new Map();
     this.server = null;
@@ -46,8 +47,9 @@ class LLMWatcher {
     for (const name of agentNames) {
       const agent = this.createAgent(name);
       if (agent) {
+        agent.freshProcess = this.freshProcess;
         this.agents.set(name, agent);
-        console.log(`Created agent: ${name}`);
+        console.log(`Created agent: ${name}${this.freshProcess ? ' (fresh process mode)' : ''}`);
       }
     }
 
@@ -238,6 +240,9 @@ class LLMWatcher {
   }
 
   stop() {
+    for (const agent of this.agents.values()) {
+      agent.killProcess();
+    }
     if (this.server) {
       this.server.close();
     }
