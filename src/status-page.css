@@ -128,11 +128,14 @@ body.light-mode .top-nav .theme-toggle-btn {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
+  /* Ensure full width for grid children */
+  width: 100%;
 }
 
 .agents {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  /* Default: single column on mobile */
+  grid-template-columns: 1fr;
   gap: 20px;
   /* Ensure grid fills container width for proper row layout */
   width: 100%;
@@ -140,6 +143,13 @@ body.light-mode .top-nav .theme-toggle-btn {
   margin-top: 48px;
   /* Align to top, not center - scalable for multiple rows */
   align-content: start;
+}
+
+/* Row layout for wider screens - 3 columns for 3 provider cards */
+@media (min-width: 768px) {
+  .agents {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .agent-card {
