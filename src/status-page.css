@@ -280,6 +280,31 @@ body.light-mode .agent-card {
   min-height: 48px;
 }
 
+/* Trackable usage items - clickable entire row */
+.usage-item.trackable {
+  cursor: pointer;
+  padding: 10px 8px 4px 8px;
+  margin: 0 -8px;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+}
+
+.usage-item.trackable:hover {
+  background-color: var(--bg-secondary);
+}
+
+/* Active tracking state for the row */
+.usage-item.trackable.tracking {
+  background-color: rgba(72, 187, 120, 0.08);
+  border: 1px solid rgba(72, 187, 120, 0.2);
+  margin: -1px -9px 0 -9px;
+  padding: 10px 8px 4px 8px;
+}
+
+body.light-mode .usage-item.trackable.tracking {
+  background-color: rgba(72, 187, 120, 0.06);
+}
+
 .usage-item:last-child { border-bottom: none; }
 
 .usage-item.reset-info {
@@ -765,8 +790,8 @@ body.light-mode .usage-item.zero-usage:hover {
   margin-top: auto;
   padding: 16px 24px;
   font-size: 0.75rem;
-  color: #475569;
-  opacity: 0.35;
+  color: #8b949e;
+  opacity: 0.6;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -776,16 +801,16 @@ body.light-mode .usage-item.zero-usage:hover {
 
 /* Reveal footer on hover */
 .footer:hover {
-  opacity: 0.7;
+  opacity: 0.85;
 }
 
 body.light-mode .footer {
-  color: #6b7280;
-  opacity: 0.4;
+  color: #4b5563;
+  opacity: 0.65;
 }
 
 body.light-mode .footer:hover {
-  opacity: 0.8;
+  opacity: 0.9;
 }
 
 .footer-left,

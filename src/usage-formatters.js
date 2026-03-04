@@ -99,11 +99,19 @@ function usageItem(label, value, suffix, options = {}) {
     data-percent="${value}"
     data-color="${progressColor}"
     data-resets-in="${resetsIn}"
-    onclick="toggleTracking(this)"
+    onclick="event.stopPropagation(); toggleTracking(this)"
     title="Track this metric in tab">${trackIcon}</button>`;
 
   return `
-    <div class="usage-item${zeroClass}">
+    <div class="usage-item${zeroClass} trackable"
+      data-metric-id="${trackingId}"
+      data-agent="${agentName}"
+      data-label="${label}"
+      data-percent="${value}"
+      data-color="${progressColor}"
+      data-resets-in="${resetsIn}"
+      onclick="toggleTrackingFromRow(this)"
+      title="Click to track this metric">
       ${labelHtml}
       <span class="usage-value ${colorClass}"><span class="usage-percent">${value}</span><span class="usage-suffix">${suffix}</span>${trackButton}</span>
     </div>

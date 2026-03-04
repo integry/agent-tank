@@ -147,9 +147,13 @@ const clientScript = faviconScript + `
 
       // Restore tracked metric button state
       if (trackedMetric && monitorEnabled) {
-        const trackBtn = document.querySelector(\`[data-metric-id="\${trackedMetric.metricId}"]\`);
+        const trackBtn = document.querySelector(\`.track-btn[data-metric-id="\${trackedMetric.metricId}"]\`);
+        const trackRow = document.querySelector(\`.usage-item[data-metric-id="\${trackedMetric.metricId}"]\`);
         if (trackBtn) {
           trackBtn.classList.add('tracking');
+          if (trackRow) {
+            trackRow.classList.add('tracking');
+          }
           // Update trackedMetric with fresh data from the page
           trackedMetric.percent = parseInt(trackBtn.dataset.percent, 10);
           trackedMetric.color = trackBtn.dataset.color;
@@ -160,7 +164,11 @@ const clientScript = faviconScript + `
         } else {
           // Metric no longer exists, clear tracking
           clearTracking();
+          generateDefaultFavicon();
         }
+      } else {
+        // No tracking active, show default favicon
+        generateDefaultFavicon();
       }
     }
 
@@ -216,9 +224,13 @@ const clientScript = faviconScript + `
 
       const metricId = btn.dataset.metricId;
 
-      // If already tracking this metric, untrack it
+      // If already tracking this metric, untrack it and turn off global monitoring
       if (trackedMetric && trackedMetric.metricId === metricId) {
         clearTracking();
+        // Turn off global monitoring when user unchecks a tracked metric
+        monitorEnabled = false;
+        localStorage.setItem('monitorEnabled', 'false');
+        updateMonitorButton();
         restoreOriginalState();
         return;
       }
@@ -228,9 +240,18 @@ const clientScript = faviconScript + `
       if (prevTracked) {
         prevTracked.classList.remove('tracking');
       }
+      const prevTrackedRow = document.querySelector('.usage-item.tracking');
+      if (prevTrackedRow) {
+        prevTrackedRow.classList.remove('tracking');
+      }
 
       // Set new tracking
       btn.classList.add('tracking');
+      // Also mark the parent row as tracking
+      const parentRow = btn.closest('.usage-item');
+      if (parentRow) {
+        parentRow.classList.add('tracking');
+      }
       trackedMetric = {
         metricId: metricId,
         agent: btn.dataset.agent,
@@ -258,28 +279,37 @@ const clientScript = faviconScript + `
       if (prevTracked) {
         prevTracked.classList.remove('tracking');
       }
+      const prevTrackedRow = document.querySelector('.usage-item.tracking');
+      if (prevTrackedRow) {
+        prevTrackedRow.classList.remove('tracking');
+      }
       trackedMetric = null;
       localStorage.removeItem('trackedMetric');
       notificationSent = false;
       localStorage.removeItem('notificationSent');
     }
 
-    // Restore original favicon and title
+    // Toggle tracking from clicking on the entire row
+    function toggleTrackingFromRow(row) {
+      // Find the track button within this row and delegate to toggleTracking
+      const trackBtn = row.querySelector('.track-btn');
+      if (trackBtn) {
+        toggleTracking(trackBtn);
+        // Also toggle the row's tracking class
+        if (trackBtn.classList.contains('tracking')) {
+          row.classList.add('tracking');
+        } else {
+          row.classList.remove('tracking');
+        }
+      }
+    }
+
+    // Restore default favicon and title
     function restoreOriginalState() {
       document.title = 'Agent Tank';
 
-      // Remove canvas favicon and restore original
-      const canvasFavicon = document.querySelector('link[rel="icon"]');
-      if (canvasFavicon) {
-        canvasFavicon.remove();
-      }
-
-      if (originalFavicon) {
-        const link = document.createElement('link');
-        link.rel = 'icon';
-        link.href = originalFavicon;
-        document.head.appendChild(link);
-      }
+      // Generate default idle tank favicon
+      generateDefaultFavicon();
     }
 
     // Update favicon with Canvas-generated vertical tank

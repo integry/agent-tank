@@ -123,6 +123,76 @@ const faviconScript = `
       }
       faviconLink.href = faviconUrl;
     }
+
+    // Generate default idle tank favicon when monitoring is not active
+    function generateDefaultFavicon() {
+      const canvas = document.createElement('canvas');
+      const size = 64;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+
+      // Clear canvas
+      ctx.clearRect(0, 0, size, size);
+
+      // Tank dimensions - same as progress favicon
+      const tankLeft = 12;
+      const tankRight = size - 12;
+      const tankTop = 8;
+      const tankBottom = size - 4;
+      const tankWidth = tankRight - tankLeft;
+      const tankHeight = tankBottom - tankTop;
+      const cornerRadius = 8;
+
+      // Draw empty tank background (no liquid)
+      ctx.fillStyle = 'rgba(100, 100, 100, 0.25)';
+      ctx.beginPath();
+      ctx.moveTo(tankLeft, tankTop);
+      ctx.lineTo(tankRight, tankTop);
+      ctx.lineTo(tankRight, tankBottom - cornerRadius);
+      ctx.quadraticCurveTo(tankRight, tankBottom, tankRight - cornerRadius, tankBottom);
+      ctx.lineTo(tankLeft + cornerRadius, tankBottom);
+      ctx.quadraticCurveTo(tankLeft, tankBottom, tankLeft, tankBottom - cornerRadius);
+      ctx.lineTo(tankLeft, tankTop);
+      ctx.closePath();
+      ctx.fill();
+
+      // Draw tank outline (subdued color for idle state)
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(tankLeft, tankTop);
+      ctx.lineTo(tankRight, tankTop);
+      ctx.lineTo(tankRight, tankBottom - cornerRadius);
+      ctx.quadraticCurveTo(tankRight, tankBottom, tankRight - cornerRadius, tankBottom);
+      ctx.lineTo(tankLeft + cornerRadius, tankBottom);
+      ctx.quadraticCurveTo(tankLeft, tankBottom, tankLeft, tankBottom - cornerRadius);
+      ctx.lineTo(tankLeft, tankTop);
+      ctx.stroke();
+
+      // Draw measurement tick marks (subdued)
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.lineWidth = 1;
+      for (let i = 1; i <= 4; i++) {
+        const tickY = tankTop + (tankHeight - cornerRadius) * (i / 5);
+        ctx.beginPath();
+        ctx.moveTo(tankLeft + 2, tickY);
+        ctx.lineTo(tankLeft + 8, tickY);
+        ctx.stroke();
+      }
+
+      // Convert to favicon
+      const faviconUrl = canvas.toDataURL('image/png');
+
+      // Update or create favicon link
+      let faviconLink = document.querySelector('link[rel="icon"]');
+      if (!faviconLink) {
+        faviconLink = document.createElement('link');
+        faviconLink.rel = 'icon';
+        document.head.appendChild(faviconLink);
+      }
+      faviconLink.href = faviconUrl;
+    }
 `;
 
 module.exports = { faviconScript };
