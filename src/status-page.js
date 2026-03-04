@@ -329,8 +329,12 @@ function parseResetsInToSeconds(resetsIn) {
 }
 
 function resetInfoItem(resetsIn, originalValue, cycleType, isZero = false) {
+  // If usage is at 0%, hide the "Resets in" row entirely - it's useless info when at full capacity
+  if (isZero) {
+    return '';
+  }
+
   const tooltip = originalValue ? ` title="${originalValue}"` : '';
-  const zeroClass = isZero ? ' zero-usage' : '';
 
   // Calculate elapsed time progress bar
   let timeProgressHtml = '';
@@ -342,13 +346,13 @@ function resetInfoItem(resetsIn, originalValue, cycleType, isZero = false) {
     const elapsedSeconds = cycleDuration - resetsInSeconds;
     const elapsedPercent = Math.min(100, Math.max(0, (elapsedSeconds / cycleDuration) * 100));
 
-    timeProgressHtml = `<div class="time-progress-bar${zeroClass}" title="Time elapsed in cycle: ${Math.round(elapsedPercent)}%">
+    timeProgressHtml = `<div class="time-progress-bar" title="Time elapsed in cycle: ${Math.round(elapsedPercent)}%">
       <div class="time-progress-fill" style="width: ${elapsedPercent}%;"></div>
     </div>`;
   }
 
   // Wrap in container so the time bar can be positioned below the reset text
-  return `<div class="reset-info-wrapper${zeroClass}">
+  return `<div class="reset-info-wrapper">
     <div class="usage-item reset-info"${tooltip}><span class="usage-label">↳ Resets in</span><span class="usage-value">${resetsIn}</span></div>
     ${timeProgressHtml}
   </div>`;

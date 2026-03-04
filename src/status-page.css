@@ -380,22 +380,38 @@ body.light-mode .time-progress-fill {
   margin-bottom: 20px;
 }
 
-/* Zero usage - de-emphasized styling */
-.zero-usage {
-  opacity: 0.4;
-  filter: grayscale(60%);
-  transition: opacity 0.2s ease, filter 0.2s ease, background-color 0.2s ease;
+/* Zero usage - de-emphasized styling using color shift (not opacity for accessibility) */
+/* Only apply grey color to the percentage text, not the model name */
+.zero-usage .usage-value,
+.zero-usage .usage-percent,
+.zero-usage .usage-suffix {
+  color: #9ca3af !important;
 }
 
-/* Interactive hover for zero-usage items - show they're still active */
-.zero-usage:hover {
-  opacity: 0.9;
-  filter: grayscale(0%);
+/* Progress bar for zero usage: show track but no fill */
+.progress-bar.zero-usage .progress-fill {
+  width: 0 !important;
+  background: transparent !important;
+}
+
+/* Reset info for zero usage: grey text */
+.reset-info-wrapper.zero-usage .usage-value,
+.reset-info-wrapper.zero-usage .usage-label {
+  color: #9ca3af;
+}
+
+/* Time progress bar in zero state */
+.time-progress-bar.zero-usage .time-progress-fill {
+  background: rgba(156, 163, 175, 0.4);
+}
+
+/* Interactive hover for zero-usage items - subtle highlight */
+.usage-item.zero-usage:hover {
   background-color: rgba(0, 0, 0, 0.02);
   border-radius: 4px;
 }
 
-body.light-mode .zero-usage:hover {
+body.light-mode .usage-item.zero-usage:hover {
   background-color: rgba(0, 0, 0, 0.03);
 }
 
@@ -404,8 +420,13 @@ body.light-mode .zero-usage:hover {
   margin-top: 1.5em;
   padding-top: 1em;
   border-top: 1px solid var(--border-color);
-  font-weight: 700;
-  font-size: 14px;
+}
+
+.model-subheading .usage-label {
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
   color: var(--text-primary);
 }
 
