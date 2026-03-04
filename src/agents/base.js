@@ -6,6 +6,8 @@ class BaseAgent {
     this.command = command;
     this.args = args;
     this.usage = null;
+    this.metadata = null;
+    this._metadataFetched = false;
     this.lastUpdated = null;
     this.error = null;
     this.isRefreshing = false;
@@ -24,6 +26,7 @@ class BaseAgent {
     return {
       name: this.name,
       usage: this.usage,
+      metadata: this.metadata,
       lastUpdated: this.lastUpdated,
       error: this.error,
       isRefreshing: this.isRefreshing,
@@ -41,6 +44,19 @@ class BaseAgent {
     this.error = null;
 
     try {
+      // Fetch metadata once on first refresh (if agent supports it)
+      if (!this._metadataFetched && this.fetchMetadata) {
+        try {
+          console.log(`[${this.name}] Fetching metadata (first refresh)...`);
+          this.metadata = await this.fetchMetadata();
+          console.log(`[${this.name}] Parsed metadata:`, JSON.stringify(this.metadata));
+        } catch (metaErr) {
+          console.error(`[${this.name}] Error fetching metadata:`, metaErr.message);
+          // Continue with usage fetch even if metadata fails
+        }
+        this._metadataFetched = true;
+      }
+
       const output = await this.runCommand();
       console.log(`[${this.name}] Got output, length: ${output.length} chars`);
       this.usage = this.parseOutput(output);
@@ -379,6 +395,14 @@ class BaseAgent {
       .replace(BaseAgent.ANSI_REMAINING, '')
       .replace(/\r/g, '')
       .replace(/  +/g, ' ');
+  }
+
+  // Helper to strip box border characters (│, ╭, ╮, ╯, ╰, ─, etc.) from strings
+  stripBoxChars(str) {
+    if (!str) return str;
+    return str
+      .replace(/[│╭╮╯╰─┌┐└┘├┤┬┴┼║═╔╗╚╝╠╣╦╩╬]/g, '')
+      .trim();
   }
 }
 

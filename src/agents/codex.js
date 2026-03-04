@@ -380,17 +380,58 @@ class CodexAgent extends BaseAgent {
       usage.modelLimits = modelLimits;
     }
 
-    const modelMatch = clean.match(/Model:\s*(gpt-[\w.-]+)/i);
+    // Extract model and account for backward compatibility (also in metadata)
+    const modelMatch = clean.match(/Model:\s*([\w.-]+)/i);
     if (modelMatch) {
-      usage.model = modelMatch[1].trim();
+      usage.model = this.stripBoxChars(modelMatch[1]);
     }
 
     const accountMatch = clean.match(/Account:\s*(\S+@\S+)/i);
     if (accountMatch) {
-      usage.account = accountMatch[1].trim();
+      usage.account = this.stripBoxChars(accountMatch[1]);
     }
 
+    // Update metadata with latest values from status output
+    this._updateMetadataFromOutput(clean);
+
     return usage;
+  }
+
+  // Extract metadata from /status output
+  _updateMetadataFromOutput(clean) {
+    if (!this.metadata) {
+      this.metadata = {};
+    }
+
+    // Extract directory/cwd
+    const dirMatch = clean.match(/(?:Directory|Working directory|Cwd|Current directory):\s*([^\n│]+)/i);
+    if (dirMatch) {
+      this.metadata.directory = this.stripBoxChars(dirMatch[1]);
+    }
+
+    // Extract session ID
+    const sessionMatch = clean.match(/Session(?:\s+ID)?:\s*([a-f0-9-]+)/i);
+    if (sessionMatch) {
+      this.metadata.sessionId = this.stripBoxChars(sessionMatch[1]);
+    }
+
+    // Extract collaboration mode (solo/team/etc)
+    const collabMatch = clean.match(/(?:Collaboration|Mode):\s*(\w+)/i);
+    if (collabMatch) {
+      this.metadata.collaborationMode = this.stripBoxChars(collabMatch[1]);
+    }
+
+    // Extract model
+    const modelMatch = clean.match(/Model:\s*([\w.-]+)/i);
+    if (modelMatch) {
+      this.metadata.model = this.stripBoxChars(modelMatch[1]);
+    }
+
+    // Extract account/email
+    const accountMatch = clean.match(/Account:\s*(\S+@\S+)/i);
+    if (accountMatch) {
+      this.metadata.email = this.stripBoxChars(accountMatch[1]);
+    }
   }
 }
 

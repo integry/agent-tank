@@ -3,6 +3,7 @@ const { BaseAgent } = require('./base.js');
 class ClaudeAgent extends BaseAgent {
   constructor() {
     super('claude', 'claude');
+    this._statusSent = false;
   }
 
   getTimeout() {
@@ -292,6 +293,109 @@ class ClaudeAgent extends BaseAgent {
     }
 
     return usage;
+  }
+
+  // Fetch metadata by sending /status command once on first refresh
+  async fetchMetadata() {
+    if (this._statusSent) {
+      return this.metadata;
+    }
+
+    // Ensure process is spawned and ready
+    if (!this.shell || !this.processReady) {
+      await this.spawnProcess();
+    }
+
+    return new Promise((resolve, reject) => {
+      let statusOutput = '';
+      let completed = false;
+
+      const finish = (result) => {
+        if (completed) return;
+        completed = true;
+        this._statusSent = true;
+        this._onDataCallback = null;
+        this._commandInFlight = false;
+        clearTimeout(timer);
+        resolve(result);
+      };
+
+      const timer = setTimeout(() => {
+        console.log(`[${this.name}] /status timeout, using partial output`);
+        finish(this._parseStatusOutput(statusOutput));
+      }, 10000); // 10 second timeout for /status
+
+      this._commandInFlight = true;
+      this._onDataCallback = () => {
+        statusOutput = this.output;
+        // Check if we have complete /status output
+        if (this._hasCompleteStatusOutput(statusOutput)) {
+          console.log(`[${this.name}] Complete /status output detected`);
+          setTimeout(() => finish(this._parseStatusOutput(statusOutput)), 100);
+        }
+      };
+
+      console.log(`[${this.name}] Sending /status command for metadata...`);
+      this.output = '';
+      // Send escape first to dismiss any UI, then /status
+      setTimeout(() => this.shell.write('\x1b'), 50);
+      setTimeout(() => this.shell.write('/status'), 150);
+      setTimeout(() => this.shell.write('\r'), 400);
+    });
+  }
+
+  _hasCompleteStatusOutput(output) {
+    const clean = this.stripAnsi(output);
+    // /status output typically contains session info and prompt
+    const hasSessionInfo = /session/i.test(clean) || /working directory|cwd/i.test(clean);
+    const hasPrompt = clean.includes('? for shortcuts') ||
+                      clean.includes('❯') ||
+                      clean.includes('> ') ||
+                      clean.includes('esc to');
+    return hasSessionInfo && hasPrompt;
+  }
+
+  _parseStatusOutput(output) {
+    const clean = this.stripAnsi(output);
+    const metadata = {};
+
+    // Extract session ID
+    const sessionMatch = clean.match(/Session(?:\s+ID)?:\s*([a-f0-9-]+)/i);
+    if (sessionMatch) {
+      metadata.sessionId = this.stripBoxChars(sessionMatch[1]);
+    }
+
+    // Extract working directory/cwd
+    const cwdMatch = clean.match(/(?:Working directory|Cwd|Current directory|Directory):\s*([^\n│]+)/i);
+    if (cwdMatch) {
+      metadata.cwd = this.stripBoxChars(cwdMatch[1]);
+    }
+
+    // Extract organization
+    const orgMatch = clean.match(/(?:Organization|Org):\s*([^\n│]+)/i);
+    if (orgMatch) {
+      metadata.organization = this.stripBoxChars(orgMatch[1]);
+    }
+
+    // Extract email/account
+    const emailMatch = clean.match(/(?:Email|Account|User|Logged in as):\s*(\S+@\S+)/i);
+    if (emailMatch) {
+      metadata.email = this.stripBoxChars(emailMatch[1]);
+    }
+
+    // Extract model if present
+    const modelMatch = clean.match(/(?:Model|Using model):\s*(claude[-\w.]+)/i);
+    if (modelMatch) {
+      metadata.model = this.stripBoxChars(modelMatch[1]);
+    }
+
+    // Extract version if present
+    const versionMatch = clean.match(/(?:Version|Claude Code):\s*v?([\d.]+)/i);
+    if (versionMatch) {
+      metadata.version = this.stripBoxChars(versionMatch[1]);
+    }
+
+    return Object.keys(metadata).length > 0 ? metadata : null;
   }
 }
 

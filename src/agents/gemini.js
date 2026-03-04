@@ -3,6 +3,7 @@ const { BaseAgent } = require('./base.js');
 class GeminiAgent extends BaseAgent {
   constructor() {
     super('gemini', 'gemini');
+    this._aboutSent = false;
   }
 
   getTimeout() {
@@ -118,6 +119,110 @@ class GeminiAgent extends BaseAgent {
     }
 
     return usage;
+  }
+
+  // Fetch metadata by sending /about command once on first refresh
+  async fetchMetadata() {
+    if (this._aboutSent) {
+      return this.metadata;
+    }
+
+    // Ensure process is spawned and ready
+    if (!this.shell || !this.processReady) {
+      await this.spawnProcess();
+    }
+
+    return new Promise((resolve, reject) => {
+      let aboutOutput = '';
+      let completed = false;
+
+      const finish = (result) => {
+        if (completed) return;
+        completed = true;
+        this._aboutSent = true;
+        this._onDataCallback = null;
+        this._commandInFlight = false;
+        clearTimeout(timer);
+        resolve(result);
+      };
+
+      const timer = setTimeout(() => {
+        console.log(`[${this.name}] /about timeout, using partial output`);
+        finish(this._parseAboutOutput(aboutOutput));
+      }, 10000); // 10 second timeout for /about
+
+      this._commandInFlight = true;
+      this._onDataCallback = () => {
+        aboutOutput = this.output;
+        // Check if we have complete /about output
+        if (this._hasCompleteAboutOutput(aboutOutput)) {
+          console.log(`[${this.name}] Complete /about output detected`);
+          setTimeout(() => finish(this._parseAboutOutput(aboutOutput)), 100);
+        }
+      };
+
+      console.log(`[${this.name}] Sending /about command for metadata...`);
+      this.output = '';
+      setTimeout(() => this.shell.write('/about\r'), 50);
+      setTimeout(() => this.shell.write('\r'), 150);
+    });
+  }
+
+  _hasCompleteAboutOutput(output) {
+    const clean = this.stripAnsi(output);
+    // /about output typically contains version and auth info
+    // Look for typical end patterns like prompt return or footer
+    const hasVersion = /version/i.test(clean) || /gemini\s+cli/i.test(clean);
+    const hasAuth = /auth|logged|account|email/i.test(clean);
+    const hasPrompt = clean.includes('gemini>') || clean.includes('> ') || clean.includes('Type your message');
+    return (hasVersion || hasAuth) && hasPrompt;
+  }
+
+  _parseAboutOutput(output) {
+    const clean = this.stripAnsi(output);
+    const metadata = {};
+
+    // Extract OS/platform
+    const osMatch = clean.match(/(?:OS|Platform|System):\s*([^\n│]+)/i);
+    if (osMatch) {
+      metadata.os = this.stripBoxChars(osMatch[1]);
+    }
+
+    // Extract version
+    const versionMatch = clean.match(/(?:Version|Gemini CLI):\s*v?([\d.]+)/i);
+    if (versionMatch) {
+      metadata.version = this.stripBoxChars(versionMatch[1]);
+    }
+
+    // Also try pattern like "gemini-cli/1.2.3" or "Gemini CLI v1.2.3"
+    if (!metadata.version) {
+      const altVersionMatch = clean.match(/gemini[-\s]?cli[/\s]+v?([\d.]+)/i);
+      if (altVersionMatch) {
+        metadata.version = this.stripBoxChars(altVersionMatch[1]);
+      }
+    }
+
+    // Extract email/account
+    const emailMatch = clean.match(/(?:Email|Account|User|Logged in as):\s*(\S+@\S+)/i);
+    if (emailMatch) {
+      metadata.email = this.stripBoxChars(emailMatch[1]);
+    }
+
+    // Extract auth method
+    const authMatch = clean.match(/(?:Auth(?:entication)?(?:\s+method)?|Login(?:\s+method)?|Signed in (?:with|via)):\s*([^\n│]+)/i);
+    if (authMatch) {
+      metadata.authMethod = this.stripBoxChars(authMatch[1]);
+    }
+
+    // Alternative auth pattern: "Authenticated via OAuth"
+    if (!metadata.authMethod) {
+      const altAuthMatch = clean.match(/Authenticated\s+(?:via|using|with)\s+(\w+)/i);
+      if (altAuthMatch) {
+        metadata.authMethod = this.stripBoxChars(altAuthMatch[1]);
+      }
+    }
+
+    return Object.keys(metadata).length > 0 ? metadata : null;
   }
 }
 
