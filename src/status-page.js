@@ -90,14 +90,14 @@ ${styles}
     </div>
     <footer class="footer">
       <div class="footer-left">
-        <span>Agent Tank &copy; ${new Date().getFullYear()} <a href="https://propr.dev">Rinalds Uzkalns</a></span>
+        <span>&copy; ${new Date().getFullYear()} <a href="https://propr.dev">Rinalds Uzkalns</a></span>
       </div>
       <div class="footer-right">
-        <span class="footer-version"><a href="https://github.com/integry/llm-limit-watcher/releases">v1.0.0</a></span>
+        <span class="footer-version"><a href="https://github.com/integry/agent-tank/releases">v1.0.0</a></span>
         <span class="footer-separator">•</span>
-        <a href="https://github.com/integry/llm-limit-watcher/blob/main/CHANGELOG.md">Changelog</a>
+        <a href="https://github.com/integry/agent-tank/blob/main/CHANGELOG.md">Changelog</a>
         <span class="footer-separator">•</span>
-        <a href="https://github.com/integry/llm-limit-watcher">GitHub</a>
+        <a href="https://github.com/integry/agent-tank">GitHub</a>
       </div>
     </footer>
   </div>

@@ -22,9 +22,9 @@ const { values } = parseArgs({ options, allowPositionals: false });
 
 if (values.help) {
   console.log(`
-llm-limit-watcher - Monitor LLM CLI usage limits
+agent-tank - Monitor LLM CLI usage limits
 
-Usage: llm-limit-watcher [options]
+Usage: agent-tank [options]
 
 Options:
   --claude              Enable Claude monitoring
@@ -41,20 +41,20 @@ Options:
   --help, -h            Show this help message
 
 Environment variables:
-  LLM_WATCHER_USER      Basic auth username (overrides --auth-user)
-  LLM_WATCHER_PASS      Basic auth password (overrides --auth-pass)
-  LLM_WATCHER_TOKEN     API key (overrides --auth-token)
-  LLM_WATCHER_HOST      Bind address (overrides --host)
-  LLM_WATCHER_FRESH_PROCESS  Use fresh process per refresh ("1" or "true")
+  AGENT_TANK_USER       Basic auth username (overrides --auth-user)
+  AGENT_TANK_PASS       Basic auth password (overrides --auth-pass)
+  AGENT_TANK_TOKEN      API key (overrides --auth-token)
+  AGENT_TANK_HOST       Bind address (overrides --host)
+  AGENT_TANK_FRESH_PROCESS  Use fresh process per refresh ("1" or "true")
 
 Examples:
-  llm-limit-watcher                          # Auto-discover and monitor all available
-  llm-limit-watcher --claude --gemini        # Monitor specific agents
-  llm-limit-watcher --port 8080              # Use custom port
-  llm-limit-watcher --host 0.0.0.0           # Expose on all interfaces
-  llm-limit-watcher --auth-user admin --auth-pass secret  # Enable basic auth
-  llm-limit-watcher --auth-token mykey       # Enable API key auth
-  llm-limit-watcher -c ./config.json         # Use config file
+  agent-tank                          # Auto-discover and monitor all available
+  agent-tank --claude --gemini        # Monitor specific agents
+  agent-tank --port 8080              # Use custom port
+  agent-tank --host 0.0.0.0           # Expose on all interfaces
+  agent-tank --auth-user admin --auth-pass secret  # Enable basic auth
+  agent-tank --auth-token mykey       # Enable API key auth
+  agent-tank -c ./config.json         # Use config file
 
 HTTP Endpoints:
   GET /              Status page (HTML)
@@ -84,14 +84,14 @@ if (values.gemini || config.gemini) agents.push('gemini');
 if (values.codex || config.codex) agents.push('codex');
 
 const auth = {
-  user: process.env.LLM_WATCHER_USER || values['auth-user'] || config.auth?.user,
-  pass: process.env.LLM_WATCHER_PASS || values['auth-pass'] || config.auth?.pass,
-  token: process.env.LLM_WATCHER_TOKEN || values['auth-token'] || config.auth?.token,
+  user: process.env.AGENT_TANK_USER || values['auth-user'] || config.auth?.user,
+  pass: process.env.AGENT_TANK_PASS || values['auth-pass'] || config.auth?.pass,
+  token: process.env.AGENT_TANK_TOKEN || values['auth-token'] || config.auth?.token,
 };
 
-const host = process.env.LLM_WATCHER_HOST || values.host || config.host;
+const host = process.env.AGENT_TANK_HOST || values.host || config.host;
 
-const freshProcessEnv = process.env.LLM_WATCHER_FRESH_PROCESS;
+const freshProcessEnv = process.env.AGENT_TANK_FRESH_PROCESS;
 const freshProcess = values['fresh-process'] ||
   config.freshProcess ||
   freshProcessEnv === '1' || freshProcessEnv === 'true';

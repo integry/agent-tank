@@ -1,14 +1,14 @@
 {
-  "name": "llm-limit-watcher",
+  "name": "agent-tank",
   "version": "1.0.0",
   "description": "Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via HTTP API",
   "main": "src/index.js",
   "bin": {
-    "llm-limit-watcher": "./bin/llm-limit-watcher.js"
+    "agent-tank": "./bin/agent-tank.js"
   },
   "scripts": {
-    "start": "node bin/llm-limit-watcher.js",
-    "dev": "node bin/llm-limit-watcher.js",
+    "start": "node bin/agent-tank.js",
+    "dev": "node bin/agent-tank.js",
     "lint": "eslint src/ bin/",
     "install": "node scripts/install.js || true",
     "rebuild": "PYTHON=$(which python3.11 || which python3.10 || which python3.9 || which python3.8 || which python3) npm rebuild node-pty"
@@ -32,12 +32,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/integry/llm-limit-watcher.git"
+    "url": "git+https://github.com/integry/agent-tank.git"
   },
   "bugs": {
-    "url": "https://github.com/integry/llm-limit-watcher/issues"
+    "url": "https://github.com/integry/agent-tank/issues"
   },
-  "homepage": "https://github.com/integry/llm-limit-watcher#readme",
+  "homepage": "https://github.com/integry/agent-tank#readme",
   "dependencies": {
     "node-pty": "^1.0.0"
   },

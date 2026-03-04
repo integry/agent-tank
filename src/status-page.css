@@ -388,7 +388,7 @@ body.light-mode .usage-label.model-name {
 .progress-bar {
   height: 16px;
   background: var(--tank-glass);
-  border-radius: 8px;
+  border-radius: 4px;
   margin-top: 8px;
   overflow: hidden;
   position: relative;
@@ -396,14 +396,14 @@ body.light-mode .usage-label.model-name {
   box-shadow:
     inset 0 2px 4px rgba(0, 0, 0, 0.3),
     inset 0 -1px 2px rgba(255, 255, 255, 0.05);
-  /* Measurement tick marks every 20% */
+  /* Measurement tick marks every 20% - dark on empty part */
   background-image:
     repeating-linear-gradient(
       90deg,
       transparent,
       transparent calc(20% - 1px),
-      rgba(255, 255, 255, 0.1) calc(20% - 1px),
-      rgba(255, 255, 255, 0.1) 20%
+      rgba(255, 255, 255, 0.08) calc(20% - 1px),
+      rgba(255, 255, 255, 0.08) 20%
     );
   background-color: var(--tank-glass);
 }
@@ -417,14 +417,14 @@ body.light-mode .progress-bar {
       90deg,
       transparent,
       transparent calc(20% - 1px),
-      rgba(0, 0, 0, 0.08) calc(20% - 1px),
-      rgba(0, 0, 0, 0.08) 20%
+      rgba(0, 0, 0, 0.1) calc(20% - 1px),
+      rgba(0, 0, 0, 0.1) 20%
     );
 }
 
 .progress-fill {
   height: 100%;
-  border-radius: 6px;
+  border-radius: 3px;
   transition: width 0.3s ease;
   position: relative;
   /* Liquid effect with inner glow and gradient */
@@ -433,12 +433,22 @@ body.light-mode .progress-bar {
     inset 0 2px 4px rgba(255, 255, 255, 0.15),
     0 0 8px var(--tank-glow);
   /* Subtle gradient for liquid depth effect */
-  background-image: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.2) 0%,
-    transparent 40%,
-    rgba(0, 0, 0, 0.1) 100%
-  );
+  background-image:
+    /* Backlit tick marks - lighter/white on filled part */
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent calc(20% - 1px),
+      rgba(255, 255, 255, 0.25) calc(20% - 1px),
+      rgba(255, 255, 255, 0.25) 20%
+    ),
+    /* Original depth gradient */
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      transparent 40%,
+      rgba(0, 0, 0, 0.1) 100%
+    );
   background-blend-mode: overlay;
 }
 
@@ -647,10 +657,13 @@ body.light-mode .time-progress-fill {
 /* Model container wrapper - consistent vertical spacing */
 .model-container {
   margin-bottom: 24px;
+  /* Ensure minimum padding even when "Resets in" is hidden */
+  padding-bottom: 8px;
 }
 
 .model-container:last-child {
   margin-bottom: 0;
+  padding-bottom: 0;
 }
 
 /* Zero usage - de-emphasized styling using color shift (not opacity for accessibility) */
@@ -722,6 +735,11 @@ body.light-mode .usage-item.zero-usage:hover {
   min-height: auto;
 }
 
+/* Add extra spacing between model groups for distinct "module" feel */
+.model-subheading:not(:first-child) {
+  margin-top: calc(2em + 4px);
+}
+
 .model-subheading .usage-label {
   font-weight: 600;
   font-size: 11px;
@@ -741,21 +759,33 @@ body.light-mode .usage-item.zero-usage:hover {
   margin-top: 12px;
 }
 
-/* Footer - SaaS-style split layout */
+/* Footer - SaaS-style split layout, ghost element */
 .footer {
   /* Push footer to bottom using auto margin */
   margin-top: auto;
   padding: 16px 24px;
   font-size: 0.75rem;
   color: #475569;
+  opacity: 0.35;
   display: flex;
   justify-content: space-between;
   align-items: center;
   border-top: 1px solid var(--border-color);
+  transition: opacity 0.2s ease;
+}
+
+/* Reveal footer on hover */
+.footer:hover {
+  opacity: 0.7;
 }
 
 body.light-mode .footer {
   color: #6b7280;
+  opacity: 0.4;
+}
+
+body.light-mode .footer:hover {
+  opacity: 0.8;
 }
 
 .footer-left,
@@ -819,15 +849,28 @@ body.light-mode .footer {
   background: var(--bg-secondary);
 }
 
-/* Active/tracking state - always visible with accent color */
+/* Active/tracking state - always visible with accent color and glow */
 .track-btn.tracking {
   opacity: 1;
   color: #48bb78;
+  animation: tracking-pulse 2s ease-in-out infinite;
+}
+
+/* Subtle pulsing glow for tracking indicator */
+@keyframes tracking-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px rgba(72, 187, 120, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 6px rgba(72, 187, 120, 0.8));
+  }
 }
 
 .track-btn.tracking:hover {
   color: #38a169;
   background: rgba(72, 187, 120, 0.1);
+  animation: none;
+  filter: drop-shadow(0 0 6px rgba(72, 187, 120, 0.6));
 }
 
 .track-btn svg {
