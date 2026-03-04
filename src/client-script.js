@@ -300,9 +300,9 @@ const clientScript = faviconScript + `
 
       const { percent, color, agent, label } = trackedMetric;
 
-      // Update page title: [XX%] Agent • Agent Tank (system readout format)
+      // Update page title: [XX%] Agent MetricName • Agent Tank (system readout format)
       const agentName = agent.charAt(0).toUpperCase() + agent.slice(1);
-      document.title = \`[\${percent}%] \${agentName} • Agent Tank\`;
+      document.title = \`[\${percent}%] \${agentName} \${label} • Agent Tank\`;
 
       // Generate favicon using Canvas API
       generateProgressFavicon(percent, color);
