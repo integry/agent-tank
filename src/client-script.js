@@ -263,22 +263,24 @@ const clientScript = `
       }
     }
 
-    // Update favicon with Canvas-generated progress ring
+    // Update favicon with Canvas-generated pie chart
     function updateFaviconAndTitle() {
       if (!trackedMetric || !monitorEnabled) return;
 
       const { percent, color, resetsIn, agent, label } = trackedMetric;
 
-      // Update page title: [74%] 1h 22m | Claude
+      // Update page title: [74%] 1h 22m | Claude Session
+      // Include both agent name and specific metric label for clarity
       const agentName = agent.charAt(0).toUpperCase() + agent.slice(1);
       const resetsPart = resetsIn ? \` \${resetsIn}\` : '';
-      document.title = \`[\${percent}%]\${resetsPart} | \${agentName}\`;
+      document.title = \`[\${percent}%]\${resetsPart} | \${agentName} \${label}\`;
 
       // Generate favicon using Canvas API
       generateProgressFavicon(percent, color);
     }
 
-    // Generate circular progress ring favicon using Canvas API
+    // Generate filled pie chart favicon using Canvas API
+    // Available space is green, used space is yellow/red based on usage level
     function generateProgressFavicon(percent, color) {
       const canvas = document.createElement('canvas');
       const size = 64; // Favicon size
@@ -288,33 +290,61 @@ const clientScript = `
 
       const centerX = size / 2;
       const centerY = size / 2;
-      const radius = (size / 2) - 4;
-      const lineWidth = 6;
+      const radius = (size / 2) - 2;
 
       // Clear canvas
       ctx.clearRect(0, 0, size, size);
 
-      // Draw background circle (track)
+      // Determine used color based on percentage thresholds
+      // Green: 0-49%, Yellow: 50-79%, Red: 80-100%
+      let usedColor;
+      if (percent < 50) {
+        usedColor = '#ecc94b'; // Yellow for low usage (not alarming)
+      } else if (percent < 80) {
+        usedColor = '#ecc94b'; // Yellow for medium usage
+      } else {
+        usedColor = '#e53e3e'; // Red for high usage
+      }
+
+      const availableColor = '#48bb78'; // Green for available space
+      const startAngle = -Math.PI / 2; // Start at top
+      const usedAngle = startAngle + (2 * Math.PI * percent / 100);
+
+      // Draw available (remaining) slice first - green
+      if (percent < 100) {
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.arc(centerX, centerY, radius, usedAngle, startAngle + 2 * Math.PI);
+        ctx.closePath();
+        ctx.fillStyle = availableColor;
+        ctx.fill();
+      }
+
+      // Draw used slice - yellow or red based on level
+      if (percent > 0) {
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.arc(centerX, centerY, radius, startAngle, usedAngle);
+        ctx.closePath();
+        ctx.fillStyle = usedColor;
+        ctx.fill();
+      }
+
+      // Draw thin border around the pie
       ctx.beginPath();
       ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-      ctx.strokeStyle = 'rgba(128, 128, 128, 0.3)';
-      ctx.lineWidth = lineWidth;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.lineWidth = 1;
       ctx.stroke();
 
-      // Draw progress arc
-      const startAngle = -Math.PI / 2; // Start at top
-      const endAngle = startAngle + (2 * Math.PI * percent / 100);
-
+      // Draw percentage text in center with background for readability
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
       ctx.beginPath();
-      ctx.arc(centerX, centerY, radius, startAngle, endAngle);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = lineWidth;
-      ctx.lineCap = 'round';
-      ctx.stroke();
+      ctx.arc(centerX, centerY, 16, 0, 2 * Math.PI);
+      ctx.fill();
 
-      // Draw percentage text in center
-      ctx.fillStyle = color;
-      ctx.font = 'bold 20px sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 18px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(\`\${percent}\`, centerX, centerY);
