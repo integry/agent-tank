@@ -50,11 +50,18 @@ const syncIcon = `<svg class="sync-icon" viewBox="0 0 24 24" fill="none" stroke=
   <path d="M21 3v5h-5"/>
 </svg>`;
 
+// Copy icon for copying API endpoint
+const copyIcon = `<svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+</svg>`;
+
 module.exports = {
   agentIcons,
   refreshIcon,
   trackIcon,
   monitorIcon,
   tankIcon,
-  syncIcon
+  syncIcon,
+  copyIcon
 };

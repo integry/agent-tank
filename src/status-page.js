@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { agentIcons, refreshIcon, tankIcon, syncIcon } = require('./icons');
+const { agentIcons, refreshIcon, tankIcon, syncIcon, copyIcon } = require('./icons');
 const { formatUsage } = require('./usage-formatters');
 const { clientScript } = require('./client-script');
 
@@ -94,7 +94,8 @@ ${styles}
         <span class="footer-separator">•</span>
         <a href="https://github.com/integry/agent-tank">GitHub</a>
         <span class="footer-separator">•</span>
-        <a href="/api/v1/limits" target="_blank" class="api-link" id="api-link" onclick="copyApiEndpoint(event)" title="Click to copy, Ctrl/Cmd+Click to open">[ API Endpoint ]</a>
+        <a href="/status" target="_blank" class="api-link" id="api-link" title="Open API endpoint">[ API Endpoint ]</a>
+        <button class="copy-api-btn" onclick="copyApiEndpoint(event)" title="Copy API URL">${copyIcon}</button>
       </div>
     </footer>
   </div>

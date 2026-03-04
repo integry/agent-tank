@@ -884,6 +884,44 @@ body.light-mode .api-link.copied {
   color: #38a169;
 }
 
+/* Copy API button - small icon button next to API link */
+.copy-api-btn {
+  background: none;
+  border: none;
+  padding: 2px;
+  margin: 0;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  opacity: 0.6;
+  transition: opacity 0.2s ease, color 0.2s ease;
+  vertical-align: middle;
+}
+
+.copy-api-btn:hover {
+  opacity: 1;
+  color: var(--text-primary);
+}
+
+.copy-api-btn .copy-icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* Copied state - green checkmark effect */
+.copy-api-btn.copied {
+  color: #48bb78;
+  opacity: 1;
+}
+
+body.light-mode .copy-api-btn.copied {
+  color: #38a169;
+}
+
 /* ===== Background Monitor Feature ===== */
 
 /* Track button - inline target icon for pinning metrics */

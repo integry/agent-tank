@@ -337,30 +337,22 @@ const clientScript = faviconScript + `
 
     // ===== API Endpoint Copy Feature =====
     function copyApiEndpoint(event) {
-      // If Ctrl/Cmd+Click, let the link open normally in new tab
-      if (event.ctrlKey || event.metaKey) {
-        return;
-      }
-
-      // Prevent default link behavior for regular click
       event.preventDefault();
+      event.stopPropagation();
 
-      const apiUrl = window.location.origin + '/api/v1/limits';
-      const apiLink = document.getElementById('api-link');
+      const apiUrl = window.location.origin + '/status';
+      const copyBtn = event.target.closest('.copy-api-btn');
 
       navigator.clipboard.writeText(apiUrl).then(() => {
-        // Show "Copied!" feedback
-        const originalText = apiLink.textContent;
-        apiLink.textContent = '[ Copied! ]';
-        apiLink.classList.add('copied');
-
-        setTimeout(() => {
-          apiLink.textContent = originalText;
-          apiLink.classList.remove('copied');
-        }, 1500);
+        // Show "Copied!" feedback on button
+        if (copyBtn) {
+          copyBtn.classList.add('copied');
+          setTimeout(() => {
+            copyBtn.classList.remove('copied');
+          }, 1500);
+        }
       }).catch(err => {
-        // Fallback: open in new tab if clipboard fails
-        window.open('/api/v1/limits', '_blank');
+        console.error('Failed to copy API URL:', err);
       });
     }
 `;
