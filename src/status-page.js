@@ -95,7 +95,16 @@ ${styles}
       ${agentCards || '<p>No agents configured</p>'}
     </div>
     <footer class="footer">
-      <a href="https://github.com/integry/llm-limit-watcher">LLM Limit Watcher</a> &copy; ${new Date().getFullYear()} <a href="https://propr.dev">Rinalds Uzkalns</a>. MIT License.
+      <div class="footer-left">
+        <span>LLM Limit Watcher &copy; ${new Date().getFullYear()} <a href="https://propr.dev">Rinalds Uzkalns</a></span>
+      </div>
+      <div class="footer-right">
+        <span class="footer-version"><a href="https://github.com/integry/llm-limit-watcher/releases">v1.0.0</a></span>
+        <span class="footer-separator">•</span>
+        <a href="https://github.com/integry/llm-limit-watcher/blob/main/CHANGELOG.md">Changelog</a>
+        <span class="footer-separator">•</span>
+        <a href="https://github.com/integry/llm-limit-watcher">GitHub</a>
+      </div>
     </footer>
   </div>
   <script>

@@ -540,20 +540,49 @@ body.light-mode .usage-item.zero-usage:hover {
   margin-top: 12px;
 }
 
+/* Footer - SaaS-style split layout */
 .footer {
-  text-align: center;
   /* Push footer to bottom using auto margin */
   margin-top: auto;
-  padding: 24px 0;
-  font-size: 13px;
-  color: var(--text-tertiary);
+  padding: 16px 24px;
+  font-size: 0.75rem;
+  color: #475569;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border-color);
+}
+
+body.light-mode .footer {
+  color: #6b7280;
+}
+
+.footer-left,
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.footer-right {
+  gap: 1em;
+}
+
+.footer-separator {
+  color: inherit;
+  opacity: 0.5;
 }
 
 .footer a {
-  color: var(--text-secondary);
+  color: inherit;
   text-decoration: none;
+  transition: color 0.2s ease;
 }
 
 .footer a:hover {
   color: var(--text-primary);
+}
+
+.footer-version {
+  font-variant-numeric: tabular-nums;
 }
