@@ -78,15 +78,15 @@ function resetInfoItem(resetsIn, originalValue, cycleType, isZero = false) {
 }
 
 function usageItem(label, value, suffix, options = {}) {
-  const { isUsed = true, isZero = false, isModelName = false, agentName = '', resetsIn = '', metricId = '' } = options;
+  const { isUsed = true, isZero = false, isModelName = false, isNestedMetric = false, agentName = '', resetsIn = '', metricId = '' } = options;
   const colorClass = getColorClass(value, isUsed);
   const progressPercent = isUsed ? value : (100 - value);
   const progressColor = colorClass === 'high' ? '#48bb78' : colorClass === 'medium' ? '#ecc94b' : '#e53e3e';
   const zeroClass = isZero ? ' zero-usage' : '';
+  const nestedClass = isNestedMetric ? ' nested-metric' : '';
   const statusDotClass = getStatusDotClass(value);
-  const labelHtml = isModelName
-    ? `<span class="usage-label model-name"><span class="model-pill"><span class="status-dot ${statusDotClass}"></span>${label}</span></span>`
-    : `<span class="usage-label">${label}</span>`;
+  // All usage items now have status dots (LEDs) for unified monitoring station look
+  const labelHtml = `<span class="usage-label${isModelName ? ' model-name' : ''}"><span class="status-dot ${statusDotClass}"></span>${label}</span>`;
 
   // Generate unique metric ID for tracking
   const trackingId = metricId || `${agentName}-${label.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
@@ -103,7 +103,7 @@ function usageItem(label, value, suffix, options = {}) {
     title="Track this metric in tab">${trackIcon}</button>`;
 
   return `
-    <div class="usage-item${zeroClass} trackable"
+    <div class="usage-item${zeroClass}${nestedClass} trackable"
       data-metric-id="${trackingId}"
       data-agent="${agentName}"
       data-label="${label}"
@@ -115,7 +115,7 @@ function usageItem(label, value, suffix, options = {}) {
       ${labelHtml}
       <span class="usage-value ${colorClass}"><span class="usage-percent">${value}</span><span class="usage-suffix">${suffix}</span>${trackButton}</span>
     </div>
-    <div class="progress-bar${zeroClass}">
+    <div class="progress-bar${zeroClass}${nestedClass}">
       <div class="progress-fill" style="width: ${progressPercent}%; background: ${progressColor};"></div>
     </div>
   `;
@@ -183,8 +183,8 @@ function formatCodexUsage(usage) {
       const fiveHourPercent = ml.fiveHour.percentUsed ?? 0;
       const isZero = fiveHourPercent === 0;
       const resetsIn = ml.fiveHour.resetsIn || '';
-      html += '<div class="model-container">';
-      html += usageItem('5h limit', fiveHourPercent, '% used', { isZero, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-5h` });
+      html += '<div class="model-container nested-container">';
+      html += usageItem('5h limit', fiveHourPercent, '% used', { isZero, isNestedMetric: true, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-5h` });
       if (ml.fiveHour.resetsIn && !isZero) {
         html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', isZero);
       }
@@ -194,8 +194,8 @@ function formatCodexUsage(usage) {
       const weeklyPercent = ml.weekly.percentUsed ?? 0;
       const isZero = weeklyPercent === 0;
       const resetsIn = ml.weekly.resetsIn || '';
-      html += '<div class="model-container">';
-      html += usageItem('Weekly', weeklyPercent, '% used', { isZero, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-weekly` });
+      html += '<div class="model-container nested-container">';
+      html += usageItem('Weekly', weeklyPercent, '% used', { isZero, isNestedMetric: true, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-weekly` });
       if (ml.weekly.resetsIn && !isZero) {
         html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', isZero);
       }

@@ -329,6 +329,10 @@ body.light-mode .usage-item.trackable.tracking {
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.02em;
+  /* Universal LED standard: all labels have status dots */
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* Model name styling - dark grey (light mode) / light grey (dark mode), slightly bolder, lowercase */
@@ -336,9 +340,6 @@ body.light-mode .usage-item.trackable.tracking {
   color: #d1d5db;
   font-weight: 500;
   text-transform: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 body.light-mode .usage-label.model-name {
@@ -369,11 +370,9 @@ body.light-mode .usage-label.model-name {
   color: #e53e3e;
 }
 
-/* Pill background for model labels */
+/* Pill background removed - plain text with status dots for uniform look */
 .model-pill {
-  background: var(--bg-secondary);
-  padding: 4px 10px;
-  border-radius: 12px;
+  /* Background removed per design unification - just keep inline-flex for alignment */
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -549,35 +548,26 @@ button .spinner {
   flex-shrink: 0;
 }
 
-/* Brand colors for agent icons and subtle backgrounds */
-/* Claude (Anthropic) - coral/orange tones */
-.agent-claude {
-  --agent-brand: #D97757;
-  --agent-bg-subtle: rgba(217, 119, 87, 0.08);
-}
-
-.agent-claude .agent-icon {
-  color: var(--agent-brand);
-}
-
-/* Gemini (Google) - blue tones */
-.agent-gemini {
-  --agent-brand: #4285F4;
-  --agent-bg-subtle: rgba(66, 133, 244, 0.08);
-}
-
-.agent-gemini .agent-icon {
-  color: var(--agent-brand);
-}
-
-/* Codex (OpenAI) - green tones */
+/* Agent icons - neutral low-opacity white/grey for industrial look
+   Status dots (LEDs) are now the primary color indicators */
+.agent-claude,
+.agent-gemini,
 .agent-codex {
-  --agent-brand: #10A37F;
-  --agent-bg-subtle: rgba(16, 163, 127, 0.08);
+  --agent-bg-subtle: rgba(255, 255, 255, 0.04);
 }
 
+.agent-claude .agent-icon,
+.agent-gemini .agent-icon,
 .agent-codex .agent-icon {
-  color: var(--agent-brand);
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+body.light-mode .agent-claude .agent-icon,
+body.light-mode .agent-gemini .agent-icon,
+body.light-mode .agent-codex .agent-icon {
+  color: var(--text-secondary);
+  opacity: 0.6;
 }
 
 /* Agent cards have simple borders - brand colors only on icons */
@@ -587,17 +577,11 @@ button .spinner {
   background: var(--bg-card);
 }
 
-/* Light mode adjustments for brand backgrounds */
-body.light-mode .agent-claude {
-  --agent-bg-subtle: rgba(217, 119, 87, 0.06);
-}
-
-body.light-mode .agent-gemini {
-  --agent-bg-subtle: rgba(66, 133, 244, 0.06);
-}
-
+/* Light mode adjustments for subtle backgrounds */
+body.light-mode .agent-claude,
+body.light-mode .agent-gemini,
 body.light-mode .agent-codex {
-  --agent-bg-subtle: rgba(16, 163, 127, 0.06);
+  --agent-bg-subtle: rgba(0, 0, 0, 0.02);
 }
 
 /* Agent headings use neutral color, only icons have brand colors */
@@ -784,14 +768,27 @@ body.light-mode .usage-item.zero-usage:hover {
   margin-top: 12px;
 }
 
-/* Footer - SaaS-style split layout, ghost element */
+/* Nested metrics under Codex model subheadings - indented 12px for visual grouping */
+.nested-container {
+  padding-left: 12px;
+}
+
+.usage-item.nested-metric {
+  /* Adjust padding for nested items */
+}
+
+.progress-bar.nested-metric {
+  /* Keep progress bars aligned with their nested labels */
+}
+
+/* Footer - SaaS-style split layout, improved contrast */
 .footer {
   /* Push footer to bottom using auto margin */
   margin-top: auto;
   padding: 16px 24px;
   font-size: 0.75rem;
-  color: #8b949e;
-  opacity: 0.6;
+  color: #9ca3af;
+  opacity: 0.75;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -801,16 +798,16 @@ body.light-mode .usage-item.zero-usage:hover {
 
 /* Reveal footer on hover */
 .footer:hover {
-  opacity: 0.85;
+  opacity: 0.95;
 }
 
 body.light-mode .footer {
-  color: #4b5563;
-  opacity: 0.65;
+  color: #6b7280;
+  opacity: 0.8;
 }
 
 body.light-mode .footer:hover {
-  opacity: 0.9;
+  opacity: 1;
 }
 
 .footer-left,
