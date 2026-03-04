@@ -77,18 +77,20 @@ ${styles}
   </style>
 </head>
 <body>
-  <div class="theme-toggle">
-    <button onclick="toggleTheme()" id="theme-toggle-btn">
-      <span id="theme-icon">☀️</span>
-      <span id="theme-text">Light</span>
-    </button>
-  </div>
-  <div class="container">
-    <h1>LLM Limit Watcher</h1>
-    ${globalLastChecked ? `<div class="last-updated-global">Last checked: ${globalLastChecked}</div>` : ''}
-    <div class="refresh-all">
-      <button onclick="refreshAll(event)">Refresh All</button>
+  <nav class="top-nav">
+    <div class="top-nav-left">
+      <h1 class="top-nav-title">LLM Limit Watcher</h1>
     </div>
+    <div class="top-nav-right">
+      ${globalLastChecked ? `<span class="last-checked">Last checked: ${globalLastChecked}</span>` : ''}
+      <button class="refresh-all-btn" onclick="refreshAll(event)">Refresh All</button>
+      <button class="theme-toggle-btn" onclick="toggleTheme()" id="theme-toggle-btn">
+        <span id="theme-icon">☀️</span>
+        <span id="theme-text">Light</span>
+      </button>
+    </div>
+  </nav>
+  <div class="container">
     <div class="agents">
       ${agentCards || '<p>No agents configured</p>'}
     </div>
@@ -174,15 +176,15 @@ ${styles}
     }
     async function refreshAll(event) {
       const btn = event.target.closest('button');
-      const allRegularBtns = document.querySelectorAll('button:not(.refresh-icon-btn)');
+      const refreshAllBtn = document.querySelector('.refresh-all-btn');
       const allIconBtns = document.querySelectorAll('.refresh-icon-btn');
-      allRegularBtns.forEach(b => setButtonLoading(b, true));
+      if (refreshAllBtn) setButtonLoading(refreshAllBtn, true);
       allIconBtns.forEach(b => setRefreshIconLoading(b, true));
       try {
         await fetch('/refresh', { method: 'POST' });
         location.reload();
       } catch (e) {
-        allRegularBtns.forEach(b => setButtonLoading(b, false));
+        if (refreshAllBtn) setButtonLoading(refreshAllBtn, false);
         allIconBtns.forEach(b => setRefreshIconLoading(b, false));
         alert('Failed to refresh: ' + e.message);
       }
