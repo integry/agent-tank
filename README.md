@@ -1,4 +1,4 @@
-# llm-limit-watcher
+# Agent Tank
 
 Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via a simple HTTP API.
 
@@ -13,13 +13,13 @@ Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via a s
 ## Installation
 
 ```bash
-npm install -g llm-limit-watcher
+npm install -g agent-tank
 ```
 
 Or run directly with npx:
 
 ```bash
-npx llm-limit-watcher
+npx agent-tank
 ```
 
 ## Prerequisites
@@ -94,13 +94,13 @@ npm update -g gemini
 
 ```bash
 # Auto-discover and monitor all available LLM agents
-llm-limit-watcher
+agent-tank
 
 # Monitor specific agents only
-llm-limit-watcher --claude --gemini
+agent-tank --claude --gemini
 
 # Use a custom port (default: 3456)
-llm-limit-watcher --port 8080
+agent-tank --port 8080
 ```
 
 ### Command Line Options
@@ -130,7 +130,7 @@ You can use a JSON configuration file:
 ```
 
 ```bash
-llm-limit-watcher -c config.json
+agent-tank -c config.json
 ```
 
 ## HTTP API
@@ -208,7 +208,7 @@ llm-limit-watcher -c config.json
 ## Programmatic Usage
 
 ```javascript
-const { LLMWatcher } = require('llm-limit-watcher');
+const { LLMWatcher } = require('agent-tank');
 
 const watcher = new LLMWatcher({
   agents: ['claude', 'gemini'], // or null for auto-discover
@@ -274,7 +274,7 @@ This is handled automatically. If you still see issues, ensure your terminal sup
 ### Port already in use
 
 ```bash
-llm-limit-watcher --port 8080
+agent-tank --port 8080
 ```
 
 ## License

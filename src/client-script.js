@@ -1,7 +1,9 @@
 // Client-side JavaScript for the status page
 // This module exports a string containing all client-side JS code
 
-const clientScript = `
+const { faviconScript } = require('./client-favicon');
+
+const clientScript = faviconScript + `
     // Theme management
     function initTheme() {
       const savedTheme = localStorage.getItem('theme') || 'dark';
@@ -38,9 +40,26 @@ const clientScript = `
       btn.disabled = loading;
       if (loading) {
         btn.dataset.originalText = btn.innerHTML;
-        btn.innerHTML = '<span class="spinner"></span>Refreshing...';
+        // Check if this is the refresh-all-btn with sync icon
+        if (btn.classList.contains('refresh-all-btn')) {
+          btn.classList.add('syncing');
+          const textSpan = btn.querySelector('.btn-text');
+          if (textSpan) {
+            textSpan.textContent = 'Syncing...';
+          }
+        } else {
+          btn.innerHTML = '<span class="spinner"></span>Refreshing...';
+        }
       } else {
-        btn.innerHTML = btn.dataset.originalText || 'Refresh';
+        if (btn.classList.contains('refresh-all-btn')) {
+          btn.classList.remove('syncing');
+          const textSpan = btn.querySelector('.btn-text');
+          if (textSpan) {
+            textSpan.textContent = 'Refresh All';
+          }
+        } else {
+          btn.innerHTML = btn.dataset.originalText || 'Refresh';
+        }
       }
     }
     function setRefreshIconLoading(btn, loading) {
@@ -96,23 +115,47 @@ const clientScript = `
     setTimeout(() => location.reload(), 5 * 60 * 1000);
 
     // ===== Background Monitor Feature =====
+    // Monitoring is ALWAYS ON - "Automatic" tracks highest usage, "Manual" pins a specific metric
 
     // State management
-    let monitorEnabled = false;
-    let trackedMetric = null;
+    let pinnedMetric = null; // null = automatic mode (track highest), object = manual/pinned mode
+    let trackedMetric = null; // Currently tracked metric (either highest or pinned)
     let notificationSent = false;
     let originalFavicon = null;
 
-    // Initialize monitor on page load
+    // Find the metric with the highest usage percentage across all providers
+    function findHighestUsageMetric() {
+      const allTrackBtns = document.querySelectorAll('.track-btn');
+      let highestMetric = null;
+      let highestPercent = -1;
+
+      allTrackBtns.forEach(btn => {
+        const percent = parseInt(btn.dataset.percent, 10);
+        if (percent > highestPercent) {
+          highestPercent = percent;
+          highestMetric = {
+            metricId: btn.dataset.metricId,
+            agent: btn.dataset.agent,
+            label: btn.dataset.label,
+            percent: percent,
+            color: btn.dataset.color,
+            resetsIn: btn.dataset.resetsIn
+          };
+        }
+      });
+
+      return highestMetric;
+    }
+
+    // Initialize monitor on page load - always on
     function initMonitor() {
-      // Restore monitor state from localStorage
-      monitorEnabled = localStorage.getItem('monitorEnabled') === 'true';
-      const savedMetric = localStorage.getItem('trackedMetric');
-      if (savedMetric) {
+      // Restore pinned metric from localStorage (if user manually pinned one)
+      const savedPinned = localStorage.getItem('pinnedMetric');
+      if (savedPinned) {
         try {
-          trackedMetric = JSON.parse(savedMetric);
+          pinnedMetric = JSON.parse(savedPinned);
         } catch (e) {
-          trackedMetric = null;
+          pinnedMetric = null;
         }
       }
       notificationSent = localStorage.getItem('notificationSent') === 'true';
@@ -123,96 +166,85 @@ const clientScript = `
         originalFavicon = existingFavicon.href;
       }
 
-      // Update UI to reflect saved state
-      updateMonitorButton();
+      // Request notification permission on first load
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
 
-      // Restore tracked metric button state
-      if (trackedMetric && monitorEnabled) {
-        const trackBtn = document.querySelector(\`[data-metric-id="\${trackedMetric.metricId}"]\`);
+      // Determine which metric to track
+      if (pinnedMetric) {
+        // Manual mode: check if pinned metric still exists
+        const trackBtn = document.querySelector(\`.track-btn[data-metric-id="\${pinnedMetric.metricId}"]\`);
+        const trackRow = document.querySelector(\`.usage-item[data-metric-id="\${pinnedMetric.metricId}"]\`);
         if (trackBtn) {
           trackBtn.classList.add('tracking');
-          // Update trackedMetric with fresh data from the page
-          trackedMetric.percent = parseInt(trackBtn.dataset.percent, 10);
-          trackedMetric.color = trackBtn.dataset.color;
-          trackedMetric.resetsIn = trackBtn.dataset.resetsIn;
-          localStorage.setItem('trackedMetric', JSON.stringify(trackedMetric));
-          updateFaviconAndTitle();
-          checkAndNotify();
+          if (trackRow) {
+            trackRow.classList.add('tracking');
+          }
+          // Update pinnedMetric with fresh data from the page
+          pinnedMetric.percent = parseInt(trackBtn.dataset.percent, 10);
+          pinnedMetric.color = trackBtn.dataset.color;
+          pinnedMetric.resetsIn = trackBtn.dataset.resetsIn;
+          trackedMetric = pinnedMetric;
+          localStorage.setItem('pinnedMetric', JSON.stringify(pinnedMetric));
         } else {
-          // Metric no longer exists, clear tracking
-          clearTracking();
+          // Pinned metric no longer exists, fall back to automatic
+          pinnedMetric = null;
+          localStorage.removeItem('pinnedMetric');
+          trackedMetric = findHighestUsageMetric();
+          highlightTrackedMetric();
+        }
+      } else {
+        // Automatic mode: track highest usage
+        trackedMetric = findHighestUsageMetric();
+        highlightTrackedMetric();
+      }
+
+      // Update favicon and title
+      updateFaviconAndTitle();
+      checkAndNotify();
+    }
+
+    // Highlight the currently tracked metric (for automatic mode)
+    function highlightTrackedMetric() {
+      if (!trackedMetric) return;
+
+      const trackBtn = document.querySelector(\`.track-btn[data-metric-id="\${trackedMetric.metricId}"]\`);
+      const trackRow = document.querySelector(\`.usage-item[data-metric-id="\${trackedMetric.metricId}"]\`);
+      if (trackBtn) {
+        trackBtn.classList.add('tracking');
+        if (trackRow) {
+          trackRow.classList.add('tracking');
         }
       }
     }
 
-    // Toggle monitor on/off globally
-    function toggleMonitor() {
-      monitorEnabled = !monitorEnabled;
-      localStorage.setItem('monitorEnabled', monitorEnabled.toString());
-
-      if (monitorEnabled) {
-        // Request notification permission
-        if ('Notification' in window && Notification.permission === 'default') {
-          Notification.requestPermission();
-        }
-      } else {
-        // Clear tracking when monitor is disabled
-        clearTracking();
-        restoreOriginalState();
-      }
-
-      updateMonitorButton();
-    }
-
-    // Update monitor button UI
-    function updateMonitorButton() {
-      const btn = document.getElementById('monitor-toggle-btn');
-      const text = document.getElementById('monitor-text');
-      if (!btn || !text) return;
-
-      if (monitorEnabled) {
-        btn.classList.add('active');
-        btn.title = 'Disable background monitoring';
-        text.textContent = 'Monitoring';
-      } else {
-        btn.classList.remove('active');
-        btn.title = 'Enable background monitoring';
-        text.textContent = 'Monitor';
-      }
-    }
-
-    // Toggle tracking on a specific metric
+    // Toggle pinning on a specific metric (manual mode)
     function toggleTracking(btn) {
-      if (!monitorEnabled) {
-        // Auto-enable monitor when user clicks track
-        monitorEnabled = true;
-        localStorage.setItem('monitorEnabled', 'true');
-        updateMonitorButton();
-
-        // Request notification permission
-        if ('Notification' in window && Notification.permission === 'default') {
-          Notification.requestPermission();
-        }
-      }
-
       const metricId = btn.dataset.metricId;
 
-      // If already tracking this metric, untrack it
-      if (trackedMetric && trackedMetric.metricId === metricId) {
-        clearTracking();
-        restoreOriginalState();
+      // If already pinned to this metric, unpin it (go back to automatic mode)
+      if (pinnedMetric && pinnedMetric.metricId === metricId) {
+        // Clear pinning
+        clearPinning();
+        // Fall back to automatic mode - track highest
+        trackedMetric = findHighestUsageMetric();
+        highlightTrackedMetric();
+        updateFaviconAndTitle();
         return;
       }
 
-      // Clear previous tracking
-      const prevTracked = document.querySelector('.track-btn.tracking');
-      if (prevTracked) {
-        prevTracked.classList.remove('tracking');
+      // Clear previous pinned state
+      clearPinning();
+
+      // Pin to this new metric
+      btn.classList.add('tracking');
+      const parentRow = btn.closest('.usage-item');
+      if (parentRow) {
+        parentRow.classList.add('tracking');
       }
 
-      // Set new tracking
-      btn.classList.add('tracking');
-      trackedMetric = {
+      pinnedMetric = {
         metricId: metricId,
         agent: btn.dataset.agent,
         label: btn.dataset.label,
@@ -220,139 +252,65 @@ const clientScript = `
         color: btn.dataset.color,
         resetsIn: btn.dataset.resetsIn
       };
+      trackedMetric = pinnedMetric;
 
       // Reset notification state for new metric
       notificationSent = false;
       localStorage.setItem('notificationSent', 'false');
 
       // Save to localStorage
-      localStorage.setItem('trackedMetric', JSON.stringify(trackedMetric));
+      localStorage.setItem('pinnedMetric', JSON.stringify(pinnedMetric));
 
       // Update favicon and title
       updateFaviconAndTitle();
       checkAndNotify();
     }
 
-    // Clear tracking state
-    function clearTracking() {
+    // Clear pinned metric state (returns to automatic mode)
+    function clearPinning() {
       const prevTracked = document.querySelector('.track-btn.tracking');
       if (prevTracked) {
         prevTracked.classList.remove('tracking');
       }
-      trackedMetric = null;
-      localStorage.removeItem('trackedMetric');
+      const prevTrackedRow = document.querySelector('.usage-item.tracking');
+      if (prevTrackedRow) {
+        prevTrackedRow.classList.remove('tracking');
+      }
+      pinnedMetric = null;
+      localStorage.removeItem('pinnedMetric');
       notificationSent = false;
       localStorage.removeItem('notificationSent');
     }
 
-    // Restore original favicon and title
-    function restoreOriginalState() {
-      document.title = 'LLM Limit Watcher';
-
-      // Remove canvas favicon and restore original
-      const canvasFavicon = document.querySelector('link[rel="icon"]');
-      if (canvasFavicon) {
-        canvasFavicon.remove();
-      }
-
-      if (originalFavicon) {
-        const link = document.createElement('link');
-        link.rel = 'icon';
-        link.href = originalFavicon;
-        document.head.appendChild(link);
+    // Toggle tracking from clicking on the entire row
+    function toggleTrackingFromRow(row) {
+      // Find the track button within this row and delegate to toggleTracking
+      const trackBtn = row.querySelector('.track-btn');
+      if (trackBtn) {
+        toggleTracking(trackBtn);
       }
     }
 
-    // Update favicon with Canvas-generated pie chart
+    // Update favicon with Canvas-generated vertical tank
     function updateFaviconAndTitle() {
-      if (!trackedMetric || !monitorEnabled) return;
+      if (!trackedMetric) {
+        generateDefaultFavicon();
+        return;
+      }
 
-      const { percent, color, resetsIn, agent, label } = trackedMetric;
+      const { percent, color, agent, label } = trackedMetric;
 
-      // Update page title: [74%] 1h 22m | Claude Session
-      // Include both agent name and specific metric label for clarity
+      // Update page title: [XX%] Agent MetricName • Agent Tank (system readout format)
       const agentName = agent.charAt(0).toUpperCase() + agent.slice(1);
-      const resetsPart = resetsIn ? \` \${resetsIn}\` : '';
-      document.title = \`[\${percent}%]\${resetsPart} | \${agentName} \${label}\`;
+      document.title = \`[\${percent}%] \${agentName} \${label} • Agent Tank\`;
 
       // Generate favicon using Canvas API
       generateProgressFavicon(percent, color);
     }
 
-    // Generate filled pie chart favicon using Canvas API
-    // Available space is green, used space is yellow/red based on usage level
-    function generateProgressFavicon(percent, color) {
-      const canvas = document.createElement('canvas');
-      const size = 64; // Favicon size
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext('2d');
-
-      const centerX = size / 2;
-      const centerY = size / 2;
-      const radius = (size / 2) - 2;
-
-      // Clear canvas
-      ctx.clearRect(0, 0, size, size);
-
-      // Determine used color based on percentage thresholds
-      // Green: 0-49%, Yellow: 50-79%, Red: 80-100%
-      let usedColor;
-      if (percent < 50) {
-        usedColor = '#ecc94b'; // Yellow for low usage (not alarming)
-      } else if (percent < 80) {
-        usedColor = '#ecc94b'; // Yellow for medium usage
-      } else {
-        usedColor = '#e53e3e'; // Red for high usage
-      }
-
-      const availableColor = '#48bb78'; // Green for available space
-      const startAngle = -Math.PI / 2; // Start at top
-      const usedAngle = startAngle + (2 * Math.PI * percent / 100);
-
-      // Draw available (remaining) slice first - green
-      if (percent < 100) {
-        ctx.beginPath();
-        ctx.moveTo(centerX, centerY);
-        ctx.arc(centerX, centerY, radius, usedAngle, startAngle + 2 * Math.PI);
-        ctx.closePath();
-        ctx.fillStyle = availableColor;
-        ctx.fill();
-      }
-
-      // Draw used slice - yellow or red based on level
-      if (percent > 0) {
-        ctx.beginPath();
-        ctx.moveTo(centerX, centerY);
-        ctx.arc(centerX, centerY, radius, startAngle, usedAngle);
-        ctx.closePath();
-        ctx.fillStyle = usedColor;
-        ctx.fill();
-      }
-
-      // Draw thin border around the pie
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      // Convert to favicon
-      const faviconUrl = canvas.toDataURL('image/png');
-
-      // Update or create favicon link
-      let faviconLink = document.querySelector('link[rel="icon"]');
-      if (!faviconLink) {
-        faviconLink = document.createElement('link');
-        faviconLink.rel = 'icon';
-        document.head.appendChild(faviconLink);
-      }
-      faviconLink.href = faviconUrl;
-    }
-
     // Check and send notification if metric hits 90%
     function checkAndNotify() {
-      if (!trackedMetric || !monitorEnabled) return;
+      if (!trackedMetric) return;
       if (notificationSent) return; // Only notify once per metric
 
       const { percent, agent, label } = trackedMetric;
@@ -365,10 +323,10 @@ const clientScript = `
         // Send browser notification
         if ('Notification' in window && Notification.permission === 'granted') {
           const agentName = agent.charAt(0).toUpperCase() + agent.slice(1);
-          new Notification('LLM Limit Warning', {
+          new Notification('Agent Tank Warning', {
             body: \`\${agentName} \${label} is at \${percent}% usage!\`,
             icon: '/favicon.ico',
-            tag: 'llm-limit-warning'
+            tag: 'agent-tank-warning'
           });
         }
       }
@@ -376,6 +334,27 @@ const clientScript = `
 
     // Initialize monitor on page load
     initMonitor();
+
+    // ===== API Endpoint Copy Feature =====
+    function copyApiEndpoint(event) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const apiUrl = window.location.origin + '/status';
+      const copyBtn = event.target.closest('.copy-api-btn');
+
+      navigator.clipboard.writeText(apiUrl).then(() => {
+        // Show "Copied!" feedback on button
+        if (copyBtn) {
+          copyBtn.classList.add('copied');
+          setTimeout(() => {
+            copyBtn.classList.remove('copied');
+          }, 1500);
+        }
+      }).catch(err => {
+        console.error('Failed to copy API URL:', err);
+      });
+    }
 `;
 
 module.exports = { clientScript };

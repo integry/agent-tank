@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { agentIcons, refreshIcon, monitorIcon } = require('./icons');
+const { agentIcons, refreshIcon, tankIcon, syncIcon, copyIcon } = require('./icons');
 const { formatUsage } = require('./usage-formatters');
 const { clientScript } = require('./client-script');
 
@@ -55,8 +55,8 @@ function statusPage(status) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LLM Limit Watcher</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>Agent Tank</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
 ${styles}
   </style>
@@ -64,14 +64,16 @@ ${styles}
 <body>
   <nav class="top-nav">
     <div class="top-nav-left">
-      <h1 class="top-nav-title">LLM Limit Watcher</h1>
+      <a href="https://agenttank.io" target="_blank" rel="noopener noreferrer" class="logo-link">
+        ${tankIcon}
+        <h1 class="top-nav-title">AGENT <span class="brand-emphasis">TANK</span></h1>
+      </a>
     </div>
     <div class="top-nav-right">
       ${globalLastChecked ? `<span class="last-checked">Last checked: ${globalLastChecked}</span>` : ''}
-      <button class="refresh-all-btn" onclick="refreshAll(event)">Refresh All</button>
-      <button class="monitor-toggle-btn" onclick="toggleMonitor()" id="monitor-toggle-btn" title="Enable background monitoring">
-        ${monitorIcon}
-        <span id="monitor-text">Monitor</span>
+      <button class="refresh-all-btn" onclick="refreshAll(event)">
+        ${syncIcon}
+        <span class="btn-text">Refresh All</span>
       </button>
       <button class="theme-toggle-btn" onclick="toggleTheme()" id="theme-toggle-btn">
         <span id="theme-icon">☀️</span>
@@ -85,14 +87,17 @@ ${styles}
     </div>
     <footer class="footer">
       <div class="footer-left">
-        <span>LLM Limit Watcher &copy; ${new Date().getFullYear()} <a href="https://propr.dev">Rinalds Uzkalns</a></span>
+        <span>&copy; ${new Date().getFullYear()} <a href="https://propr.dev">Rinalds Uzkalns</a></span>
       </div>
       <div class="footer-right">
-        <span class="footer-version"><a href="https://github.com/integry/llm-limit-watcher/releases">v1.0.0</a></span>
+        <span class="footer-version"><a href="https://github.com/integry/agent-tank/releases">v1.0.0</a></span>
         <span class="footer-separator">•</span>
-        <a href="https://github.com/integry/llm-limit-watcher/blob/main/CHANGELOG.md">Changelog</a>
+        <a href="https://github.com/integry/agent-tank/blob/main/CHANGELOG.md">Changelog</a>
         <span class="footer-separator">•</span>
-        <a href="https://github.com/integry/llm-limit-watcher">GitHub</a>
+        <a href="https://github.com/integry/agent-tank">GitHub</a>
+        <span class="footer-separator">•</span>
+        <a href="/status" target="_blank" class="api-link" id="api-link" title="Open API endpoint">[ API Endpoint ]</a>
+        <button class="copy-api-btn" onclick="copyApiEndpoint(event)" title="Copy API URL">${copyIcon}</button>
       </div>
     </footer>
   </div>

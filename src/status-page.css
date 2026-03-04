@@ -1,35 +1,45 @@
 :root {
-  /* Dark mode colors (default) */
-  --bg-primary: #111827;
-  --bg-card: #1f2937;
-  --bg-secondary: #374151;
-  --text-primary: #f9fafb;
-  --text-secondary: #9ca3af;
-  --text-tertiary: #6b7280;
-  --accent-primary: #111827;
-  --accent-hover: #374151;
-  --border-color: #374151;
-  --disabled-bg: #4b5563;
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --card-border: #374151;
-  --progress-track: rgba(255, 255, 255, 0.08);
+  /* Dark mode colors (default) - Industrial aesthetic */
+  --bg-primary: #0d1117;
+  --bg-card: #161b22;
+  --bg-secondary: #21262d;
+  --text-primary: #f0f6fc;
+  --text-secondary: #8b949e;
+  --text-tertiary: #6e7681;
+  --accent-primary: #161b22;
+  --accent-hover: #21262d;
+  --border-color: #30363d;
+  --disabled-bg: #484f58;
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --card-border: #30363d;
+  --progress-track: rgba(255, 255, 255, 0.06);
+  /* Industrial/tank specific */
+  --tank-glass: rgba(255, 255, 255, 0.08);
+  --tank-glow: rgba(72, 187, 120, 0.3);
+  --dot-grid-color: rgba(255, 255, 255, 0.03);
+  /* Monospace font for numbers */
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
 }
 
 body.light-mode {
-  /* Light mode colors */
-  --bg-primary: #f9fafb;
+  /* Light mode colors - Industrial aesthetic */
+  --bg-primary: #f6f8fa;
   --bg-card: #ffffff;
-  --bg-secondary: #f3f4f6;
-  --text-primary: #111827;
-  --text-secondary: #6b7280;
-  --text-tertiary: #9ca3af;
-  --accent-primary: #111827;
-  --accent-hover: #374151;
-  --border-color: #e5e7eb;
-  --disabled-bg: #d1d5db;
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --card-border: #e5e7eb;
-  --progress-track: #f3f4f6;
+  --bg-secondary: #f0f3f6;
+  --text-primary: #1f2328;
+  --text-secondary: #656d76;
+  --text-tertiary: #8b949e;
+  --accent-primary: #1f2328;
+  --accent-hover: #32383f;
+  --border-color: #d0d7de;
+  --disabled-bg: #afb8c1;
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --card-border: #d0d7de;
+  --progress-track: #e6e8eb;
+  /* Industrial/tank specific */
+  --tank-glass: rgba(0, 0, 0, 0.04);
+  --tank-glow: rgba(72, 187, 120, 0.2);
+  --dot-grid-color: rgba(0, 0, 0, 0.03);
 }
 
 * { box-sizing: border-box; }
@@ -64,13 +74,43 @@ body {
 .top-nav-left {
   display: flex;
   align-items: center;
+  gap: 12px;
+}
+
+/* Logo link - wraps tank icon and title */
+.logo-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: opacity 0.2s ease;
+}
+
+.logo-link:hover {
+  opacity: 0.8;
+}
+
+/* Tank logo styling */
+.tank-logo {
+  width: 28px;
+  height: 28px;
+  color: var(--text-primary);
+  opacity: 0.9;
 }
 
 .top-nav-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
   margin: 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.top-nav-title .brand-emphasis {
+  color: var(--text-primary);
+  font-weight: 700;
 }
 
 .top-nav-right {
@@ -84,30 +124,86 @@ body {
   color: var(--text-tertiary);
 }
 
-.top-nav .refresh-all-btn {
-  padding: 8px 16px;
+/* Unified header button base styles */
+.top-nav .refresh-all-btn,
+.top-nav .monitor-toggle-btn,
+.top-nav .theme-toggle-btn {
+  height: 36px;
+  padding: 0 12px;
   font-size: 13px;
   font-weight: 500;
-  width: auto;
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-body.light-mode .top-nav .refresh-all-btn {
-  background: var(--accent-primary);
-  border: none;
-}
-
-.top-nav .theme-toggle-btn {
-  padding: 8px 12px;
-  font-size: 13px;
   width: auto;
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: transparent;
+  border: 1px solid var(--border-color);
   color: var(--text-secondary);
+  border-radius: 6px;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+}
+
+/* Interactive click feedback - press effect */
+.top-nav .refresh-all-btn:active:not(:disabled),
+.top-nav .monitor-toggle-btn:active:not(:disabled),
+.top-nav .theme-toggle-btn:active:not(:disabled) {
+  transform: scale(0.98);
+  background: var(--bg-secondary);
+}
+
+/* Refresh All button specific */
+.top-nav .refresh-all-btn {
+  --accent-glow: rgba(20, 184, 166, 0.4);
+}
+
+.top-nav .refresh-all-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 0 12px var(--accent-glow);
+  border-color: #14b8a6;
+}
+
+.top-nav .refresh-all-btn .sync-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* Syncing state for Refresh All */
+.top-nav .refresh-all-btn.syncing {
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.top-nav .refresh-all-btn.syncing .sync-icon {
+  animation: spin 0.8s linear infinite;
+}
+
+body.light-mode .top-nav .refresh-all-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+body.light-mode .top-nav .refresh-all-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  box-shadow: 0 0 12px rgba(20, 184, 166, 0.3);
+}
+
+body.light-mode .top-nav .refresh-all-btn:active:not(:disabled) {
+  background: var(--bg-secondary);
+}
+
+/* Theme toggle button specific */
+.top-nav .theme-toggle-btn {
+  --accent-glow: rgba(251, 191, 36, 0.4);
+}
+
+.top-nav .theme-toggle-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 0 12px var(--accent-glow);
+  border-color: #fbbf24;
 }
 
 body.light-mode .top-nav .theme-toggle-btn {
@@ -115,9 +211,12 @@ body.light-mode .top-nav .theme-toggle-btn {
   border: 1px solid var(--border-color);
 }
 
-.top-nav .theme-toggle-btn:hover:not(:disabled) {
+body.light-mode .top-nav .theme-toggle-btn:hover:not(:disabled) {
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.3);
+}
+
+body.light-mode .top-nav .theme-toggle-btn:active:not(:disabled) {
   background: var(--bg-secondary);
-  color: var(--text-primary);
 }
 
 .container {
@@ -154,13 +253,17 @@ body.light-mode .top-nav .theme-toggle-btn {
 
 .agent-card {
   background: var(--bg-card);
-  border-radius: 8px;
-  padding: 24px 20px 20px 20px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 32px 24px 28px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: var(--card-shadow);
   display: flex;
   flex-direction: column;
   transition: background-color 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  /* Dot-grid background for industrial panel look */
+  background-image: radial-gradient(var(--dot-grid-color) 1px, transparent 1px);
+  background-size: 16px 16px;
+  position: relative;
 }
 
 body.light-mode .agent-card {
@@ -191,6 +294,36 @@ body.light-mode .agent-card {
   min-height: 48px;
 }
 
+/* Trackable usage items - clickable entire row */
+.usage-item.trackable {
+  cursor: pointer;
+  padding: 10px 8px 4px 8px;
+  margin: 0 -8px;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+}
+
+.usage-item.trackable:hover {
+  background-color: var(--bg-secondary);
+}
+
+/* Active tracking state for the row - subtle highlight with vibrant LED */
+.usage-item.trackable.tracking {
+  background-color: rgba(72, 187, 120, 0.08);
+  border: 1px solid rgba(72, 187, 120, 0.2);
+  margin: -1px -9px 0 -9px;
+  padding: 10px 8px 4px 8px;
+}
+
+body.light-mode .usage-item.trackable.tracking {
+  background-color: rgba(72, 187, 120, 0.06);
+}
+
+/* Enhanced LED glow when row is being tracked */
+.usage-item.trackable.tracking .status-dot {
+  box-shadow: 0 0 8px currentColor, 0 0 12px currentColor;
+}
+
 .usage-item:last-child { border-bottom: none; }
 
 .usage-item.reset-info {
@@ -208,13 +341,17 @@ body.light-mode .agent-card {
 }
 
 .usage-item.reset-info .usage-label { font-size: 12px; text-transform: none; }
-.usage-item.reset-info .usage-value { font-weight: normal; color: var(--text-secondary); }
+.usage-item.reset-info .usage-value { font-family: var(--font-mono); font-weight: 500; color: var(--text-secondary); }
 
 .usage-label {
   color: var(--text-tertiary);
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.02em;
+  /* Universal LED standard: all labels have status dots */
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* Model name styling - dark grey (light mode) / light grey (dark mode), slightly bolder, lowercase */
@@ -228,7 +365,40 @@ body.light-mode .usage-label.model-name {
   color: #374151;
 }
 
+/* Status dot indicator for model usage tier */
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.status-dot.status-green {
+  background-color: #48bb78;
+  color: #48bb78;
+}
+
+.status-dot.status-yellow {
+  background-color: #ecc94b;
+  color: #ecc94b;
+}
+
+.status-dot.status-red {
+  background-color: #e53e3e;
+  color: #e53e3e;
+}
+
+/* Pill background removed - plain text with status dots for uniform look */
+.model-pill {
+  /* Background removed per design unification - just keep inline-flex for alignment */
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .usage-value {
+  font-family: var(--font-mono);
   font-weight: 600;
   display: flex;
   align-items: baseline;
@@ -237,14 +407,16 @@ body.light-mode .usage-label.model-name {
 }
 
 .usage-percent {
-  font-size: 24px;
+  font-family: var(--font-mono);
+  font-size: 26px;
   font-weight: 700;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
 
 .usage-suffix {
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-tertiary);
 }
@@ -257,17 +429,70 @@ body.light-mode .usage-label.model-name {
 .usage-value.low .usage-percent { color: #e53e3e; }
 
 .progress-bar {
-  height: 6px;
-  background: var(--progress-track);
-  border-radius: 9999px;
-  margin-top: 4px;
+  height: 16px;
+  background: var(--tank-glass);
+  border-radius: 4px;
+  margin-top: 8px;
   overflow: hidden;
+  position: relative;
+  /* Glass vial effect with inset shadow */
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 -1px 2px rgba(255, 255, 255, 0.05);
+  /* Measurement tick marks every 20% - dark on empty part */
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent calc(20% - 1px),
+      rgba(255, 255, 255, 0.08) calc(20% - 1px),
+      rgba(255, 255, 255, 0.08) 20%
+    );
+  background-color: var(--tank-glass);
+}
+
+body.light-mode .progress-bar {
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.1),
+    inset 0 -1px 2px rgba(255, 255, 255, 0.5);
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent calc(20% - 1px),
+      rgba(0, 0, 0, 0.1) calc(20% - 1px),
+      rgba(0, 0, 0, 0.1) 20%
+    );
 }
 
 .progress-fill {
   height: 100%;
-  border-radius: 9999px;
-  transition: width 0.3s;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  position: relative;
+  /* Liquid effect with inner glow and gradient */
+  box-shadow:
+    inset 0 -2px 4px rgba(0, 0, 0, 0.2),
+    inset 0 2px 4px rgba(255, 255, 255, 0.15),
+    0 0 8px var(--tank-glow);
+  /* Subtle gradient for liquid depth effect */
+  background-image:
+    /* Backlit tick marks - lighter/white on filled part */
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent calc(20% - 1px),
+      rgba(255, 255, 255, 0.25) calc(20% - 1px),
+      rgba(255, 255, 255, 0.25) 20%
+    ),
+    /* Original depth gradient */
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      transparent 40%,
+      rgba(0, 0, 0, 0.1) 100%
+    );
+  background-blend-mode: overlay;
 }
 
 .card-footer {
@@ -342,35 +567,26 @@ button .spinner {
   flex-shrink: 0;
 }
 
-/* Brand colors for agent icons and subtle backgrounds */
-/* Claude (Anthropic) - coral/orange tones */
-.agent-claude {
-  --agent-brand: #D97757;
-  --agent-bg-subtle: rgba(217, 119, 87, 0.08);
-}
-
-.agent-claude .agent-icon {
-  color: var(--agent-brand);
-}
-
-/* Gemini (Google) - blue tones */
-.agent-gemini {
-  --agent-brand: #4285F4;
-  --agent-bg-subtle: rgba(66, 133, 244, 0.08);
-}
-
-.agent-gemini .agent-icon {
-  color: var(--agent-brand);
-}
-
-/* Codex (OpenAI) - green tones */
+/* Agent icons - neutral low-opacity white/grey for industrial look
+   Status dots (LEDs) are now the primary color indicators */
+.agent-claude,
+.agent-gemini,
 .agent-codex {
-  --agent-brand: #10A37F;
-  --agent-bg-subtle: rgba(16, 163, 127, 0.08);
+  --agent-bg-subtle: rgba(255, 255, 255, 0.04);
 }
 
+.agent-claude .agent-icon,
+.agent-gemini .agent-icon,
 .agent-codex .agent-icon {
-  color: var(--agent-brand);
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+body.light-mode .agent-claude .agent-icon,
+body.light-mode .agent-gemini .agent-icon,
+body.light-mode .agent-codex .agent-icon {
+  color: var(--text-secondary);
+  opacity: 0.6;
 }
 
 /* Agent cards have simple borders - brand colors only on icons */
@@ -380,17 +596,11 @@ button .spinner {
   background: var(--bg-card);
 }
 
-/* Light mode adjustments for brand backgrounds */
-body.light-mode .agent-claude {
-  --agent-bg-subtle: rgba(217, 119, 87, 0.06);
-}
-
-body.light-mode .agent-gemini {
-  --agent-bg-subtle: rgba(66, 133, 244, 0.06);
-}
-
+/* Light mode adjustments for subtle backgrounds */
+body.light-mode .agent-claude,
+body.light-mode .agent-gemini,
 body.light-mode .agent-codex {
-  --agent-bg-subtle: rgba(16, 163, 127, 0.06);
+  --agent-bg-subtle: rgba(0, 0, 0, 0.02);
 }
 
 /* Agent headings use neutral color, only icons have brand colors */
@@ -475,10 +685,13 @@ body.light-mode .time-progress-fill {
 /* Model container wrapper - consistent vertical spacing */
 .model-container {
   margin-bottom: 24px;
+  /* Ensure minimum padding even when "Resets in" is hidden */
+  padding-bottom: 8px;
 }
 
 .model-container:last-child {
   margin-bottom: 0;
+  padding-bottom: 0;
 }
 
 /* Zero usage - de-emphasized styling using color shift (not opacity for accessibility) */
@@ -491,17 +704,34 @@ body.light-mode .time-progress-fill {
 
 /* Progress bar for zero usage: show track but no fill, but keep track visible */
 .progress-bar.zero-usage {
-  background: #f1f5f9;
+  background-color: var(--tank-glass);
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent calc(20% - 1px),
+      rgba(255, 255, 255, 0.05) calc(20% - 1px),
+      rgba(255, 255, 255, 0.05) 20%
+    );
 }
 
 .progress-bar.zero-usage .progress-fill {
   width: 0 !important;
   background: transparent !important;
+  box-shadow: none !important;
 }
 
-/* Dark mode: lighter track for zero usage progress bars */
-body:not(.light-mode) .progress-bar.zero-usage {
-  background: rgba(255, 255, 255, 0.08);
+/* Light mode: zero usage progress bars */
+body.light-mode .progress-bar.zero-usage {
+  background-color: var(--tank-glass);
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent calc(20% - 1px),
+      rgba(0, 0, 0, 0.04) calc(20% - 1px),
+      rgba(0, 0, 0, 0.04) 20%
+    );
 }
 
 /* Reset info for zero usage: grey text */
@@ -533,6 +763,11 @@ body.light-mode .usage-item.zero-usage:hover {
   min-height: auto;
 }
 
+/* Add extra spacing between model groups for distinct "module" feel */
+.model-subheading:not(:first-child) {
+  margin-top: calc(2em + 4px);
+}
+
 .model-subheading .usage-label {
   font-weight: 600;
   font-size: 11px;
@@ -552,21 +787,46 @@ body.light-mode .usage-item.zero-usage:hover {
   margin-top: 12px;
 }
 
-/* Footer - SaaS-style split layout */
+/* Nested metrics under Codex model subheadings - indented 12px for visual grouping */
+.nested-container {
+  padding-left: 12px;
+}
+
+.usage-item.nested-metric {
+  /* Adjust padding for nested items */
+}
+
+.progress-bar.nested-metric {
+  /* Keep progress bars aligned with their nested labels */
+}
+
+/* Footer - SaaS-style split layout, improved contrast */
 .footer {
   /* Push footer to bottom using auto margin */
   margin-top: auto;
   padding: 16px 24px;
   font-size: 0.75rem;
-  color: #475569;
+  color: #9ca3af;
+  opacity: 0.75;
   display: flex;
   justify-content: space-between;
   align-items: center;
   border-top: 1px solid var(--border-color);
+  transition: opacity 0.2s ease;
+}
+
+/* Reveal footer on hover */
+.footer:hover {
+  opacity: 0.95;
 }
 
 body.light-mode .footer {
   color: #6b7280;
+  opacity: 0.8;
+}
+
+body.light-mode .footer:hover {
+  opacity: 1;
 }
 
 .footer-left,
@@ -597,6 +857,83 @@ body.light-mode .footer {
 
 .footer-version {
   font-variant-numeric: tabular-nums;
+}
+
+/* API Endpoint link - developer-first monospace styling */
+.api-link {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  color: inherit;
+  text-decoration: none;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.api-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #48bb78;
+}
+
+/* Copied state - green feedback */
+.api-link.copied {
+  background: rgba(72, 187, 120, 0.15);
+  color: #48bb78;
+}
+
+/* Light mode adjustments for API link */
+body.light-mode .api-link {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+body.light-mode .api-link:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #38a169;
+}
+
+body.light-mode .api-link.copied {
+  background: rgba(72, 187, 120, 0.12);
+  color: #38a169;
+}
+
+/* Copy API button - small icon button next to API link */
+.copy-api-btn {
+  background: none;
+  border: none;
+  padding: 2px;
+  margin: 0;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  opacity: 0.6;
+  transition: opacity 0.2s ease, color 0.2s ease;
+  vertical-align: middle;
+}
+
+.copy-api-btn:hover {
+  opacity: 1;
+  color: var(--text-primary);
+}
+
+.copy-api-btn .copy-icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* Copied state - green checkmark effect */
+.copy-api-btn.copied {
+  color: #48bb78;
+  opacity: 1;
+}
+
+body.light-mode .copy-api-btn.copied {
+  color: #38a169;
 }
 
 /* ===== Background Monitor Feature ===== */
@@ -630,15 +967,28 @@ body.light-mode .footer {
   background: var(--bg-secondary);
 }
 
-/* Active/tracking state - always visible with accent color */
+/* Active/tracking state - always visible with accent color and glow */
 .track-btn.tracking {
   opacity: 1;
   color: #48bb78;
+  animation: tracking-pulse 2s ease-in-out infinite;
+}
+
+/* Subtle pulsing glow for tracking indicator */
+@keyframes tracking-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px rgba(72, 187, 120, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 6px rgba(72, 187, 120, 0.8));
+  }
 }
 
 .track-btn.tracking:hover {
   color: #38a169;
   background: rgba(72, 187, 120, 0.1);
+  animation: none;
+  filter: drop-shadow(0 0 6px rgba(72, 187, 120, 0.6));
 }
 
 .track-btn svg {
@@ -646,51 +996,7 @@ body.light-mode .footer {
   height: 16px;
 }
 
-/* Monitor toggle button in top nav */
-.monitor-toggle-btn {
-  padding: 8px 12px;
-  font-size: 13px;
-  width: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: var(--text-secondary);
-  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-}
-
-body.light-mode .monitor-toggle-btn {
-  background: transparent;
-  border: 1px solid var(--border-color);
-}
-
-.monitor-toggle-btn:hover:not(:disabled) {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-/* Monitor active state */
-.monitor-toggle-btn.active {
-  background: rgba(72, 187, 120, 0.15);
-  border-color: #48bb78;
-  color: #48bb78;
-}
-
-body.light-mode .monitor-toggle-btn.active {
-  background: rgba(72, 187, 120, 0.1);
-  border-color: #48bb78;
-  color: #38a169;
-}
-
-.monitor-toggle-btn.active:hover:not(:disabled) {
-  background: rgba(72, 187, 120, 0.25);
-}
-
-.monitor-toggle-btn svg {
-  width: 16px;
-  height: 16px;
-}
+/* Monitor toggle button removed - monitoring is always on */
 
 /* Hide default favicon when using canvas-generated one */
 .favicon-canvas {
