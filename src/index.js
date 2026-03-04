@@ -53,6 +53,18 @@ class LLMWatcher {
       }
     }
 
+    // Pre-spawn persistent processes in parallel before sending commands
+    if (!this.freshProcess) {
+      console.log('Spawning agent processes...');
+      await Promise.all(
+        Array.from(this.agents.values()).map(agent =>
+          agent.spawnProcess().catch(err =>
+            console.error(`Error spawning ${agent.name}:`, err.message)
+          )
+        )
+      );
+    }
+
     // Initial fetch
     console.log('Fetching initial usage data...');
     await this.refreshAll();

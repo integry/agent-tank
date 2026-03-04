@@ -238,14 +238,14 @@ class CodexAgent extends BaseAgent {
           this.output = '';
           this.shell.write('/status\r');
         }
-      }, 1500);
+      }, 500);
 
       this._onDataCallback = () => {
         if (this.hasCompleteOutput(this.output)) {
           // Delay to let additional model sections render
           if (!settleTimer) {
             console.log(`[${this.name}] Complete output detected, waiting to settle...`);
-            settleTimer = setTimeout(() => finish(this.output), 500);
+            settleTimer = setTimeout(() => finish(this.output), 200);
           }
         }
       };

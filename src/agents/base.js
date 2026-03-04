@@ -162,7 +162,7 @@ class BaseAgent {
         if (this.hasCompleteOutput(this.output)) {
           console.log(`[${this.name}] Complete output detected`);
           // Small delay to capture any remaining output
-          setTimeout(() => finish(this.output), 300);
+          setTimeout(() => finish(this.output), 100);
         }
       };
 

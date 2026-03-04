@@ -162,18 +162,17 @@ class ClaudeAgent extends BaseAgent {
 
   sendCommands(shell, _output) {
     console.log(`[${this.name}] Sending /usage command...`);
-    // Clear any partial input first with Escape
-    setTimeout(() => {
-      shell.write('\x1b');
-    }, 100);
-    // Type the full /usage command
-    setTimeout(() => {
-      shell.write('/usage');
-    }, 300);
-    // Wait for autocomplete, then press Enter
-    setTimeout(() => {
-      shell.write('\r');
-    }, 800);
+    // Escape dismisses any previous output/UI, then type command + Enter
+    if (this.freshProcess) {
+      setTimeout(() => shell.write('\x1b'), 50);
+      setTimeout(() => shell.write('/usage'), 150);
+      setTimeout(() => shell.write('\r'), 500);
+    } else {
+      // Persistent mode: tighter timings
+      setTimeout(() => shell.write('\x1b'), 50);
+      setTimeout(() => shell.write('/usage'), 150);
+      setTimeout(() => shell.write('\r'), 400);
+    }
   }
 
   parseOutput(output) {
