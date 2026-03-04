@@ -93,6 +93,8 @@ ${styles}
         <a href="https://github.com/integry/agent-tank/blob/main/CHANGELOG.md">Changelog</a>
         <span class="footer-separator">•</span>
         <a href="https://github.com/integry/agent-tank">GitHub</a>
+        <span class="footer-separator">•</span>
+        <a href="/api/v1/limits" target="_blank" class="api-link" id="api-link" onclick="copyApiEndpoint(event)" title="Click to copy, Ctrl/Cmd+Click to open">[ API Endpoint ]</a>
       </div>
     </footer>
   </div>

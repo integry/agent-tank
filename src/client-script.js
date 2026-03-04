@@ -334,6 +334,35 @@ const clientScript = faviconScript + `
 
     // Initialize monitor on page load
     initMonitor();
+
+    // ===== API Endpoint Copy Feature =====
+    function copyApiEndpoint(event) {
+      // If Ctrl/Cmd+Click, let the link open normally in new tab
+      if (event.ctrlKey || event.metaKey) {
+        return;
+      }
+
+      // Prevent default link behavior for regular click
+      event.preventDefault();
+
+      const apiUrl = window.location.origin + '/api/v1/limits';
+      const apiLink = document.getElementById('api-link');
+
+      navigator.clipboard.writeText(apiUrl).then(() => {
+        // Show "Copied!" feedback
+        const originalText = apiLink.textContent;
+        apiLink.textContent = '[ Copied! ]';
+        apiLink.classList.add('copied');
+
+        setTimeout(() => {
+          apiLink.textContent = originalText;
+          apiLink.classList.remove('copied');
+        }, 1500);
+      }).catch(err => {
+        // Fallback: open in new tab if clipboard fails
+        window.open('/api/v1/limits', '_blank');
+      });
+    }
 `;
 
 module.exports = { clientScript };
