@@ -39,10 +39,11 @@ const clientScript = faviconScript + `
     initTheme();
 
     // ===== Auto-Refresh Configuration =====
-    // These can be modified to control background polling behavior
+    // Frontend auto-refresh is controlled by backend settings fetched from /config
+    // These are fallback defaults if the backend config cannot be fetched
     const autoRefreshConfig = {
-      enabled: true,       // Set to false to disable auto-refresh
-      interval: 60000      // Refresh interval in milliseconds (default: 60 seconds, 0 = disabled)
+      enabled: true,       // Will be overridden by backend config
+      interval: 60000      // Will be overridden by backend config (in milliseconds)
     };
 
     // Auto-refresh timer reference

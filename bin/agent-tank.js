@@ -16,6 +16,8 @@ const options = {
   config: { type: 'string', short: 'c' },
   help: { type: 'boolean', short: 'h', default: false },
   'auto-discover': { type: 'boolean', default: true },
+  'auto-refresh': { type: 'boolean', default: true },
+  'auto-refresh-interval': { type: 'string', default: '60' },
 };
 
 const { values } = parseArgs({ options, allowPositionals: false });
@@ -38,6 +40,8 @@ Options:
   --fresh-process       Spawn a new process per refresh (default: false)
   --config, -c          Path to config file (JSON)
   --auto-discover       Auto-discover available agents (default: true)
+  --auto-refresh        Enable/disable background auto-refresh (default: true)
+  --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60, 0 = disabled)
   --help, -h            Show this help message
 
 Environment variables:
@@ -46,6 +50,8 @@ Environment variables:
   AGENT_TANK_TOKEN      API key (overrides --auth-token)
   AGENT_TANK_HOST       Bind address (overrides --host)
   AGENT_TANK_FRESH_PROCESS  Use fresh process per refresh ("1" or "true")
+  AGENT_TANK_AUTO_REFRESH   Enable/disable background auto-refresh ("1" or "true" / "0" or "false")
+  AGENT_TANK_AUTO_REFRESH_INTERVAL  Auto-refresh interval in seconds
 
 Examples:
   agent-tank                          # Auto-discover and monitor all available
@@ -55,11 +61,14 @@ Examples:
   agent-tank --auth-user admin --auth-pass secret  # Enable basic auth
   agent-tank --auth-token mykey       # Enable API key auth
   agent-tank -c ./config.json         # Use config file
+  agent-tank --auto-refresh-interval 30  # Refresh every 30 seconds
+  agent-tank --no-auto-refresh        # Disable background auto-refresh
 
 HTTP Endpoints:
   GET /              Status page (HTML)
   GET /status        All agent statuses (JSON)
   GET /status/:agent Status for specific agent (JSON)
+  GET /config        Auto-refresh configuration (JSON)
   POST /refresh      Trigger refresh for all agents
   POST /refresh/:agent Trigger refresh for specific agent
 `);
@@ -96,6 +105,23 @@ const freshProcess = values['fresh-process'] ||
   config.freshProcess ||
   freshProcessEnv === '1' || freshProcessEnv === 'true';
 
+// Auto-refresh configuration (env > CLI > config file)
+const autoRefreshEnv = process.env.AGENT_TANK_AUTO_REFRESH;
+let autoRefreshEnabled = values['auto-refresh'];
+if (autoRefreshEnv !== undefined) {
+  autoRefreshEnabled = autoRefreshEnv === '1' || autoRefreshEnv === 'true';
+} else if (config.autoRefresh?.enabled !== undefined) {
+  autoRefreshEnabled = config.autoRefresh.enabled;
+}
+
+const autoRefreshIntervalEnv = process.env.AGENT_TANK_AUTO_REFRESH_INTERVAL;
+let autoRefreshInterval = parseInt(values['auto-refresh-interval'], 10);
+if (autoRefreshIntervalEnv !== undefined) {
+  autoRefreshInterval = parseInt(autoRefreshIntervalEnv, 10);
+} else if (config.autoRefresh?.interval !== undefined) {
+  autoRefreshInterval = config.autoRefresh.interval;
+}
+
 const watcher = new LLMWatcher({
   agents: agents.length > 0 ? agents : null, // null = auto-discover
   autoDiscover: values['auto-discover'] && agents.length === 0,
@@ -103,6 +129,8 @@ const watcher = new LLMWatcher({
   host,
   auth,
   freshProcess,
+  autoRefreshEnabled,
+  autoRefreshInterval,
 });
 
 // Graceful shutdown

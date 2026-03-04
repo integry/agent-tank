@@ -352,7 +352,100 @@ const autoRefreshScript = `
       }
     }
 
-    // Start auto-refresh polling
+    // Fetch backend configuration and initialize auto-refresh
+    async function initAutoRefreshFromBackend() {
+      try {
+        const response = await fetch('/config');
+        if (!response.ok) {
+          console.warn('[Auto-refresh] Could not fetch /config, using defaults');
+          startAutoRefreshWithConfig(autoRefreshConfig.enabled, autoRefreshConfig.interval);
+          return;
+        }
+
+        const config = await response.json();
+        const backendEnabled = config.autoRefresh?.enabled ?? false;
+        const backendInterval = config.autoRefresh?.interval ?? 0; // in seconds
+        const lastRefreshedAt = config.lastRefreshedAt;
+
+        // If backend auto-refresh is disabled, disable frontend auto-refresh too
+        if (!backendEnabled || backendInterval <= 0) {
+          console.log('[Auto-refresh] Disabled (backend auto-refresh is off)');
+          autoRefreshConfig.enabled = false;
+          autoRefreshConfig.interval = 0;
+          return;
+        }
+
+        // Update frontend config to match backend
+        autoRefreshConfig.enabled = true;
+        autoRefreshConfig.interval = backendInterval * 1000; // Convert to milliseconds
+
+        // Calculate delay to sync with backend refresh cycle
+        // Frontend should refresh shortly (2 seconds) after backend has refreshed
+        let initialDelay = 2000; // default 2 seconds
+        if (lastRefreshedAt) {
+          const lastRefreshTime = new Date(lastRefreshedAt).getTime();
+          const now = Date.now();
+          const timeSinceLastRefresh = now - lastRefreshTime;
+          const intervalMs = backendInterval * 1000;
+
+          // Calculate time until next backend refresh
+          const timeUntilNextRefresh = intervalMs - (timeSinceLastRefresh % intervalMs);
+          // Add 2 seconds buffer to ensure backend has completed
+          initialDelay = timeUntilNextRefresh + 2000;
+
+          // If we're very close to the next refresh, wait for the following one
+          if (timeUntilNextRefresh < 1000) {
+            initialDelay = intervalMs + 2000;
+          }
+        }
+
+        console.log('[Auto-refresh] Backend interval:', backendInterval, 'seconds');
+        console.log('[Auto-refresh] Initial delay:', Math.round(initialDelay / 1000), 'seconds');
+
+        // Start with calculated delay, then continue at regular interval
+        startAutoRefreshWithDelay(initialDelay, autoRefreshConfig.interval);
+      } catch (error) {
+        console.error('[Auto-refresh] Error fetching config:', error);
+        // Fall back to default config
+        startAutoRefreshWithConfig(autoRefreshConfig.enabled, autoRefreshConfig.interval);
+      }
+    }
+
+    // Start auto-refresh with a specific initial delay and then regular interval
+    function startAutoRefreshWithDelay(initialDelay, interval) {
+      // Clear any existing timer
+      if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+
+      // Wait for initial delay, then perform first refresh and start interval
+      setTimeout(async () => {
+        await performAutoRefresh();
+        // Now start regular interval
+        autoRefreshTimer = setInterval(performAutoRefresh, interval);
+        console.log('[Auto-refresh] Regular interval started:', interval, 'ms');
+      }, initialDelay);
+    }
+
+    // Start auto-refresh with given configuration
+    function startAutoRefreshWithConfig(enabled, intervalMs) {
+      if (!enabled || intervalMs === 0) {
+        console.log('[Auto-refresh] Disabled by configuration');
+        return;
+      }
+
+      // Clear any existing timer
+      if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+      }
+
+      // Start polling
+      autoRefreshTimer = setInterval(performAutoRefresh, intervalMs);
+      console.log('[Auto-refresh] Started with interval:', intervalMs, 'ms');
+    }
+
+    // Start auto-refresh polling (legacy function for backwards compatibility)
     function startAutoRefresh() {
       // Don't start if disabled or interval is 0
       if (!autoRefreshConfig.enabled || autoRefreshConfig.interval === 0) {
@@ -379,8 +472,8 @@ const autoRefreshScript = `
       }
     }
 
-    // Initialize auto-refresh on page load
-    startAutoRefresh();
+    // Initialize auto-refresh from backend config on page load
+    initAutoRefreshFromBackend();
 `;
 
 module.exports = { autoRefreshScript };
