@@ -202,7 +202,7 @@ function formatClaudeUsage(usage) {
   for (const { data, label, cycle } of sections) {
     if (data) {
       const isZero = data.percent === 0;
-      html += usageItem(label, data.percent, '% used', true, isZero);
+      html += usageItem(label, data.percent, '% used', { isZero });
       if (data.resetsIn) {
         html += resetInfoItem(data.resetsIn, data.resetsAt, cycle, isZero);
       }
@@ -216,7 +216,7 @@ function formatGeminiUsage(usage) {
   if (usage.models && usage.models.length > 0) {
     for (const model of usage.models) {
       const isZero = model.percentUsed === 0;
-      html += usageItem(model.model, model.percentUsed, '% used', true, isZero);
+      html += usageItem(model.model, model.percentUsed, '% used', { isZero });
       if (model.resetsIn) {
         html += resetInfoItem(model.resetsIn, null, 'sessionGemini', isZero);
       }
@@ -241,14 +241,14 @@ function formatCodexUsage(usage) {
     html += `<div class="usage-item model-subheading${isFirst ? '' : ''}"><span class="usage-label">${ml.name}</span></div>`;
     if (ml.fiveHour) {
       const isZero = ml.fiveHour.percentUsed === 0;
-      html += usageItem('5h limit', ml.fiveHour.percentUsed, '% used', true, isZero);
+      html += usageItem('5h limit', ml.fiveHour.percentUsed, '% used', { isZero });
       if (ml.fiveHour.resetsIn) {
         html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', isZero);
       }
     }
     if (ml.weekly) {
       const isZero = ml.weekly.percentUsed === 0;
-      html += usageItem('Weekly', ml.weekly.percentUsed, '% used', true, isZero);
+      html += usageItem('Weekly', ml.weekly.percentUsed, '% used', { isZero });
       if (ml.weekly.resetsIn) {
         html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', isZero);
       }
@@ -269,7 +269,8 @@ function formatUsage(agentName, usage) {
   return html || '<p class="usage-item">No usage data</p>';
 }
 
-function usageItem(label, value, suffix, isUsed, isZero = false) {
+function usageItem(label, value, suffix, options = {}) {
+  const { isUsed = true, isZero = false } = options;
   // For "used" percentages, higher is worse. For "left" percentages, lower is worse.
   let colorClass;
   if (isUsed) {
