@@ -293,7 +293,7 @@ body.light-mode .agent-card {
   background-color: var(--bg-secondary);
 }
 
-/* Active tracking state for the row */
+/* Active tracking state for the row - subtle highlight with vibrant LED */
 .usage-item.trackable.tracking {
   background-color: rgba(72, 187, 120, 0.08);
   border: 1px solid rgba(72, 187, 120, 0.2);
@@ -303,6 +303,11 @@ body.light-mode .agent-card {
 
 body.light-mode .usage-item.trackable.tracking {
   background-color: rgba(72, 187, 120, 0.06);
+}
+
+/* Enhanced LED glow when row is being tracked */
+.usage-item.trackable.tracking .status-dot {
+  box-shadow: 0 0 8px currentColor, 0 0 12px currentColor;
 }
 
 .usage-item:last-child { border-bottom: none; }
@@ -900,68 +905,7 @@ body.light-mode .footer:hover {
   height: 16px;
 }
 
-/* Monitor toggle button specific */
-.top-nav .monitor-toggle-btn {
-  --accent-glow: rgba(72, 187, 120, 0.4);
-}
-
-.top-nav .monitor-toggle-btn:hover:not(:disabled) {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  box-shadow: 0 0 12px var(--accent-glow);
-  border-color: #48bb78;
-}
-
-body.light-mode .top-nav .monitor-toggle-btn {
-  background: transparent;
-  border: 1px solid var(--border-color);
-}
-
-body.light-mode .top-nav .monitor-toggle-btn:hover:not(:disabled) {
-  box-shadow: 0 0 12px rgba(72, 187, 120, 0.3);
-}
-
-body.light-mode .top-nav .monitor-toggle-btn:active:not(:disabled) {
-  background: var(--bg-secondary);
-}
-
-/* Monitor active state */
-.monitor-toggle-btn.active {
-  background: rgba(72, 187, 120, 0.15);
-  border-color: #48bb78;
-  color: #48bb78;
-}
-
-body.light-mode .monitor-toggle-btn.active {
-  background: rgba(72, 187, 120, 0.1);
-  border-color: #48bb78;
-  color: #38a169;
-}
-
-.monitor-toggle-btn.active:hover:not(:disabled) {
-  background: rgba(72, 187, 120, 0.25);
-}
-
-.monitor-toggle-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
-/* LED Status Indicator for Monitor button */
-.led-indicator {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background-color: #4b5563;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-/* LED active state - bright green with glow */
-.monitor-toggle-btn.active .led-indicator {
-  background-color: #22c55e;
-  box-shadow: 0 0 8px #22c55e;
-}
+/* Monitor toggle button removed - monitoring is always on */
 
 /* Hide default favicon when using canvas-generated one */
 .favicon-canvas {
