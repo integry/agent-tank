@@ -28,6 +28,25 @@ function parseResetsInToSeconds(resetsIn) {
   return totalSeconds > 0 ? totalSeconds : null;
 }
 
+// Helper to determine color class based on usage percentage
+function getColorClass(value, isUsed) {
+  if (isUsed) {
+    if (value < 50) return 'high';
+    if (value < 80) return 'medium';
+    return 'low';
+  }
+  if (value > 50) return 'high';
+  if (value > 20) return 'medium';
+  return 'low';
+}
+
+// Helper to determine status dot class based on value
+function getStatusDotClass(value) {
+  if (value <= 50) return 'status-green';
+  if (value <= 80) return 'status-yellow';
+  return 'status-red';
+}
+
 function resetInfoItem(resetsIn, originalValue, cycleType, isZero = false) {
   // If usage is at 0%, hide the "Resets in" row entirely - it's useless info when at full capacity
   if (isZero) {
@@ -60,28 +79,14 @@ function resetInfoItem(resetsIn, originalValue, cycleType, isZero = false) {
 
 function usageItem(label, value, suffix, options = {}) {
   const { isUsed = true, isZero = false, isModelName = false, agentName = '', resetsIn = '', metricId = '' } = options;
-  // For "used" percentages, higher is worse. For "left" percentages, lower is worse.
-  let colorClass;
-  if (isUsed) {
-    colorClass = value < 50 ? 'high' : value < 80 ? 'medium' : 'low';
-  } else {
-    colorClass = value > 50 ? 'high' : value > 20 ? 'medium' : 'low';
-  }
-
+  const colorClass = getColorClass(value, isUsed);
   const progressPercent = isUsed ? value : (100 - value);
   const progressColor = colorClass === 'high' ? '#48bb78' : colorClass === 'medium' ? '#ecc94b' : '#e53e3e';
   const zeroClass = isZero ? ' zero-usage' : '';
-
-  // Determine status dot color based on usage tier: 0-50% green, 51-80% yellow, 81-100% red
-  const statusDotClass = value <= 50 ? 'status-green' : value <= 80 ? 'status-yellow' : 'status-red';
-
-  // For model names, add status dot and pill wrapper
-  let labelHtml;
-  if (isModelName) {
-    labelHtml = `<span class="usage-label model-name"><span class="model-pill"><span class="status-dot ${statusDotClass}"></span>${label}</span></span>`;
-  } else {
-    labelHtml = `<span class="usage-label">${label}</span>`;
-  }
+  const statusDotClass = getStatusDotClass(value);
+  const labelHtml = isModelName
+    ? `<span class="usage-label model-name"><span class="model-pill"><span class="status-dot ${statusDotClass}"></span>${label}</span></span>`
+    : `<span class="usage-label">${label}</span>`;
 
   // Generate unique metric ID for tracking
   const trackingId = metricId || `${agentName}-${label.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
