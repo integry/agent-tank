@@ -132,7 +132,7 @@ class GeminiAgent extends BaseAgent {
       await this.spawnProcess();
     }
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, _reject) => {
       let aboutOutput = '';
       let completed = false;
 

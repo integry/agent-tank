@@ -6,12 +6,8 @@ class ClaudeAgent extends BaseAgent {
     this._statusSent = false;
   }
 
-  getTimeout() {
-    return 30000; // 30 seconds - extra time for trust prompt and usage data loading
-  }
-
-  // Use dumb terminal to avoid cursor positioning that corrupts text
-  getEnv() {
+  getTimeout() { return 30000; } // 30s - extra time for trust prompt and usage data
+  getEnv() { // Use dumb terminal to avoid cursor positioning that corrupts text
     const env = { ...process.env, TERM: 'dumb', NO_COLOR: '1' };
     // Remove CLAUDECODE to allow spawning inside a Claude Code session
     delete env.CLAUDECODE;
@@ -306,7 +302,7 @@ class ClaudeAgent extends BaseAgent {
       await this.spawnProcess();
     }
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, _reject) => {
       let statusOutput = '';
       let completed = false;
 

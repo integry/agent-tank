@@ -5,30 +5,14 @@ class CodexAgent extends BaseAgent {
     super('codex', 'codex');
   }
 
-  getTimeout() {
-    return 25000; // 25 seconds
-  }
+  getTimeout() { return 25000; }
 
   handleTrustPrompt(shell, output) {
-    // Check for trust prompt with various wordings
-    const trustPatterns = [
-      'Do you trust',
-      'trust the files',
-      'trust this folder',
-      'Trust this workspace',
-      'allow access'
-    ];
-
-    if (trustPatterns.some(pattern => output.toLowerCase().includes(pattern.toLowerCase()))) {
+    const trustPatterns = ['Do you trust', 'trust the files', 'trust this folder', 'Trust this workspace', 'allow access'];
+    if (trustPatterns.some(p => output.toLowerCase().includes(p.toLowerCase()))) {
       console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
       shell.write('y\r');
-
-      // Wait a bit then send Enter to proceed past the trust confirmation
-      setTimeout(() => {
-        console.log(`[${this.name}] Sending Enter to proceed...`);
-        shell.write('\r');
-      }, 500);
-
+      setTimeout(() => { console.log(`[${this.name}] Sending Enter to proceed...`); shell.write('\r'); }, 500);
       return true;
     }
     return false;
@@ -36,73 +20,30 @@ class CodexAgent extends BaseAgent {
 
   handleUpdateScreen(shell, output) {
     const clean = this.stripAnsi(output);
-    const hasUpdateAvailable = /u?pdate available/i.test(clean);
-    const hasVersionArrow = /[\d.]+\s*->\s*[\d.]+/.test(clean);
-    // Also check for "Skip" with various patterns - may appear as "2.Skip" or just "Skip"
-    const hasSkipOption = /skip/i.test(clean);
-
-    if (hasUpdateAvailable && hasVersionArrow && hasSkipOption) {
+    if (/u?pdate available/i.test(clean) && /[\d.]+\s*->\s*[\d.]+/.test(clean) && /skip/i.test(clean)) {
       console.log(`[${this.name}] Detected update screen, selecting '2' to skip...`);
-      // Send '2' to select Skip option, then Enter to confirm
       shell.write('2');
       setTimeout(() => shell.write('\r'), 300);
       return true;
     }
-
     return false;
   }
 
-  // Parse version info from output (update screen or regular output)
   parseVersionInfo(output) {
     const clean = this.stripAnsi(output);
     const versionInfo = {};
-
-    // First check for update screen format: "0.87.0 -> 0.89.0"
-    const updateScreenMatch = clean.match(/([\d.]+)\s*->\s*([\d.]+)/);
-    if (updateScreenMatch) {
-      versionInfo.current = updateScreenMatch[1];
-      versionInfo.latest = updateScreenMatch[2];
-      return versionInfo;
-    }
-
-    // Extract current version from header: "OpenAI Codex (v0.87.0)"
+    const updateMatch = clean.match(/([\d.]+)\s*->\s*([\d.]+)/);
+    if (updateMatch) { versionInfo.current = updateMatch[1]; versionInfo.latest = updateMatch[2]; return versionInfo; }
     const currentMatch = clean.match(/OpenAI Codex[^(]*\(v?([\d.]+)\)/i);
-    if (currentMatch) {
-      versionInfo.current = currentMatch[1];
-    }
-
-    // Extract new version from update notification
-    // Patterns like: "v0.88.0 available", "new version: 0.88.0", "update to 0.88.0"
-    const newVersionPatterns = [
-      /v?([\d.]+)\s*(?:is\s+)?available/i,
-      /new version[:\s]+v?([\d.]+)/i,
-      /update to v?([\d.]+)/i,
-      /latest[:\s]+v?([\d.]+)/i
-    ];
-
-    for (const pattern of newVersionPatterns) {
-      const match = clean.match(pattern);
-      if (match && match[1] !== versionInfo.current) {
-        versionInfo.latest = match[1];
-        break;
-      }
-    }
-
+    if (currentMatch) versionInfo.current = currentMatch[1];
+    const patterns = [/v?([\d.]+)\s*(?:is\s+)?available/i, /new version[:\s]+v?([\d.]+)/i, /update to v?([\d.]+)/i, /latest[:\s]+v?([\d.]+)/i];
+    for (const p of patterns) { const m = clean.match(p); if (m && m[1] !== versionInfo.current) { versionInfo.latest = m[1]; break; } }
     return Object.keys(versionInfo).length > 0 ? versionInfo : null;
   }
 
-  isReadyForCommands(output) {
-    return this.isReadyForStatus(output);
-  }
-
-  isReadyForStatus(output) {
-    return output.includes('? for shortcuts') || output.includes('To get started');
-  }
-
-  sendCommands(shell, _output) {
-    console.log(`[${this.name}] Sending /status command...`);
-    setTimeout(() => shell.write('/status\r'), 100);
-  }
+  isReadyForCommands(output) { return this.isReadyForStatus(output); }
+  isReadyForStatus(output) { return output.includes('? for shortcuts') || output.includes('To get started'); }
+  sendCommands(shell, _output) { console.log(`[${this.name}] Sending /status command...`); setTimeout(() => shell.write('/status\r'), 100); }
 
   _handleAdditionalPrompts(shell, _data, output) {
     if (!this._updateHandled && this.handleUpdateScreen(shell, output)) {

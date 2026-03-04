@@ -355,38 +355,18 @@ class BaseAgent {
     });
   }
 
-  // Override in subclasses
-  getTimeout() {
-    return 30000; // 30 seconds default
-  }
+  getTimeout() { return 30000; } // Override in subclasses
+  isReadyForCommands(_output) { return false; } // Override in subclasses
+  hasCompleteOutput(_output) { return false; } // Override in subclasses
+  sendCommands(_shell, _output) { /* Override in subclasses */ }
+  parseOutput(_output) { return null; } // Override in subclasses
 
-  isReadyForCommands(_output) {
-    return false; // Override in subclasses
-  }
-
-  hasCompleteOutput(_output) {
-    return false; // Override in subclasses
-  }
-
-  sendCommands(_shell, _output) {
-    // Override in subclasses
-  }
-
-  parseOutput(_output) {
-    // Override in subclasses
-    return null;
-  }
-
-  // Helper to strip ANSI codes and control sequences
-  // eslint-disable-next-line no-control-regex
+  /* eslint-disable no-control-regex */
   static ANSI_CURSOR_RIGHT = /\x1B\[(\d+)C/g;
-  // eslint-disable-next-line no-control-regex
   static ANSI_ESCAPE_SEQ = /\x1B\[[0-9;?]*[a-zA-Z]/g;
-  // eslint-disable-next-line no-control-regex
   static ANSI_OSC_SEQ = /\x1B\][^\x07]*\x07/g;
-  // eslint-disable-next-line no-control-regex
   static ANSI_REMAINING = /\x1B[^[\]]*?[a-zA-Z]/g;
-
+  /* eslint-enable no-control-regex */
   stripAnsi(str) {
     return str
       .replace(BaseAgent.ANSI_CURSOR_RIGHT, (_, n) => ' '.repeat(parseInt(n)))
@@ -397,12 +377,8 @@ class BaseAgent {
       .replace(/  +/g, ' ');
   }
 
-  // Helper to strip box border characters (│, ╭, ╮, ╯, ╰, ─, etc.) from strings
   stripBoxChars(str) {
-    if (!str) return str;
-    return str
-      .replace(/[│╭╮╯╰─┌┐└┘├┤┬┴┼║═╔╗╚╝╠╣╦╩╬]/g, '')
-      .trim();
+    return str ? str.replace(/[│╭╮╯╰─┌┐└┘├┤┬┴┼║═╔╗╚╝╠╣╦╩╬]/g, '').trim() : str;
   }
 }
 
