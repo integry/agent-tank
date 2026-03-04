@@ -110,12 +110,14 @@ class BaseAgent {
           return;
         }
 
-        // Respond to cursor position query (CSI 6n) - some CLIs require this
-        // Query is: ESC[6n, Response should be: ESC[{row};{col}R
-        if (data.includes('\x1b[6n') || data.includes('[6n')) {
-          console.log(`[${this.name}] Responding to cursor position query`);
-          shell.write('\x1b[1;1R'); // Report cursor at row 1, col 1
-        }
+        // Respond to terminal capability queries to avoid ~2s timeouts each
+        if (data.includes('\x1b[6n')) shell.write('\x1b[1;1R');        // cursor position
+        if (data.includes('\x1b[c')) shell.write('\x1b[?62;22c');      // device attributes
+        if (data.includes('\x1b[?u')) shell.write('\x1b[?0u');         // kitty keyboard
+        if (data.includes('\x1b]10;?')) shell.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\'); // fg color
+        if (data.includes('\x1b]11;?')) shell.write('\x1b]11;rgb:0000/0000/0000\x1b\\'); // bg color
+        if (data.includes('\x1b[>q')) shell.write('\x1bP>|xterm(1)\x1b\\');  // terminal version
+        if (data.includes('\x1b[>4;?m')) shell.write('\x1b[>4m');      // modified keys
 
         // Send commands when ready
         if (!commandsSent && this.isReadyForCommands(output)) {

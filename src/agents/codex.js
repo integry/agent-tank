@@ -100,6 +100,39 @@ class CodexAgent extends BaseAgent {
     return Object.keys(versionInfo).length > 0 ? versionInfo : null;
   }
 
+  isReadyForStatus(output) {
+    return output.includes('? for shortcuts') || output.includes('To get started');
+  }
+
+  handleInteractivePrompts(shell, data, output, state) {
+    if (!state.trustHandled && this.handleTrustPrompt(shell, output)) {
+      state.trustHandled = true;
+      return true;
+    }
+
+    if (!state.updateHandled && this.handleUpdateScreen(shell, output)) {
+      state.updateHandled = true;
+      return true;
+    }
+
+    // Respond to terminal capability queries to avoid ~2s timeouts each
+    if (data.includes('\x1b[6n')) shell.write('\x1b[1;1R');        // cursor position
+    if (data.includes('\x1b[c')) shell.write('\x1b[?62;22c');      // device attributes
+    if (data.includes('\x1b[?u')) shell.write('\x1b[?0u');         // kitty keyboard
+    if (data.includes('\x1b]10;?')) shell.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\'); // fg color
+    if (data.includes('\x1b]11;?')) shell.write('\x1b]11;rgb:0000/0000/0000\x1b\\'); // bg color
+
+    const cleanOutput = this.stripAnsi(output);
+    const isUpdateScreen = /u?pdate available/i.test(cleanOutput) && /[\d.]+\s*->\s*[\d.]+/.test(cleanOutput);
+    if (!state.continuationHandled && !isUpdateScreen && output.includes('Press enter to continue')) {
+      console.log(`[${this.name}] Detected continuation prompt`);
+      state.continuationHandled = true;
+      shell.write('\r');
+    }
+
+    return false;
+  }
+
   async runCommand() {
     const pty = require('node-pty');
 
@@ -107,9 +140,8 @@ class CodexAgent extends BaseAgent {
       let output = '';
       let completed = false;
       let statusSent = false;
-      let trustHandled = false;
-      let continuationHandled = false;
-      let updateHandled = false;
+      let retryTimer = null;
+      const state = { trustHandled: false, continuationHandled: false, updateHandled: false };
 
       console.log(`[${this.name}] Spawning: ${this.command} ${this.args.join(' ')}`);
 
@@ -121,15 +153,19 @@ class CodexAgent extends BaseAgent {
         env: { ...process.env, TERM: 'xterm-256color' },
       });
 
+      const cleanup = () => {
+        clearTimeout(timer);
+        if (retryTimer) clearInterval(retryTimer);
+      };
+
       const timer = setTimeout(() => {
         if (!completed) {
           completed = true;
+          cleanup();
           console.log(`[${this.name}] Timeout after ${this.getTimeout()}ms, output length: ${output.length}`);
           if (output.length > 0) {
             console.log(`[${this.name}] Partial output:`, this.stripAnsi(output).substring(0, 500));
-            // Write full output for debugging
             require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, output);
-            console.log(`[${this.name}] Full output written to /tmp/${this.name}-output.txt`);
           }
           shell.kill();
           if (output.length > 100) {
@@ -143,75 +179,42 @@ class CodexAgent extends BaseAgent {
       shell.onData((data) => {
         output += data;
 
-        // Log first data received
-        if (output.length <= data.length) {
-          console.log(`[${this.name}] First data received (${data.length} chars)`);
-          if (data.length < 200) {
-            console.log(`[${this.name}] Initial output:`, this.stripAnsi(data).substring(0, 100));
-          }
-        }
+        if (this.handleInteractivePrompts(shell, data, output, state)) return;
 
-        // Handle trust prompt if needed (only once)
-        if (!trustHandled && this.handleTrustPrompt(shell, output)) {
-          trustHandled = true;
-          return;
-        }
-
-        // Handle update notification screen (only once)
-        if (!updateHandled && this.handleUpdateScreen(shell, output)) {
-          updateHandled = true;
-          return;
-        }
-
-        // Respond to cursor position query (CSI 6n)
-        if (data.includes('\x1b[6n') || data.includes('[6n')) {
-          console.log(`[${this.name}] Responding to cursor position query`);
-          shell.write('\x1b[1;1R');
-        }
-
-        // Handle approval prompt (skip if update screen is active)
-        const cleanOutput = this.stripAnsi(output);
-        const isUpdateScreen = /u?pdate available/i.test(cleanOutput) && /[\d.]+\s*->\s*[\d.]+/.test(cleanOutput);
-        if (!continuationHandled && !isUpdateScreen && output.includes('Press enter to continue')) {
-          console.log(`[${this.name}] Detected continuation prompt`);
-          continuationHandled = true;
-          shell.write('\r');
-        }
-
-        // Send /status when fully ready (model loaded and prompt shown)
-        if (!statusSent && (output.includes('gpt-') || output.includes('OpenAI Codex')) &&
-            (output.includes('? for shortcuts') || output.includes('To get started'))) {
+        // Send /status when ready
+        if (!statusSent && this.isReadyForStatus(output)) {
           console.log(`[${this.name}] Ready for commands, sending /status...`);
           statusSent = true;
-          // Type /status then press Enter separately
-          setTimeout(() => {
-            shell.write('/status');
-          }, 1000);
-          setTimeout(() => {
-            shell.write('\r');
-          }, 1500);
+          setTimeout(() => shell.write('/status'), 50);
+          setTimeout(() => shell.write('\r'), 150);
         }
 
-        // Check for complete output
+        // Retry /status every second if limits data wasn't available yet
+        if (statusSent && !retryTimer && output.includes('data not available yet')) {
+          console.log(`[${this.name}] Limits not available yet, retrying...`);
+          retryTimer = setInterval(() => {
+            if (completed) { clearInterval(retryTimer); return; }
+            console.log(`[${this.name}] Retrying /status...`);
+            shell.write('/status\r');
+          }, 500);
+        }
+
         if (statusSent && this.hasCompleteOutput(output)) {
           console.log(`[${this.name}] Complete output detected, finishing...`);
-          setTimeout(() => {
-            if (!completed) {
-              completed = true;
-              clearTimeout(timer);
-              shell.kill();
-              resolve(output);
-            }
-          }, 300);
+          if (!completed) {
+            completed = true;
+            cleanup();
+            shell.kill();
+            resolve(output);
+          }
         }
       });
 
       shell.onExit(({ exitCode }) => {
         if (!completed) {
           completed = true;
-          clearTimeout(timer);
+          cleanup();
           console.log(`[${this.name}] Process exited with code ${exitCode}, output length: ${output.length}`);
-          // Save output for debugging
           require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, output);
           if (output) {
             resolve(output);
