@@ -118,6 +118,12 @@ class CodexAgent extends BaseAgent {
 
         if (this.isReadyForStatus(spawnOutput)) {
           console.log(`[${this.name}] Process ready for commands`);
+          // Capture version info from spawn output (update screen appears here)
+          const versionFromSpawn = this.parseVersionInfo(spawnOutput);
+          if (versionFromSpawn) {
+            this._spawnVersionInfo = versionFromSpawn;
+            console.log(`[${this.name}] Version info from spawn:`, JSON.stringify(versionFromSpawn));
+          }
           clearTimeout(timer);
           spawnDataHandler.dispose();
           this.processReady = true;
@@ -271,7 +277,7 @@ class CodexAgent extends BaseAgent {
     const usage = {
       fiveHour: null,
       weekly: null,
-      version: this.parseVersionInfo(output),
+      version: (() => { const v = { ...this._spawnVersionInfo, ...this.parseVersionInfo(output) }; return Object.keys(v).length > 0 ? v : null; })(),
     };
 
     const fiveHourMatch = clean.match(/5h limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i);

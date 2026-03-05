@@ -118,6 +118,13 @@ class GeminiAgent extends BaseAgent {
       }
     }
 
+    // Detect version update notification in output
+    // Gemini CLI shows: "Update available! 0.24.5 → 0.32.1" or similar
+    const updateMatch = clean.match(/[Uu]pdate\s+available[^\d]*([\d.]+)\s*(?:→|->|to)\s*([\d.]+)/);
+    if (updateMatch) {
+      usage.version = { current: updateMatch[1], latest: updateMatch[2] };
+    }
+
     return usage;
   }
 
@@ -231,6 +238,12 @@ class GeminiAgent extends BaseAgent {
     const osMatch = clean.match(/\bOS[:\s]+(\w+)/i);
     if (osMatch) {
       metadata.os = this.stripBoxChars(osMatch[1]);
+    }
+
+    // Detect version update notification
+    const updateMatch = clean.match(/[Uu]pdate\s+available[^\d]*([\d.]+)\s*(?:→|->|to)\s*([\d.]+)/);
+    if (updateMatch) {
+      metadata.updateAvailable = { current: updateMatch[1], latest: updateMatch[2] };
     }
 
     return Object.keys(metadata).length > 0 ? metadata : null;

@@ -30,9 +30,16 @@ function statusPage(status) {
     const icon = agentIcons[name] || '';
     const displayName = name.charAt(0).toUpperCase() + name.slice(1);
 
-    // Only show card-footer if there's an error
-    const footerHtml = data.error
-      ? `<div class="card-footer"><span class="error-msg">${data.error}</span></div>`
+    // Version update notice - check usage.version (Codex) or metadata.updateAvailable (Gemini)
+    const version = data.usage?.version || data.metadata?.updateAvailable;
+    const updateHtml = (version && version.current && version.latest && version.current !== version.latest)
+      ? `<div class="version-update-notice">Update available: v${version.current} → v${version.latest}</div>`
+      : '';
+
+    // Only show card-footer if there's an error or update notice
+    const hasFooterContent = data.error || updateHtml;
+    const footerHtml = hasFooterContent
+      ? `<div class="card-footer">${data.error ? `<span class="error-msg">${data.error}</span>` : ''}${updateHtml}</div>`
       : '';
 
     return `
