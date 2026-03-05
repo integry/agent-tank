@@ -75,19 +75,11 @@ class BaseAgent {
       const parsed = this.parseOutput(output);
 
       // Only update usage if we got meaningful data (not all-null)
-      const hasData = parsed && Object.values(parsed).some(v =>
-        v !== null && v !== undefined && (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0))
-      );
-      if (hasData) {
-        this.usage = parsed;
-        this.lastUpdated = new Date().toISOString();
-      } else if (this.usage) {
-        console.log(`[${this.name}] Parse returned no data, preserving last known usage`);
-        this.error = 'Failed to parse — using cached data';
-      } else {
-        this.usage = parsed;
-        this.lastUpdated = new Date().toISOString();
-      }
+      const hasData = parsed && Object.values(parsed).some(v => v !== null && v !== undefined &&
+        (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0)));
+      if (hasData) { this.usage = parsed; this.lastUpdated = new Date().toISOString(); }
+      else if (this.usage) { console.log(`[${this.name}] Parse returned no data, preserving last known usage`); this.error = 'Failed to parse — using cached data'; }
+      else { this.usage = parsed; this.lastUpdated = new Date().toISOString(); }
       console.log(`[${this.name}] Parsed usage:`, JSON.stringify(this.usage));
     } catch (err) {
       console.error(`[${this.name}] Error during refresh:`, err.message);
@@ -242,10 +234,7 @@ class BaseAgent {
   _setupPersistentExitHandler() {
     const handler = this.shell.onExit(({ exitCode }) => {
       console.log(`[${this.name}] Persistent process exited with code ${exitCode}`);
-      this.shell = null;
-      this.processReady = false;
-      this._onDataCallback = null;
-      this._disposables = [];
+      this.shell = null; this.processReady = false; this._onDataCallback = null; this._disposables = [];
     });
     this._disposables.push(handler);
   }
@@ -253,19 +242,17 @@ class BaseAgent {
   _respondToTerminalQueries(data, target) {
     const sh = target || this.shell;
     if (!sh) return;
-    if (data.includes('\x1b[6n')) sh.write('\x1b[1;1R');        // cursor position
-    if (data.includes('\x1b[c')) sh.write('\x1b[?62;22c');      // device attributes
-    if (data.includes('\x1b[?u')) sh.write('\x1b[?0u');         // kitty keyboard
-    if (data.includes('\x1b]10;?')) sh.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\'); // fg color
-    if (data.includes('\x1b]11;?')) sh.write('\x1b]11;rgb:0000/0000/0000\x1b\\'); // bg color
-    if (data.includes('\x1b[>q')) sh.write('\x1bP>|xterm(1)\x1b\\');  // terminal version
-    if (data.includes('\x1b[>4;?m')) sh.write('\x1b[>4m');      // modified keys
+    if (data.includes('\x1b[6n')) sh.write('\x1b[1;1R');
+    if (data.includes('\x1b[c')) sh.write('\x1b[?62;22c');
+    if (data.includes('\x1b[?u')) sh.write('\x1b[?0u');
+    if (data.includes('\x1b]10;?')) sh.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\');
+    if (data.includes('\x1b]11;?')) sh.write('\x1b]11;rgb:0000/0000/0000\x1b\\');
+    if (data.includes('\x1b[>q')) sh.write('\x1bP>|xterm(1)\x1b\\');
+    if (data.includes('\x1b[>4;?m')) sh.write('\x1b[>4m');
   }
 
   // Hook for subclasses to handle additional prompts during fresh process startup
-  _handleAdditionalPrompts(_shell, _data, _output) {
-    // Override in subclasses (e.g. codex update screen, continuation prompts)
-  }
+  _handleAdditionalPrompts(_shell, _data, _output) { }
 
   killProcess() {
     if (this.shell) {
@@ -388,11 +375,11 @@ class BaseAgent {
     });
   }
 
-  getTimeout() { return 30000; } // Override in subclasses
-  isReadyForCommands(_output) { return false; } // Override in subclasses
-  hasCompleteOutput(_output) { return false; } // Override in subclasses
-  sendCommands(_shell, _output) { /* Override in subclasses */ }
-  parseOutput(_output) { return null; } // Override in subclasses
+  getTimeout() { return 30000; }
+  isReadyForCommands(_output) { return false; }
+  hasCompleteOutput(_output) { return false; }
+  sendCommands(_shell, _output) { }
+  parseOutput(_output) { return null; }
 
   /* eslint-disable no-control-regex */
   static ANSI_CURSOR_RIGHT = /\x1B\[(\d+)C/g;
@@ -401,18 +388,11 @@ class BaseAgent {
   static ANSI_REMAINING = /\x1B[^[\]]*?[a-zA-Z]/g;
   /* eslint-enable no-control-regex */
   stripAnsi(str) {
-    return str
-      .replace(BaseAgent.ANSI_CURSOR_RIGHT, (_, n) => ' '.repeat(parseInt(n)))
-      .replace(BaseAgent.ANSI_ESCAPE_SEQ, '')
-      .replace(BaseAgent.ANSI_OSC_SEQ, '')
-      .replace(BaseAgent.ANSI_REMAINING, '')
-      .replace(/\r/g, '')
-      .replace(/  +/g, ' ');
+    return str.replace(BaseAgent.ANSI_CURSOR_RIGHT, (_, n) => ' '.repeat(parseInt(n)))
+      .replace(BaseAgent.ANSI_ESCAPE_SEQ, '').replace(BaseAgent.ANSI_OSC_SEQ, '')
+      .replace(BaseAgent.ANSI_REMAINING, '').replace(/\r/g, '').replace(/  +/g, ' ');
   }
-
-  stripBoxChars(str) {
-    return str ? str.replace(/[│╭╮╯╰─┌┐└┘├┤┬┴┼║═╔╗╚╝╠╣╦╩╬]/g, '').trim() : str;
-  }
+  stripBoxChars(str) { return str ? str.replace(/[│╭╮╯╰─┌┐└┘├┤┬┴┼║═╔╗╚╝╠╣╦╩╬]/g, '').trim() : str; }
 }
 
 module.exports = { BaseAgent };

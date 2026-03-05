@@ -8,44 +8,25 @@ class ClaudeAgent extends BaseAgent {
     this.minRefreshInterval = 300;
   }
 
-  getTimeout() { return 30000; } // 30s - extra time for trust prompt and usage data
-  getEnv() { // Use dumb terminal to avoid cursor positioning that corrupts text
+  getTimeout() { return 30000; }
+  getEnv() {
     const env = { ...process.env, TERM: 'dumb', NO_COLOR: '1' };
-    // Remove CLAUDECODE to allow spawning inside a Claude Code session
-    delete env.CLAUDECODE;
+    delete env.CLAUDECODE; // Allow spawning inside a Claude Code session
     return env;
   }
 
   isReadyForCommands(output) {
     const clean = this.stripAnsi(output);
-    // Claude shows various prompts when ready
-    // Look for the prompt character (❯ or >) or shortcuts hint
-    return clean.includes('? for shortcuts') ||
-           clean.includes('❯') ||
-           clean.includes('> ') ||
-           clean.includes('Try "');
+    return clean.includes('? for shortcuts') || clean.includes('❯') ||
+           clean.includes('> ') || clean.includes('Try "');
   }
 
   handleTrustPrompt(shell, output) {
-    // Check for trust prompt with various wordings
-    const trustPatterns = [
-      'Do you trust',
-      'trust the files',
-      'trust this folder',
-      'Trust this workspace',
-      'allow access'
-    ];
-
+    const trustPatterns = ['Do you trust', 'trust the files', 'trust this folder', 'Trust this workspace', 'allow access'];
     if (trustPatterns.some(pattern => output.toLowerCase().includes(pattern.toLowerCase()))) {
       console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
       shell.write('y\r');
-
-      // Wait a bit then send Enter to proceed past the trust confirmation
-      setTimeout(() => {
-        console.log(`[${this.name}] Sending Enter to proceed...`);
-        shell.write('\r');
-      }, 500);
-
+      setTimeout(() => { console.log(`[${this.name}] Sending Enter to proceed...`); shell.write('\r'); }, 500);
       return true;
     }
     return false;
@@ -53,21 +34,13 @@ class ClaudeAgent extends BaseAgent {
 
   hasCompleteOutput(output) {
     const clean = this.stripAnsi(output);
-
-    // Detect error responses (e.g. rate limiting) — treat as complete
-    // so we don't waste 30s waiting for data that won't come
-    if (/rate.?limited|rate_limit_error/i.test(clean) || /Failed to load usage/i.test(clean)) {
-      return true;
-    }
-
+    // Detect error responses (rate limiting) — treat as complete
+    if (/rate.?limited|rate_limit_error|Failed to load usage/i.test(clean)) return true;
     // Basic requirements - must have actual usage data, not just the loading screen
     const hasSession = clean.includes('Current session');
     const hasWeekly = clean.includes('Current week');
     const hasPercentUsed = clean.includes('% used');
-
-    if (!hasSession || !hasWeekly || !hasPercentUsed) {
-      return false;
-    }
+    if (!hasSession || !hasWeekly || !hasPercentUsed) return false;
 
     // If "all models" section exists, wait for "Sonnet only" section to render
     const hasAllModels = /Current\s+week\s*\(?\s*all\s+models/i.test(clean);
