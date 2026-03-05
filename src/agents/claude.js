@@ -4,6 +4,8 @@ class ClaudeAgent extends BaseAgent {
   constructor() {
     super('claude', 'claude');
     this._statusSent = false;
+    // Claude's /usage API is rate limited — minimum 5 minutes between refreshes
+    this.minRefreshInterval = 300;
   }
 
   getTimeout() { return 30000; } // 30s - extra time for trust prompt and usage data
@@ -51,6 +53,12 @@ class ClaudeAgent extends BaseAgent {
 
   hasCompleteOutput(output) {
     const clean = this.stripAnsi(output);
+
+    // Detect error responses (e.g. rate limiting) — treat as complete
+    // so we don't waste 30s waiting for data that won't come
+    if (/rate.?limited|rate_limit_error/i.test(clean) || /Failed to load usage/i.test(clean)) {
+      return true;
+    }
 
     // Basic requirements - must have actual usage data, not just the loading screen
     const hasSession = clean.includes('Current session');
@@ -159,17 +167,32 @@ class ClaudeAgent extends BaseAgent {
 
   sendCommands(shell, _output) {
     console.log(`[${this.name}] Sending /usage command...`);
-    // Escape dismisses any previous output/UI, then type command + Enter
+    // Escape dismisses any previous output/UI, then type command + Enter.
+    // Need sufficient delay after Escape for Claude Code to fully process
+    // the dialog dismissal and return to a clean prompt state.
     if (this.freshProcess) {
       setTimeout(() => shell.write('\x1b'), 50);
-      setTimeout(() => shell.write('/usage'), 150);
-      setTimeout(() => shell.write('\r'), 500);
+      setTimeout(() => shell.write('/usage'), 600);
+      setTimeout(() => shell.write('\r'), 1000);
     } else {
-      // Persistent mode: tighter timings
       setTimeout(() => shell.write('\x1b'), 50);
-      setTimeout(() => shell.write('/usage'), 150);
-      setTimeout(() => shell.write('\r'), 400);
+      setTimeout(() => shell.write('/usage'), 600);
+      setTimeout(() => shell.write('\r'), 1000);
     }
+  }
+
+  // After getting /usage output, dismiss the dialog so the next refresh
+  // starts with a clean prompt (prevents "Status dialog dismissed" cascade).
+  async sendCommandAndWait() {
+    const result = await super.sendCommandAndWait();
+    if (this.shell) {
+      this.shell.write('\x1b');
+      // Wait for Claude Code to process the dismissal and return to prompt
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Clear accumulated dismissal output so it doesn't pollute the next command
+      this.output = '';
+    }
+    return result;
   }
 
   parseOutput(output) {
@@ -335,8 +358,8 @@ class ClaudeAgent extends BaseAgent {
       this.output = '';
       // Send escape first to dismiss any UI, then /status
       setTimeout(() => this.shell.write('\x1b'), 50);
-      setTimeout(() => this.shell.write('/status'), 150);
-      setTimeout(() => this.shell.write('\r'), 400);
+      setTimeout(() => this.shell.write('/status'), 600);
+      setTimeout(() => this.shell.write('\r'), 1000);
     });
   }
 

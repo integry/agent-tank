@@ -22,6 +22,7 @@ class LLMWatcher {
       interval: options.autoRefreshInterval ?? 60,   // Default: 60 seconds, 0 = disabled
     };
     this.autoRefreshTimer = null;
+    this.agentRefreshTimers = new Map(); // Per-agent timers for custom intervals
     this.lastRefreshedAt = null;
   }
 
@@ -85,7 +86,7 @@ class LLMWatcher {
   }
 
   startAutoRefresh() {
-    // Stop any existing timer
+    // Stop any existing timers
     this.stopAutoRefresh();
 
     // Check if auto-refresh should be enabled
@@ -94,13 +95,45 @@ class LLMWatcher {
       return;
     }
 
-    const intervalMs = this.autoRefresh.interval * 1000;
-    console.log(`Backend auto-refresh: every ${this.autoRefresh.interval} seconds`);
+    const globalInterval = this.autoRefresh.interval;
 
-    this.autoRefreshTimer = setInterval(async () => {
-      console.log('[Auto-refresh] Refreshing all agents...');
-      await this.refreshAll();
-    }, intervalMs);
+    // Separate agents into those using the global interval and those needing a slower cadence
+    const globalAgents = [];
+    for (const [name, agent] of this.agents) {
+      // Effective interval: explicit override, or global clamped to agent's minimum
+      const effective = agent.refreshInterval
+        ?? (agent.minRefreshInterval ? Math.max(globalInterval, agent.minRefreshInterval) : null);
+      if (effective && effective > globalInterval) {
+        // Agent needs a longer interval — give it its own timer
+        const intervalMs = effective * 1000;
+        console.log(`Backend auto-refresh [${name}]: every ${effective}s`);
+        const timer = setInterval(async () => {
+          console.log(`[Auto-refresh] Refreshing ${name}...`);
+          await agent.refresh().catch(err =>
+            console.error(`Error refreshing ${name}:`, err.message)
+          );
+          this.lastRefreshedAt = new Date().toISOString();
+        }, intervalMs);
+        this.agentRefreshTimers.set(name, timer);
+      } else {
+        globalAgents.push(name);
+      }
+    }
+
+    if (globalAgents.length > 0) {
+      console.log(`Backend auto-refresh [${globalAgents.join(', ')}]: every ${globalInterval}s`);
+      this.autoRefreshTimer = setInterval(async () => {
+        console.log(`[Auto-refresh] Refreshing ${globalAgents.join(', ')}...`);
+        const promises = globalAgents.map(name => {
+          const agent = this.agents.get(name);
+          return agent ? agent.refresh().catch(err =>
+            console.error(`Error refreshing ${name}:`, err.message)
+          ) : Promise.resolve();
+        });
+        await Promise.all(promises);
+        this.lastRefreshedAt = new Date().toISOString();
+      }, globalInterval * 1000);
+    }
   }
 
   stopAutoRefresh() {
@@ -108,6 +141,10 @@ class LLMWatcher {
       clearInterval(this.autoRefreshTimer);
       this.autoRefreshTimer = null;
     }
+    for (const timer of this.agentRefreshTimers.values()) {
+      clearInterval(timer);
+    }
+    this.agentRefreshTimers.clear();
   }
 
   createAgent(name) {

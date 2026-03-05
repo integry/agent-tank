@@ -11,6 +11,8 @@ class BaseAgent {
     this.lastUpdated = null;
     this.error = null;
     this.isRefreshing = false;
+    this.refreshInterval = null;    // Per-agent override (seconds), null = use global
+    this.minRefreshInterval = null; // Per-agent minimum (seconds), null = no minimum
 
     // Persistent process state
     this.shell = null;
@@ -59,9 +61,34 @@ class BaseAgent {
 
       const output = await this.runCommand();
       console.log(`[${this.name}] Got output, length: ${output.length} chars`);
-      this.usage = this.parseOutput(output);
+
+      // Check for rate limit errors before parsing
+      // Match actual error messages, not incidental mentions like "rate limits and credits"
+      const cleanOutput = this.stripAnsi(output);
+      if (/rate.?limited|rate_limit_error/i.test(cleanOutput)) {
+        console.log(`[${this.name}] Rate limited, preserving last known usage data`);
+        this.error = 'Rate limited — using cached data';
+        // Don't overwrite this.usage — keep the last known good data
+        return;
+      }
+
+      const parsed = this.parseOutput(output);
+
+      // Only update usage if we got meaningful data (not all-null)
+      const hasData = parsed && Object.values(parsed).some(v =>
+        v !== null && v !== undefined && (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0))
+      );
+      if (hasData) {
+        this.usage = parsed;
+        this.lastUpdated = new Date().toISOString();
+      } else if (this.usage) {
+        console.log(`[${this.name}] Parse returned no data, preserving last known usage`);
+        this.error = 'Failed to parse — using cached data';
+      } else {
+        this.usage = parsed;
+        this.lastUpdated = new Date().toISOString();
+      }
       console.log(`[${this.name}] Parsed usage:`, JSON.stringify(this.usage));
-      this.lastUpdated = new Date().toISOString();
     } catch (err) {
       console.error(`[${this.name}] Error during refresh:`, err.message);
       this.error = err.message;
@@ -165,11 +192,13 @@ class BaseAgent {
           console.log(`[${this.name}] Partial output:`, this.stripAnsi(this.output).substring(0, 500));
           require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, this.output);
         }
-        if (this.output.length > 100) {
-          finish(this.output);
+        // Kill the stuck process so it respawns fresh on the next refresh
+        console.log(`[${this.name}] Killing stuck process to force respawn`);
+        const partialOutput = this.output;
+        this.killProcess();
+        if (partialOutput.length > 100) {
+          resolve(partialOutput);
         } else {
-          this._commandInFlight = false;
-          this._onDataCallback = null;
           reject(new Error('Timeout waiting for usage data'));
         }
       }, this.getTimeout());
@@ -192,9 +221,13 @@ class BaseAgent {
     const handler = this.shell.onData((data) => {
       this.output += data;
 
-      // Suppress terminal query responses while a command is in-flight
-      // to avoid corrupting the CLI's input buffer with interleaved writes
-      if (!this._commandInFlight) {
+      // Always respond to terminal queries — suppressing them causes deadlocks
+      // when CLIs (e.g. Gemini) wait for cursor position responses before
+      // rendering output. Delay slightly during command-in-flight to avoid
+      // interleaving with command text being sent via setTimeout.
+      if (this._commandInFlight) {
+        setTimeout(() => this._respondToTerminalQueries(data), 50);
+      } else {
         this._respondToTerminalQueries(data);
       }
 
