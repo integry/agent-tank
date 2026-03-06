@@ -48,11 +48,9 @@ function getStatusDotClass(value) {
 }
 
 function resetInfoItem(resetsIn, originalValue, cycleType, isZero = false) {
-  // If usage is at 0%, hide the "Resets in" row entirely - it's useless info when at full capacity
-  if (isZero) {
-    return '';
-  }
-
+  // Always render the wrapper so XHR updates can show/hide it dynamically.
+  // Hidden when at 0% (no useful info when at full capacity).
+  const hidden = isZero ? ' style="display:none"' : '';
   const tooltip = originalValue ? ` title="${originalValue}"` : '';
 
   // Calculate elapsed time progress bar
@@ -61,7 +59,6 @@ function resetInfoItem(resetsIn, originalValue, cycleType, isZero = false) {
   const cycleDuration = cycleType ? CYCLE_DURATIONS[cycleType] : null;
 
   if (resetsInSeconds !== null && cycleDuration) {
-    // Calculate elapsed percentage: (cycleDuration - remaining) / cycleDuration * 100
     const elapsedSeconds = cycleDuration - resetsInSeconds;
     const elapsedPercent = Math.min(100, Math.max(0, (elapsedSeconds / cycleDuration) * 100));
 
@@ -70,9 +67,8 @@ function resetInfoItem(resetsIn, originalValue, cycleType, isZero = false) {
     </div>`;
   }
 
-  // Wrap in container so the time bar can be positioned below the reset text
-  return `<div class="reset-info-wrapper">
-    <div class="usage-item reset-info"${tooltip}><span class="usage-label">↳ Resets in</span><span class="usage-value">${resetsIn}</span></div>
+  return `<div class="reset-info-wrapper"${hidden}>
+    <div class="usage-item reset-info"${tooltip}><span class="usage-label">↳ Resets in</span><span class="usage-value">${resetsIn || ''}</span></div>
     ${timeProgressHtml}
   </div>`;
 }
@@ -136,9 +132,7 @@ function formatClaudeUsage(usage) {
       const resetsIn = data.resetsIn || '';
       html += '<div class="model-container">';
       html += usageItem(label, percent, '% used', { isZero, agentName: 'claude', resetsIn });
-      if (data.resetsIn && !isZero) {
-        html += resetInfoItem(data.resetsIn, data.resetsAt, cycle, isZero);
-      }
+      html += resetInfoItem(data.resetsIn, data.resetsAt, cycle, isZero);
       html += '</div>';
     }
   }
@@ -156,9 +150,7 @@ function formatGeminiUsage(usage) {
       const resetsIn = model.resetsIn || '';
       html += '<div class="model-container">';
       html += usageItem(modelName, percent, '% used', { isZero, isModelName: true, agentName: 'gemini', resetsIn });
-      if (model.resetsIn && !isZero) {
-        html += resetInfoItem(model.resetsIn, null, 'sessionGemini', isZero);
-      }
+      html += resetInfoItem(model.resetsIn, null, 'sessionGemini', isZero);
       html += '</div>';
     }
   }
@@ -185,9 +177,7 @@ function formatCodexUsage(usage) {
       const resetsIn = ml.fiveHour.resetsIn || '';
       html += '<div class="model-container nested-container">';
       html += usageItem('5h limit', fiveHourPercent, '% used', { isZero, isNestedMetric: true, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-5h` });
-      if (ml.fiveHour.resetsIn && !isZero) {
-        html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', isZero);
-      }
+      html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', isZero);
       html += '</div>';
     }
     if (ml.weekly) {
@@ -196,9 +186,7 @@ function formatCodexUsage(usage) {
       const resetsIn = ml.weekly.resetsIn || '';
       html += '<div class="model-container nested-container">';
       html += usageItem('Weekly', weeklyPercent, '% used', { isZero, isNestedMetric: true, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-weekly` });
-      if (ml.weekly.resetsIn && !isZero) {
-        html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', isZero);
-      }
+      html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', isZero);
       html += '</div>';
     }
   }
