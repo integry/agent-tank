@@ -1,5 +1,4 @@
 const pty = require('node-pty');
-
 class BaseAgent {
   constructor(name, command, args = []) {
     this.name = name;
@@ -251,9 +250,7 @@ class BaseAgent {
     if (data.includes('\x1b[>4;?m')) sh.write('\x1b[>4m');
   }
 
-  // Hook for subclasses to handle additional prompts during fresh process startup
-  _handleAdditionalPrompts(_shell, _data, _output) { }
-
+  _handleAdditionalPrompts(_s, _d, _o) { } // Hook for subclasses
   killProcess() {
     if (this.shell) {
       console.log(`[${this.name}] Killing persistent process`);
@@ -376,11 +373,10 @@ class BaseAgent {
   }
 
   getTimeout() { return 30000; }
-  isReadyForCommands(_output) { return false; }
-  hasCompleteOutput(_output) { return false; }
-  sendCommands(_shell, _output) { }
-  parseOutput(_output) { return null; }
-
+  isReadyForCommands(_o) { return false; }
+  hasCompleteOutput(_o) { return false; }
+  sendCommands(_s, _o) { }
+  parseOutput(_o) { return null; }
   /* eslint-disable no-control-regex */
   static ANSI_CURSOR_RIGHT = /\x1B\[(\d+)C/g;
   static ANSI_ESCAPE_SEQ = /\x1B\[[0-9;?]*[a-zA-Z]/g;
@@ -388,13 +384,15 @@ class BaseAgent {
   static ANSI_DCS_SEQ = /\x1BP[^\x1B]*\x1B\\/g;
   static ANSI_CHARSET = /\x1B[()#][A-Za-z0-9]/g;
   static ANSI_TWOCHAR = /\x1B[=>DMEH78cNOZn\\|}{~]/g;
+  static ANSI_LEFTOVER = /\x1B/g;
   /* eslint-enable no-control-regex */
+  static MULTI_SPACE = /  +/g;
   stripAnsi(str) {
     return str.replace(BaseAgent.ANSI_CURSOR_RIGHT, (_, n) => ' '.repeat(parseInt(n)))
       .replace(BaseAgent.ANSI_ESCAPE_SEQ, '').replace(BaseAgent.ANSI_OSC_SEQ, '')
-      .replace(BaseAgent.ANSI_DCS_SEQ, '')
-      .replace(BaseAgent.ANSI_CHARSET, '').replace(BaseAgent.ANSI_TWOCHAR, '')
-      .replace(/\x1B/g, '').replace(/\r/g, '').replace(/  +/g, ' ');
+      .replace(BaseAgent.ANSI_DCS_SEQ, '').replace(BaseAgent.ANSI_CHARSET, '')
+      .replace(BaseAgent.ANSI_TWOCHAR, '').replace(BaseAgent.ANSI_LEFTOVER, '')
+      .replace(/\r/g, '').replace(BaseAgent.MULTI_SPACE, ' ');
   }
   stripBoxChars(str) { return str ? str.replace(/[│╭╮╯╰─┌┐└┘├┤┬┴┼║═╔╗╚╝╠╣╦╩╬]/g, '').trim() : str; }
 }
