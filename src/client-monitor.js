@@ -184,7 +184,7 @@ const monitorScript = `
 
       // Update page title: XX% Agent | Agent Tank (clean format for squeezed tabs)
       const agentName = agent.charAt(0).toUpperCase() + agent.slice(1);
-      document.title = `${percent}% ${agentName} | Agent Tank`;
+      document.title = \`\${percent}% \${agentName} | Agent Tank\`;
 
       // Generate favicon using Canvas API
       generateProgressFavicon(percent, color);
