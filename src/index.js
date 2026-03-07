@@ -43,12 +43,11 @@ class AgentTank {
           console.log('\nInstall/update with:');
           console.log('  npm install -g @anthropic-ai/claude-code@latest');
           console.log('  npm install -g gemini@latest');
-          return;
+          throw new Error('No agents found');
         }
         console.log(`Found agents: ${agentNames.join(', ')}`);
       } else {
-        console.log('No agents specified and auto-discover disabled.');
-        return;
+        throw new Error('No agents specified and auto-discover disabled.');
       }
     }
 

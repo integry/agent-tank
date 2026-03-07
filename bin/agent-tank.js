@@ -20,7 +20,7 @@ const options = {
   'auto-refresh-interval': { type: 'string', default: '60' },
 };
 
-const { values } = parseArgs({ options, allowPositionals: false });
+const { values } = parseArgs({ options, allowPositionals: false, allowNegative: true });
 
 if (values.help) {
   console.log(`

@@ -56,6 +56,11 @@ class BaseAgent {
           // Continue with usage fetch even if metadata fails
         }
         this._metadataFetched = true;
+        // In fresh process mode, kill the persistent process spawned for metadata
+        // so that runCommand() starts cleanly with _runCommandFresh()
+        if (this.freshProcess) {
+          this.killProcess();
+        }
       }
 
       const output = await this.runCommand();
@@ -67,6 +72,7 @@ class BaseAgent {
       if (/rate.?limited|rate_limit_error/i.test(cleanOutput)) {
         console.log(`[${this.name}] Rate limited, preserving last known usage data`);
         this.error = 'Rate limited — using cached data';
+        this.lastUpdated = new Date().toISOString();
         // Don't overwrite this.usage — keep the last known good data
         return;
       }
