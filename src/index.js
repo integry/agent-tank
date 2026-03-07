@@ -5,7 +5,7 @@ const { CodexAgent } = require('./agents/codex.js');
 const { discoverAgents } = require('./discovery.js');
 const { statusPage } = require('./status-page.js');
 
-class LLMWatcher {
+class AgentTank {
   constructor(options = {}) {
     this.port = options.port || 3456;
     this.host = options.host || '127.0.0.1';
@@ -43,12 +43,11 @@ class LLMWatcher {
           console.log('\nInstall/update with:');
           console.log('  npm install -g @anthropic-ai/claude-code@latest');
           console.log('  npm install -g gemini@latest');
-          return;
+          throw new Error('No agents found');
         }
         console.log(`Found agents: ${agentNames.join(', ')}`);
       } else {
-        console.log('No agents specified and auto-discover disabled.');
-        return;
+        throw new Error('No agents specified and auto-discover disabled.');
       }
     }
 
@@ -351,4 +350,4 @@ class LLMWatcher {
   }
 }
 
-module.exports = { LLMWatcher };
+module.exports = { AgentTank };

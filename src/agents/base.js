@@ -56,6 +56,11 @@ class BaseAgent {
           // Continue with usage fetch even if metadata fails
         }
         this._metadataFetched = true;
+        // In fresh process mode, kill the persistent process spawned for metadata
+        // so that runCommand() starts cleanly with _runCommandFresh()
+        if (this.freshProcess) {
+          this.killProcess();
+        }
       }
 
       const output = await this.runCommand();
@@ -67,6 +72,7 @@ class BaseAgent {
       if (/rate.?limited|rate_limit_error/i.test(cleanOutput)) {
         console.log(`[${this.name}] Rate limited, preserving last known usage data`);
         this.error = 'Rate limited — using cached data';
+        this.lastUpdated = new Date().toISOString();
         // Don't overwrite this.usage — keep the last known good data
         return;
       }
@@ -74,11 +80,8 @@ class BaseAgent {
       const parsed = this.parseOutput(output);
 
       // Only update usage if we got meaningful data (not all-null)
-      const hasData = parsed && Object.values(parsed).some(v => v !== null && v !== undefined &&
-        (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0)));
-      if (hasData) { this.usage = parsed; this.lastUpdated = new Date().toISOString(); }
-      else if (this.usage) { console.log(`[${this.name}] Parse returned no data, preserving last known usage`); this.error = 'Failed to parse — using cached data'; }
-      else { this.usage = parsed; this.lastUpdated = new Date().toISOString(); }
+      const hasData = parsed && Object.values(parsed).some(v => v !== null && v !== undefined && (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0)));
+      if (hasData) { this.usage = parsed; this.lastUpdated = new Date().toISOString(); } else if (this.usage) { console.log(`[${this.name}] Parse returned no data, preserving last known usage`); this.error = 'Failed to parse — using cached data'; } else { this.usage = parsed; this.lastUpdated = new Date().toISOString(); }
       console.log(`[${this.name}] Parsed usage:`, JSON.stringify(this.usage));
     } catch (err) {
       console.error(`[${this.name}] Error during refresh:`, err.message);
@@ -239,14 +242,10 @@ class BaseAgent {
   }
 
   _respondToTerminalQueries(data, target) {
-    const sh = target || this.shell;
-    if (!sh) return;
-    if (data.includes('\x1b[6n')) sh.write('\x1b[1;1R');
-    if (data.includes('\x1b[c')) sh.write('\x1b[?62;22c');
-    if (data.includes('\x1b[?u')) sh.write('\x1b[?0u');
-    if (data.includes('\x1b]10;?')) sh.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\');
-    if (data.includes('\x1b]11;?')) sh.write('\x1b]11;rgb:0000/0000/0000\x1b\\');
-    if (data.includes('\x1b[>q')) sh.write('\x1bP>|xterm(1)\x1b\\');
+    const sh = target || this.shell; if (!sh) return;
+    if (data.includes('\x1b[6n')) sh.write('\x1b[1;1R'); if (data.includes('\x1b[c')) sh.write('\x1b[?62;22c');
+    if (data.includes('\x1b[?u')) sh.write('\x1b[?0u'); if (data.includes('\x1b]10;?')) sh.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\');
+    if (data.includes('\x1b]11;?')) sh.write('\x1b]11;rgb:0000/0000/0000\x1b\\'); if (data.includes('\x1b[>q')) sh.write('\x1bP>|xterm(1)\x1b\\');
     if (data.includes('\x1b[>4;?m')) sh.write('\x1b[>4m');
   }
 
@@ -254,17 +253,9 @@ class BaseAgent {
   killProcess() {
     if (this.shell) {
       console.log(`[${this.name}] Killing persistent process`);
-      for (const d of this._disposables) {
-        d.dispose();
-      }
-      this._disposables = [];
-      this._onDataCallback = null;
-      this.processReady = false;
-      try {
-        this.shell.kill();
-      } catch (_e) {
-        // Process may already be dead
-      }
+      for (const d of this._disposables) { d.dispose(); }
+      this._disposables = []; this._onDataCallback = null; this.processReady = false;
+      try { this.shell.kill(); } catch (_e) { /* Process may already be dead */ }
       this.shell = null;
     }
   }

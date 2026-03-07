@@ -210,9 +210,9 @@ agent-tank -c config.json
 ## Programmatic Usage
 
 ```javascript
-const { LLMWatcher } = require('agent-tank');
+const { AgentTank } = require('agent-tank');
 
-const watcher = new LLMWatcher({
+const watcher = new AgentTank({
   agents: ['claude', 'gemini'], // or null for auto-discover
   port: 3456,
   autoDiscover: true
