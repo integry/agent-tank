@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const { parseArgs } = require('node:util');
-const { LLMWatcher } = require('../src/index.js');
+const { AgentTank } = require('../src/index.js');
 
 const options = {
   claude: { type: 'boolean', default: false },
@@ -122,7 +122,7 @@ if (autoRefreshIntervalEnv !== undefined) {
   autoRefreshInterval = config.autoRefresh.interval;
 }
 
-const watcher = new LLMWatcher({
+const watcher = new AgentTank({
   agents: agents.length > 0 ? agents : null, // null = auto-discover
   autoDiscover: values['auto-discover'] && agents.length === 0,
   port: parseInt(values.port || config.port || '3456', 10),

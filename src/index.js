@@ -5,7 +5,7 @@ const { CodexAgent } = require('./agents/codex.js');
 const { discoverAgents } = require('./discovery.js');
 const { statusPage } = require('./status-page.js');
 
-class LLMWatcher {
+class AgentTank {
   constructor(options = {}) {
     this.port = options.port || 3456;
     this.host = options.host || '127.0.0.1';
@@ -351,4 +351,4 @@ class LLMWatcher {
   }
 }
 
-module.exports = { LLMWatcher };
+module.exports = { AgentTank };
