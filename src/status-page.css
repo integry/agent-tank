@@ -516,6 +516,23 @@ body.light-mode .progress-bar {
   font-size: 13px;
 }
 
+/* Version update notice below agent cards */
+.version-update-notice {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #ecc94b;
+  padding: 6px 10px;
+  background: rgba(236, 201, 75, 0.08);
+  border-radius: 4px;
+  border: 1px solid rgba(236, 201, 75, 0.2);
+}
+
+body.light-mode .version-update-notice {
+  color: #b7791f;
+  background: rgba(236, 201, 75, 0.1);
+  border-color: rgba(183, 121, 31, 0.2);
+}
+
 button {
   width: 100%;
   padding: 10px;

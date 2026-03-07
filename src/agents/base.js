@@ -1,14 +1,17 @@
 const pty = require('node-pty');
-
 class BaseAgent {
   constructor(name, command, args = []) {
     this.name = name;
     this.command = command;
     this.args = args;
     this.usage = null;
+    this.metadata = null;
+    this._metadataFetched = false;
     this.lastUpdated = null;
     this.error = null;
     this.isRefreshing = false;
+    this.refreshInterval = null;    // Per-agent override (seconds), null = use global
+    this.minRefreshInterval = null; // Per-agent minimum (seconds), null = no minimum
 
     // Persistent process state
     this.shell = null;
@@ -24,6 +27,7 @@ class BaseAgent {
     return {
       name: this.name,
       usage: this.usage,
+      metadata: this.metadata,
       lastUpdated: this.lastUpdated,
       error: this.error,
       isRefreshing: this.isRefreshing,
@@ -41,11 +45,41 @@ class BaseAgent {
     this.error = null;
 
     try {
+      // Fetch metadata once on first refresh (if agent supports it)
+      if (!this._metadataFetched && this.fetchMetadata) {
+        try {
+          console.log(`[${this.name}] Fetching metadata (first refresh)...`);
+          this.metadata = await this.fetchMetadata();
+          console.log(`[${this.name}] Parsed metadata:`, JSON.stringify(this.metadata));
+        } catch (metaErr) {
+          console.error(`[${this.name}] Error fetching metadata:`, metaErr.message);
+          // Continue with usage fetch even if metadata fails
+        }
+        this._metadataFetched = true;
+      }
+
       const output = await this.runCommand();
       console.log(`[${this.name}] Got output, length: ${output.length} chars`);
-      this.usage = this.parseOutput(output);
+
+      // Check for rate limit errors before parsing
+      // Match actual error messages, not incidental mentions like "rate limits and credits"
+      const cleanOutput = this.stripAnsi(output);
+      if (/rate.?limited|rate_limit_error/i.test(cleanOutput)) {
+        console.log(`[${this.name}] Rate limited, preserving last known usage data`);
+        this.error = 'Rate limited — using cached data';
+        // Don't overwrite this.usage — keep the last known good data
+        return;
+      }
+
+      const parsed = this.parseOutput(output);
+
+      // Only update usage if we got meaningful data (not all-null)
+      const hasData = parsed && Object.values(parsed).some(v => v !== null && v !== undefined &&
+        (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0)));
+      if (hasData) { this.usage = parsed; this.lastUpdated = new Date().toISOString(); }
+      else if (this.usage) { console.log(`[${this.name}] Parse returned no data, preserving last known usage`); this.error = 'Failed to parse — using cached data'; }
+      else { this.usage = parsed; this.lastUpdated = new Date().toISOString(); }
       console.log(`[${this.name}] Parsed usage:`, JSON.stringify(this.usage));
-      this.lastUpdated = new Date().toISOString();
     } catch (err) {
       console.error(`[${this.name}] Error during refresh:`, err.message);
       this.error = err.message;
@@ -149,11 +183,13 @@ class BaseAgent {
           console.log(`[${this.name}] Partial output:`, this.stripAnsi(this.output).substring(0, 500));
           require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, this.output);
         }
-        if (this.output.length > 100) {
-          finish(this.output);
+        // Kill the stuck process so it respawns fresh on the next refresh
+        console.log(`[${this.name}] Killing stuck process to force respawn`);
+        const partialOutput = this.output;
+        this.killProcess();
+        if (partialOutput.length > 100) {
+          resolve(partialOutput);
         } else {
-          this._commandInFlight = false;
-          this._onDataCallback = null;
           reject(new Error('Timeout waiting for usage data'));
         }
       }, this.getTimeout());
@@ -176,9 +212,13 @@ class BaseAgent {
     const handler = this.shell.onData((data) => {
       this.output += data;
 
-      // Suppress terminal query responses while a command is in-flight
-      // to avoid corrupting the CLI's input buffer with interleaved writes
-      if (!this._commandInFlight) {
+      // Always respond to terminal queries — suppressing them causes deadlocks
+      // when CLIs (e.g. Gemini) wait for cursor position responses before
+      // rendering output. Delay slightly during command-in-flight to avoid
+      // interleaving with command text being sent via setTimeout.
+      if (this._commandInFlight) {
+        setTimeout(() => this._respondToTerminalQueries(data), 50);
+      } else {
         this._respondToTerminalQueries(data);
       }
 
@@ -193,10 +233,7 @@ class BaseAgent {
   _setupPersistentExitHandler() {
     const handler = this.shell.onExit(({ exitCode }) => {
       console.log(`[${this.name}] Persistent process exited with code ${exitCode}`);
-      this.shell = null;
-      this.processReady = false;
-      this._onDataCallback = null;
-      this._disposables = [];
+      this.shell = null; this.processReady = false; this._onDataCallback = null; this._disposables = [];
     });
     this._disposables.push(handler);
   }
@@ -204,20 +241,16 @@ class BaseAgent {
   _respondToTerminalQueries(data, target) {
     const sh = target || this.shell;
     if (!sh) return;
-    if (data.includes('\x1b[6n')) sh.write('\x1b[1;1R');        // cursor position
-    if (data.includes('\x1b[c')) sh.write('\x1b[?62;22c');      // device attributes
-    if (data.includes('\x1b[?u')) sh.write('\x1b[?0u');         // kitty keyboard
-    if (data.includes('\x1b]10;?')) sh.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\'); // fg color
-    if (data.includes('\x1b]11;?')) sh.write('\x1b]11;rgb:0000/0000/0000\x1b\\'); // bg color
-    if (data.includes('\x1b[>q')) sh.write('\x1bP>|xterm(1)\x1b\\');  // terminal version
-    if (data.includes('\x1b[>4;?m')) sh.write('\x1b[>4m');      // modified keys
+    if (data.includes('\x1b[6n')) sh.write('\x1b[1;1R');
+    if (data.includes('\x1b[c')) sh.write('\x1b[?62;22c');
+    if (data.includes('\x1b[?u')) sh.write('\x1b[?0u');
+    if (data.includes('\x1b]10;?')) sh.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\');
+    if (data.includes('\x1b]11;?')) sh.write('\x1b]11;rgb:0000/0000/0000\x1b\\');
+    if (data.includes('\x1b[>q')) sh.write('\x1bP>|xterm(1)\x1b\\');
+    if (data.includes('\x1b[>4;?m')) sh.write('\x1b[>4m');
   }
 
-  // Hook for subclasses to handle additional prompts during fresh process startup
-  _handleAdditionalPrompts(_shell, _data, _output) {
-    // Override in subclasses (e.g. codex update screen, continuation prompts)
-  }
-
+  _handleAdditionalPrompts(_s, _d, _o) { } // Hook for subclasses
   killProcess() {
     if (this.shell) {
       console.log(`[${this.name}] Killing persistent process`);
@@ -339,47 +372,29 @@ class BaseAgent {
     });
   }
 
-  // Override in subclasses
-  getTimeout() {
-    return 30000; // 30 seconds default
-  }
-
-  isReadyForCommands(_output) {
-    return false; // Override in subclasses
-  }
-
-  hasCompleteOutput(_output) {
-    return false; // Override in subclasses
-  }
-
-  sendCommands(_shell, _output) {
-    // Override in subclasses
-  }
-
-  parseOutput(_output) {
-    // Override in subclasses
-    return null;
-  }
-
-  // Helper to strip ANSI codes and control sequences
-  // eslint-disable-next-line no-control-regex
+  getTimeout() { return 30000; }
+  isReadyForCommands(_o) { return false; }
+  hasCompleteOutput(_o) { return false; }
+  sendCommands(_s, _o) { }
+  parseOutput(_o) { return null; }
+  /* eslint-disable no-control-regex */
   static ANSI_CURSOR_RIGHT = /\x1B\[(\d+)C/g;
-  // eslint-disable-next-line no-control-regex
   static ANSI_ESCAPE_SEQ = /\x1B\[[0-9;?]*[a-zA-Z]/g;
-  // eslint-disable-next-line no-control-regex
-  static ANSI_OSC_SEQ = /\x1B\][^\x07]*\x07/g;
-  // eslint-disable-next-line no-control-regex
-  static ANSI_REMAINING = /\x1B[^[\]]*?[a-zA-Z]/g;
-
+  static ANSI_OSC_SEQ = /\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g;
+  static ANSI_DCS_SEQ = /\x1BP[^\x1B]*\x1B\\/g;
+  static ANSI_CHARSET = /\x1B[()#][A-Za-z0-9]/g;
+  static ANSI_TWOCHAR = /\x1B[=>DMEH78cNOZn\\|}{~]/g;
+  static ANSI_LEFTOVER = /\x1B/g;
+  /* eslint-enable no-control-regex */
+  static MULTI_SPACE = /  +/g;
   stripAnsi(str) {
-    return str
-      .replace(BaseAgent.ANSI_CURSOR_RIGHT, (_, n) => ' '.repeat(parseInt(n)))
-      .replace(BaseAgent.ANSI_ESCAPE_SEQ, '')
-      .replace(BaseAgent.ANSI_OSC_SEQ, '')
-      .replace(BaseAgent.ANSI_REMAINING, '')
-      .replace(/\r/g, '')
-      .replace(/  +/g, ' ');
+    return str.replace(BaseAgent.ANSI_CURSOR_RIGHT, (_, n) => ' '.repeat(parseInt(n)))
+      .replace(BaseAgent.ANSI_ESCAPE_SEQ, '').replace(BaseAgent.ANSI_OSC_SEQ, '')
+      .replace(BaseAgent.ANSI_DCS_SEQ, '').replace(BaseAgent.ANSI_CHARSET, '')
+      .replace(BaseAgent.ANSI_TWOCHAR, '').replace(BaseAgent.ANSI_LEFTOVER, '')
+      .replace(/\r/g, '').replace(BaseAgent.MULTI_SPACE, ' ');
   }
+  stripBoxChars(str) { return str ? str.replace(/[│╭╮╯╰─┌┐└┘├┤┬┴┼║═╔╗╚╝╠╣╦╩╬]/g, '').trim() : str; }
 }
 
 module.exports = { BaseAgent };
