@@ -4,11 +4,13 @@ Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via a s
 
 ## Features
 
+- **Privacy-first** - Runs entirely locally with no external data transmission
 - **Auto-discovery** - Automatically detects installed LLM CLI tools
 - **HTTP API** - Query usage limits via REST endpoints
 - **Status page** - Built-in HTML dashboard
 - **Lightweight** - Single dependency (node-pty)
 - **Multi-agent** - Monitor Claude, Gemini, and Codex simultaneously
+- **Secure by design** - No browser cookies, web scraping, or credential access
 
 ## Installation
 
@@ -229,9 +231,35 @@ await watcher.refreshAgent('claude');
 watcher.stop();
 ```
 
-## How It Works
+## How It Works: Privacy-First Local Execution
 
-The watcher spawns each CLI tool in a pseudo-terminal (PTY), sends the appropriate usage command (`/usage`, `/stats`, or `/status`), parses the output, and exposes the data via HTTP.
+Agent Tank is designed with privacy and security as core principles. Understanding how it collects usage data is essential for users evaluating the tool's security posture.
+
+### Local PTY-Based Architecture
+
+The tool operates entirely on your local machine by spawning instances of LLM CLI tools within a pseudo-terminal (PTY). This approach is functionally equivalent to you opening a terminal window and typing commands yourself—Agent Tank simply automates this process.
+
+Here's what happens when Agent Tank queries your usage:
+
+1. **Spawns a local PTY** - Creates a pseudo-terminal session on your machine
+2. **Launches the CLI tool** - Starts the authenticated CLI (e.g., `claude`, `gemini`, or `codex`)
+3. **Sends usage commands** - Types the appropriate command (`/usage`, `/stats`, or `/status`)
+4. **Parses the output** - Reads and structures the text response from the terminal
+5. **Exposes via local HTTP** - Makes the parsed data available through a localhost API
+
+### What Agent Tank Does NOT Do
+
+To be explicit about what this tool avoids:
+
+- **No browser cookie access** - Agent Tank never reads, parses, or transmits browser cookies
+- **No web scraping** - The tool does not access web interfaces or scrape HTML pages
+- **No credential extraction** - Your API keys, tokens, or passwords are never accessed or stored
+- **No network interception** - There is no proxy, MITM, or traffic inspection involved
+- **No external data transmission** - Usage data stays on your machine; nothing is sent to external servers
+
+### Why This Approach?
+
+LLM usage data is sensitive—it can reveal work patterns, subscription tiers, and usage intensity. By operating through local CLI tools that you've already authenticated, Agent Tank inherits the security model you've already established with each provider. The tool acts as a local automation layer, not a data collection service.
 
 ### Supported Commands
 
