@@ -98,18 +98,31 @@ class ClaudeAgent extends BaseAgent {
     } else {
       // Try date + time format: "Jan 22, 1pm" or "Jan 22, 12:30pm"
       const dateTimeMatch = cleanStr.match(/(\w+)\s+(\d{1,2}),?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
-      if (!dateTimeMatch) return { text: resetStr, seconds: null };
+      // Try date-only format: "Apr 1" (no time, e.g. extra usage billing cycle)
+      const dateOnlyMatch = !dateTimeMatch && cleanStr.match(/(\w+)\s+(\d{1,2})$/i);
 
-      const [, month, day, hourRaw, minutes = '0', ampm] = dateTimeMatch;
+      if (!dateTimeMatch && !dateOnlyMatch) return { text: resetStr, seconds: null };
+
       const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-      const monthIndex = monthNames.indexOf(month.toLowerCase().substring(0, 3));
-      if (monthIndex === -1) return { text: resetStr, seconds: null };
 
-      let hour = parseInt(hourRaw);
-      if (ampm.toLowerCase() === 'pm' && hour !== 12) hour += 12;
-      if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0;
+      if (dateTimeMatch) {
+        const [, month, day, hourRaw, minutes = '0', ampm] = dateTimeMatch;
+        const monthIndex = monthNames.indexOf(month.toLowerCase().substring(0, 3));
+        if (monthIndex === -1) return { text: resetStr, seconds: null };
 
-      resetDate = new Date(now.getFullYear(), monthIndex, parseInt(day), hour, parseInt(minutes));
+        let hour = parseInt(hourRaw);
+        if (ampm.toLowerCase() === 'pm' && hour !== 12) hour += 12;
+        if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0;
+
+        resetDate = new Date(now.getFullYear(), monthIndex, parseInt(day), hour, parseInt(minutes));
+      } else {
+        const [, month, day] = dateOnlyMatch;
+        const monthIndex = monthNames.indexOf(month.toLowerCase().substring(0, 3));
+        if (monthIndex === -1) return { text: resetStr, seconds: null };
+
+        resetDate = new Date(now.getFullYear(), monthIndex, parseInt(day));
+      }
+
       // If the date is in the past, it's next year
       if (resetDate < now) {
         resetDate.setFullYear(resetDate.getFullYear() + 1);
@@ -211,10 +224,32 @@ class ClaudeAgent extends BaseAgent {
 
       // Fall back to time-only pattern (session): H:MMam/pm or Ham/pm (timezone)
       // Minutes are optional (shows "11am" for exact hours)
+      // PTY cursor-right redraws can corrupt the session line: "1am" becomes
+      // "1 m" because cursor-right skips over the 'a' character (already on
+      // screen) and our ANSI stripper replaces cursor-right with a space.
       if (!resetsAt) {
-        const timeOnlyMatch = section.match(/(\d{1,2}(?::\d{2})?\s*(am|pm))\s*\(([^)]+)\)/i);
+        // Try clean match first
+        let timeOnlyMatch = section.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*\(([^)]+)\)/i);
         if (timeOnlyMatch) {
-          resetsAt = `${timeOnlyMatch[1]} (${timeOnlyMatch[3]})`;
+          resetsAt = `${timeOnlyMatch[1]} (${timeOnlyMatch[2]})`;
+        } else {
+          // Corrupted: "1 m" or "2 59 m" — digits, optional :digits, spaces, then bare 'm'
+          // The 'a' or 'p' was lost to cursor-right. Try both am/pm and pick
+          // whichever gives the nearest future reset time.
+          timeOnlyMatch = section.match(/(\d{1,2})(?:\s*:?\s*(\d{2}))?\s+m\s*\(([^)]+)\)/i);
+          if (timeOnlyMatch) {
+            const hour = timeOnlyMatch[1];
+            const minutes = timeOnlyMatch[2] ? `:${timeOnlyMatch[2]}` : '';
+            const tz = timeOnlyMatch[3];
+            const amCandidate = `${hour}${minutes}am (${tz})`;
+            const pmCandidate = `${hour}${minutes}pm (${tz})`;
+            const amReset = this.parseResetTime(amCandidate);
+            const pmReset = this.parseResetTime(pmCandidate);
+            // Pick the nearer future time (smaller positive seconds)
+            const amSec = amReset?.seconds ?? Infinity;
+            const pmSec = pmReset?.seconds ?? Infinity;
+            resetsAt = amSec <= pmSec ? amCandidate : pmCandidate;
+          }
         }
       }
 
@@ -246,10 +281,35 @@ class ClaudeAgent extends BaseAgent {
 
     // Parse weekly (Sonnet only) - from "Current week (Sonnet only)" to end or next section
     // Use flexible whitespace matching and lookahead for end markers
-    const weeklySonnetSection = extractSection('Current\\s+week\\s*\\(?\\s*Sonnet\\s+only\\s*\\)?', 'esc\\s+to\\s+cancel|Current\\s+week\\s*\\(');
+    const weeklySonnetSection = extractSection('Current\\s+week\\s*\\(?\\s*Sonnet\\s+only\\s*\\)?', 'Extra\\s+usage|esc\\s+to\\s+cancel|Current\\s+week\\s*\\(');
     const weeklySonnetData = parseSection(weeklySonnetSection);
     if (weeklySonnetData) {
       usage.weeklySonnet = { label: 'Current week (Sonnet only)', ...weeklySonnetData };
+    }
+
+    // Parse extra usage section (new Claude Max feature)
+    const extraSection = extractSection('Extra\\s+usage', 'esc\\s+to\\s+cancel');
+    if (extraSection) {
+      const percentMatch = extraSection.match(/(\d+)\s*%\s*used/i);
+      const spentMatch = extraSection.match(/\$([0-9.]+)\s*\/\s*\$([0-9.]+)\s*spent/i);
+      // Reset time for extra usage uses date format: "Apr 1 (timezone)"
+      let resetsAt = null;
+      const dateTimeMatch = extraSection.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s*(?:\d{1,2}(?::\d{2})?\s*(?:am|pm))?)\s*\(([^)]+)\)/i);
+      if (dateTimeMatch) {
+        resetsAt = `${dateTimeMatch[1].trim()} (${dateTimeMatch[2]})`;
+      }
+      if (percentMatch || spentMatch) {
+        const resetData = resetsAt ? this.parseResetTime(resetsAt) : null;
+        usage.extraUsage = {
+          label: 'Extra usage',
+          percent: percentMatch ? parseFloat(percentMatch[1]) : null,
+          spent: spentMatch ? parseFloat(spentMatch[1]) : null,
+          budget: spentMatch ? parseFloat(spentMatch[2]) : null,
+          resetsAt,
+          resetsIn: resetData?.text || null,
+          resetsInSeconds: resetData?.seconds || null,
+        };
+      }
     }
 
     // Legacy format fallback

@@ -384,13 +384,17 @@ class BaseAgent {
   /* eslint-disable no-control-regex */
   static ANSI_CURSOR_RIGHT = /\x1B\[(\d+)C/g;
   static ANSI_ESCAPE_SEQ = /\x1B\[[0-9;?]*[a-zA-Z]/g;
-  static ANSI_OSC_SEQ = /\x1B\][^\x07]*\x07/g;
-  static ANSI_REMAINING = /\x1B[^[\]]*?[a-zA-Z]/g;
+  static ANSI_OSC_SEQ = /\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g;
+  static ANSI_DCS_SEQ = /\x1BP[^\x1B]*\x1B\\/g;
+  static ANSI_CHARSET = /\x1B[()#][A-Za-z0-9]/g;
+  static ANSI_TWOCHAR = /\x1B[=>DMEH78cNOZn\\|}{~]/g;
   /* eslint-enable no-control-regex */
   stripAnsi(str) {
     return str.replace(BaseAgent.ANSI_CURSOR_RIGHT, (_, n) => ' '.repeat(parseInt(n)))
       .replace(BaseAgent.ANSI_ESCAPE_SEQ, '').replace(BaseAgent.ANSI_OSC_SEQ, '')
-      .replace(BaseAgent.ANSI_REMAINING, '').replace(/\r/g, '').replace(/  +/g, ' ');
+      .replace(BaseAgent.ANSI_DCS_SEQ, '')
+      .replace(BaseAgent.ANSI_CHARSET, '').replace(BaseAgent.ANSI_TWOCHAR, '')
+      .replace(/\x1B/g, '').replace(/\r/g, '').replace(/  +/g, ' ');
   }
   stripBoxChars(str) { return str ? str.replace(/[│╭╮╯╰─┌┐└┘├┤┬┴┼║═╔╗╚╝╠╣╦╩╬]/g, '').trim() : str; }
 }

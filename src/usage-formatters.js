@@ -136,6 +136,22 @@ function formatClaudeUsage(usage) {
       html += '</div>';
     }
   }
+  // Extra usage (paid overage budget)
+  if (usage.extraUsage) {
+    const extra = usage.extraUsage;
+    const percent = extra.percent ?? 0;
+    const isZero = percent === 0;
+    const spentLabel = extra.spent != null && extra.budget != null
+      ? `$${extra.spent.toFixed(2)} / $${extra.budget.toFixed(2)}`
+      : '';
+    html += '<div class="model-container">';
+    html += usageItem('Extra', percent, '% used', { isZero, agentName: 'claude', resetsIn: extra.resetsIn || '' });
+    if (spentLabel) {
+      html += `<div class="reset-info"><span class="reset-label">${spentLabel}</span></div>`;
+    }
+    html += resetInfoItem(extra.resetsIn, extra.resetsAt, 'weekly', isZero);
+    html += '</div>';
+  }
   return html;
 }
 
