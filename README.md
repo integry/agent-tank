@@ -121,7 +121,7 @@ agent-tank -c config.json
       "weeklySonnet": { "percent": 10, "label": "Current week (Sonnet only)" },
       "resets": ["Jan 22, 2pm (Europe/Berlin)"]
     },
-    "lastUpdated": "2024-01-20T10:30:00.000Z",
+    "lastUpdated": "2026-01-20T10:30:00.000Z",
     "error": null,
     "isRefreshing": false
   },
@@ -133,7 +133,7 @@ agent-tank -c config.json
         { "model": "gemini-2.5-pro", "usageLeft": 85.2, "resetsIn": "3h 29m" }
       ]
     },
-    "lastUpdated": "2024-01-20T10:30:05.000Z",
+    "lastUpdated": "2026-01-20T10:30:05.000Z",
     "error": null,
     "isRefreshing": false
   },
@@ -144,7 +144,7 @@ agent-tank -c config.json
       "weekly": { "percentLeft": 50, "resetsAt": "17:32", "label": "Weekly limit" },
       "model": "gpt-5.2-codex"
     },
-    "lastUpdated": "2024-01-20T10:30:10.000Z",
+    "lastUpdated": "2026-01-20T10:30:10.000Z",
     "error": null,
     "isRefreshing": false
   }
@@ -161,7 +161,7 @@ agent-tank -c config.json
     "weeklyAll": { "percent": 30, "label": "Current week (all models)" },
     "weeklySonnet": { "percent": 10, "label": "Current week (Sonnet only)" }
   },
-  "lastUpdated": "2024-01-20T10:30:00.000Z",
+  "lastUpdated": "2026-01-20T10:30:00.000Z",
   "error": null,
   "isRefreshing": false
 }
