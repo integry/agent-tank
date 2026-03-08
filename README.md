@@ -28,72 +28,6 @@ Or run directly with npx:
 npx agent-tank
 ```
 
-## Prerequisites
-
-### Build Requirements
-
-The `node-pty` dependency requires native compilation. You'll need:
-
-- **Python 3.8+** (Python 3.11 recommended)
-- **C++ build tools** (gcc, g++, make)
-- **Node.js development headers**
-
-#### Linux (Ubuntu/Debian)
-```bash
-sudo apt-get install python3.11 python3.11-dev build-essential nodejs-dev
-```
-
-#### Linux (Fedora/RHEL/CentOS)
-```bash
-sudo dnf install python3.11 python3.11-devel gcc gcc-c++ make nodejs-devel
-```
-
-#### Linux (openSUSE)
-```bash
-sudo zypper install python311 python311-devel gcc gcc-c++ make nodejs20-devel
-```
-
-#### macOS
-```bash
-# Install Xcode Command Line Tools if not already installed
-xcode-select --install
-
-# Install Python 3.11
-brew install python@3.11
-```
-
-#### Windows
-- Install [Python 3.11+](https://www.python.org/downloads/)
-- Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)
-
-### LLM CLI Tools
-
-You need at least one of these CLI tools installed and authenticated:
-
-- [Claude Code](https://claude.ai/download) (`claude`) - **Version 2.0+ required** for `/usage` command support
-- [Gemini CLI](https://github.com/anthropics/gemini-cli) (`gemini`) - **Version 0.24.5+ required** for `/stats` command support
-- [OpenAI Codex](https://platform.openai.com/docs/codex) (`codex`)
-
-**Version Requirements:**
-
-**Claude Code:** Version 1.x does not support the `/usage` command.
-```bash
-# Check version
-claude --version
-
-# Update to latest
-npm update -g @anthropic-ai/claude-code
-```
-
-**Gemini CLI:** Version 0.24.4 and below do not support the `/stats` command properly.
-```bash
-# Check version
-gemini --version
-
-# Update to latest
-npm update -g gemini
-```
-
 ## Usage
 
 ### Basic Usage
@@ -211,7 +145,75 @@ agent-tank -c config.json
 }
 ```
 
-## Programmatic Usage
+## Developer & Advanced Setup
+
+### Prerequisites
+
+#### Build Requirements
+
+The `node-pty` dependency requires native compilation. You'll need:
+
+- **Python 3.8+** (Python 3.11 recommended)
+- **C++ build tools** (gcc, g++, make)
+- **Node.js development headers**
+
+##### Linux (Ubuntu/Debian)
+```bash
+sudo apt-get install python3.11 python3.11-dev build-essential nodejs-dev
+```
+
+##### Linux (Fedora/RHEL/CentOS)
+```bash
+sudo dnf install python3.11 python3.11-devel gcc gcc-c++ make nodejs-devel
+```
+
+##### Linux (openSUSE)
+```bash
+sudo zypper install python311 python311-devel gcc gcc-c++ make nodejs20-devel
+```
+
+##### macOS
+```bash
+# Install Xcode Command Line Tools if not already installed
+xcode-select --install
+
+# Install Python 3.11
+brew install python@3.11
+```
+
+##### Windows
+- Install [Python 3.11+](https://www.python.org/downloads/)
+- Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)
+
+#### LLM CLI Tools
+
+You need at least one of these CLI tools installed and authenticated:
+
+- [Claude Code](https://claude.ai/download) (`claude`) - **Version 2.0+ required** for `/usage` command support
+- [Gemini CLI](https://github.com/anthropics/gemini-cli) (`gemini`) - **Version 0.24.5+ required** for `/stats` command support
+- [OpenAI Codex](https://platform.openai.com/docs/codex) (`codex`)
+
+**Version Requirements:**
+
+**Claude Code:** Version 1.x does not support the `/usage` command.
+```bash
+# Check version
+claude --version
+
+# Update to latest
+npm update -g @anthropic-ai/claude-code
+```
+
+**Gemini CLI:** Version 0.24.4 and below do not support the `/stats` command properly.
+```bash
+# Check version
+gemini --version
+
+# Update to latest
+npm update -g gemini
+```
+
+### Programmatic Usage
 
 ```javascript
 const { AgentTank } = require('agent-tank');
@@ -235,11 +237,11 @@ await watcher.refreshAgent('claude');
 watcher.stop();
 ```
 
-## How It Works: Privacy-First Local Execution
+### How It Works: Privacy-First Local Execution
 
 Agent Tank is designed with privacy and security as core principles. Understanding how it collects usage data is essential for users evaluating the tool's security posture.
 
-### Local PTY-Based Architecture
+#### Local PTY-Based Architecture
 
 The tool operates entirely on your local machine by spawning instances of LLM CLI tools within a pseudo-terminal (PTY). This approach is functionally equivalent to you opening a terminal window and typing commands yourself—Agent Tank simply automates this process.
 
@@ -251,7 +253,7 @@ Here's what happens when Agent Tank queries your usage:
 4. **Parses the output** - Reads and structures the text response from the terminal
 5. **Exposes via local HTTP** - Makes the parsed data available through a localhost API
 
-### What Agent Tank Does NOT Do
+#### What Agent Tank Does NOT Do
 
 To be explicit about what this tool avoids:
 
@@ -261,11 +263,11 @@ To be explicit about what this tool avoids:
 - **No network interception** - There is no proxy, MITM, or traffic inspection involved
 - **No external data transmission** - Usage data stays on your machine; nothing is sent to external servers
 
-### Why This Approach?
+#### Why This Approach?
 
 LLM usage data is sensitive—it can reveal work patterns, subscription tiers, and usage intensity. By operating through local CLI tools that you've already authenticated, Agent Tank inherits the security model you've already established with each provider. The tool acts as a local automation layer, not a data collection service.
 
-### Supported Commands
+#### Supported Commands
 
 | Agent | Command | Output |
 |-------|---------|--------|
