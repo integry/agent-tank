@@ -10,6 +10,8 @@ Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via a s
 - **Auto-discovery** - Automatically detects installed LLM CLI tools
 - **HTTP API** - Query usage limits via REST endpoints
 - **Status page** - Built-in HTML dashboard
+- **Unified Web UI** - All-in-one dashboard showing Claude, Gemini, and Codex usage at a glance
+- **Instant Tab Tracking** - Pin the dashboard to your browser tab and see live usage updates via favicon and title changes
 - **Lightweight** - Single dependency (node-pty)
 - **Multi-agent** - Monitor Claude, Gemini, and Codex simultaneously
 - **Secure by design** - No browser cookies, web scraping, or credential access
