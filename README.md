@@ -115,12 +115,36 @@ npx agent-tank
   "claude": {
     "name": "claude",
     "usage": {
-      "session": { "percent": 45, "label": "Current session" },
-      "weeklyAll": { "percent": 30, "label": "Current week (all models)" },
-      "weeklySonnet": { "percent": 10, "label": "Current week (Sonnet only)" },
-      "resets": ["Jan 22, 2pm (Europe/Berlin)"]
+      "session": {
+        "label": "Current session",
+        "percent": 42,
+        "resetsAt": "10pm (Europe/London)",
+        "resetsIn": "12m",
+        "resetsInSeconds": 764
+      },
+      "weeklyAll": {
+        "label": "Current week (all models)",
+        "percent": 31,
+        "resetsAt": "Mar 13, 3am (Europe/London)",
+        "resetsIn": "4d 5h",
+        "resetsInSeconds": 364364
+      },
+      "weeklySonnet": {
+        "label": "Current week (Sonnet only)",
+        "percent": 5,
+        "resetsAt": "Mar 13, 10am (Europe/London)",
+        "resetsIn": "4d 12h",
+        "resetsInSeconds": 389564
+      }
     },
-    "lastUpdated": "2026-01-20T10:30:00.000Z",
+    "metadata": {
+      "sessionId": "0b34aa59-...",
+      "cwd": "/tmp",
+      "organization": "Your Organization",
+      "email": "user@example.com",
+      "version": "2.1.71"
+    },
+    "lastUpdated": "2026-03-08T21:47:15.090Z",
     "error": null,
     "isRefreshing": false
   },
@@ -128,22 +152,92 @@ npx agent-tank
     "name": "gemini",
     "usage": {
       "models": [
-        { "model": "gemini-2.5-flash", "usageLeft": 90.5, "resetsIn": "3h 26m" },
-        { "model": "gemini-2.5-pro", "usageLeft": 85.2, "resetsIn": "3h 29m" }
+        {
+          "model": "gemini-2.5-flash",
+          "usageLeft": 100,
+          "resetsIn": "24h",
+          "percentUsed": 0,
+          "resetsInSeconds": 86400
+        },
+        {
+          "model": "gemini-2.5-pro",
+          "usageLeft": 99.5,
+          "resetsIn": "12h 16m",
+          "percentUsed": 0.5,
+          "resetsInSeconds": 44160
+        }
       ]
     },
-    "lastUpdated": "2026-01-20T10:30:05.000Z",
+    "metadata": {
+      "version": "0.24.5",
+      "email": "user@example.com",
+      "authMethod": "OAuth",
+      "model": "auto-gemini-2.5",
+      "os": "linux",
+      "updateAvailable": {
+        "current": "0.24.5",
+        "latest": "0.32.1"
+      }
+    },
+    "lastUpdated": "2026-03-08T21:47:14.138Z",
     "error": null,
     "isRefreshing": false
   },
   "codex": {
     "name": "codex",
     "usage": {
-      "fiveHour": { "percentLeft": 100, "resetsAt": "20:34", "label": "5h limit" },
-      "weekly": { "percentLeft": 50, "resetsAt": "17:32", "label": "Weekly limit" },
-      "model": "gpt-5.2-codex"
+      "fiveHour": {
+        "percentLeft": 100,
+        "resetsAt": "02:44 on 9 Mar",
+        "label": "5h limit",
+        "percentUsed": 0,
+        "resetsIn": "4h 56m",
+        "resetsInSeconds": 17807
+      },
+      "weekly": {
+        "percentLeft": 100,
+        "resetsAt": "21:44 on 15 Mar",
+        "label": "Weekly limit",
+        "percentUsed": 0,
+        "resetsIn": "6d 23h",
+        "resetsInSeconds": 604607
+      },
+      "version": {
+        "current": "0.107.0",
+        "latest": "0.111.0"
+      },
+      "modelLimits": [
+        {
+          "name": "GPT-5.3-Codex-Spark",
+          "fiveHour": {
+            "percentLeft": 100,
+            "resetsAt": "02:46 on 9 Mar",
+            "label": "5h limit",
+            "percentUsed": 0,
+            "resetsIn": "4h 58m",
+            "resetsInSeconds": 17927
+          },
+          "weekly": {
+            "percentLeft": 100,
+            "resetsAt": "21:46 on 15 Mar",
+            "label": "Weekly limit",
+            "percentUsed": 0,
+            "resetsIn": "6d 23h",
+            "resetsInSeconds": 604727
+          }
+        }
+      ],
+      "model": "gpt-5.3-codex",
+      "account": "user@example.com"
     },
-    "lastUpdated": "2026-01-20T10:30:10.000Z",
+    "metadata": {
+      "directory": "/tmp",
+      "sessionId": "019ccf68-...",
+      "collaborationMode": "Default",
+      "model": "gpt-5.3-codex",
+      "email": "user@example.com"
+    },
+    "lastUpdated": "2026-03-08T21:47:12.648Z",
     "error": null,
     "isRefreshing": false
   }
@@ -156,11 +250,36 @@ npx agent-tank
 {
   "name": "claude",
   "usage": {
-    "session": { "percent": 45, "label": "Current session" },
-    "weeklyAll": { "percent": 30, "label": "Current week (all models)" },
-    "weeklySonnet": { "percent": 10, "label": "Current week (Sonnet only)" }
+    "session": {
+      "label": "Current session",
+      "percent": 42,
+      "resetsAt": "10pm (Europe/London)",
+      "resetsIn": "12m",
+      "resetsInSeconds": 764
+    },
+    "weeklyAll": {
+      "label": "Current week (all models)",
+      "percent": 31,
+      "resetsAt": "Mar 13, 3am (Europe/London)",
+      "resetsIn": "4d 5h",
+      "resetsInSeconds": 364364
+    },
+    "weeklySonnet": {
+      "label": "Current week (Sonnet only)",
+      "percent": 5,
+      "resetsAt": "Mar 13, 10am (Europe/London)",
+      "resetsIn": "4d 12h",
+      "resetsInSeconds": 389564
+    }
   },
-  "lastUpdated": "2026-01-20T10:30:00.000Z",
+  "metadata": {
+    "sessionId": "0b34aa59-...",
+    "cwd": "/tmp",
+    "organization": "Your Organization",
+    "email": "user@example.com",
+    "version": "2.1.71"
+  },
+  "lastUpdated": "2026-03-08T21:47:15.090Z",
   "error": null,
   "isRefreshing": false
 }
