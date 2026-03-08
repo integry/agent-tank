@@ -9,24 +9,11 @@ Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via a s
 - **Privacy-first** - Runs entirely locally with no external data transmission
 - **Auto-discovery** - Automatically detects installed LLM CLI tools
 - **HTTP API** - Query usage limits via REST endpoints
-- **Status page** - Built-in HTML dashboard
 - **Unified Web UI** - All-in-one dashboard showing Claude, Gemini, and Codex usage at a glance
 - **Instant Tab Tracking** - Pin the dashboard to your browser tab and see live usage updates via favicon and title changes
 - **Lightweight** - Single dependency (node-pty)
 - **Multi-agent** - Monitor Claude, Gemini, and Codex simultaneously
 - **Secure by design** - No browser cookies, web scraping, or credential access
-
-## Installation
-
-```bash
-npm install -g agent-tank
-```
-
-Or run directly with npx:
-
-```bash
-npx agent-tank
-```
 
 ## Usage
 
@@ -94,6 +81,18 @@ You can use a JSON configuration file:
 agent-tank -c config.json
 ```
 
+## Installation
+
+```bash
+npm install -g agent-tank
+```
+
+Or run directly with npx:
+
+```bash
+npx agent-tank
+```
+
 ## HTTP API
 
 ### Endpoints
@@ -121,7 +120,7 @@ agent-tank -c config.json
       "weeklySonnet": { "percent": 10, "label": "Current week (Sonnet only)" },
       "resets": ["Jan 22, 2pm (Europe/Berlin)"]
     },
-    "lastUpdated": "2024-01-20T10:30:00.000Z",
+    "lastUpdated": "2026-01-20T10:30:00.000Z",
     "error": null,
     "isRefreshing": false
   },
@@ -133,7 +132,7 @@ agent-tank -c config.json
         { "model": "gemini-2.5-pro", "usageLeft": 85.2, "resetsIn": "3h 29m" }
       ]
     },
-    "lastUpdated": "2024-01-20T10:30:05.000Z",
+    "lastUpdated": "2026-01-20T10:30:05.000Z",
     "error": null,
     "isRefreshing": false
   },
@@ -144,7 +143,7 @@ agent-tank -c config.json
       "weekly": { "percentLeft": 50, "resetsAt": "17:32", "label": "Weekly limit" },
       "model": "gpt-5.2-codex"
     },
-    "lastUpdated": "2024-01-20T10:30:10.000Z",
+    "lastUpdated": "2026-01-20T10:30:10.000Z",
     "error": null,
     "isRefreshing": false
   }
@@ -161,7 +160,7 @@ agent-tank -c config.json
     "weeklyAll": { "percent": 30, "label": "Current week (all models)" },
     "weeklySonnet": { "percent": 10, "label": "Current week (Sonnet only)" }
   },
-  "lastUpdated": "2024-01-20T10:30:00.000Z",
+  "lastUpdated": "2026-01-20T10:30:00.000Z",
   "error": null,
   "isRefreshing": false
 }
