@@ -451,6 +451,14 @@ This is handled automatically. If you still see issues, ensure your terminal sup
 agent-tank --port 8080
 ```
 
+## Community
+
+[r/agenttank](https://www.reddit.com/r/agenttank)
+
+## Author
+
+[Rinalds Uzkalns](https://propr.dev)
+
 ## License
 
 MIT

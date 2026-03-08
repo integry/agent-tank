@@ -103,6 +103,8 @@ ${styles}
         <span class="footer-separator">•</span>
         <a href="https://github.com/integry/agent-tank">GitHub</a>
         <span class="footer-separator">•</span>
+        <a href="https://www.reddit.com/r/agenttank">Reddit</a>
+        <span class="footer-separator">•</span>
         <a href="/status" target="_blank" class="api-link" id="api-link" title="Open API endpoint">[ API Endpoint ]</a>
         <button class="copy-api-btn" onclick="copyApiEndpoint(event)" title="Copy API URL">${copyIcon}</button>
       </div>
