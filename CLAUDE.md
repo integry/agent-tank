@@ -115,6 +115,7 @@ describe('ClaudeAgent', () => {
 1. Run `npm test` - all tests must pass
 2. Run `npm run lint` - no linting errors
 3. Ensure new functionality has corresponding tests
+4. Update `README.md` if functionality changes - keep documentation in sync with code
 
 ### Code Style
 
