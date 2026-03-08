@@ -2,31 +2,19 @@
 
 Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via a simple HTTP API.
 
-> **Note:** Agent Tank is designed for **AI coding agent subscriptions** such as Claude Code Pro/Max, Google Gemini CLI (with Advanced/Max plans), and ChatGPT Codex (with Plus/Pro plans). It tracks **active session and rate limit usage**—not API key consumption or pay-per-use billing. If you're using API keys with pay-as-you-go pricing, this tool won't help you track costs; check your provider's billing dashboard instead.
-
 ## Features
 
 - **Privacy-first** - Runs entirely locally with no external data transmission
+
+> **Note:** Agent Tank is designed for **AI coding agent subscriptions** such as Claude Code Pro/Max, Google Gemini CLI (with Advanced/Max plans), and ChatGPT Codex (with Plus/Pro plans). It tracks **active session and rate limit usage**—not API key consumption or pay-per-use billing. If you're using API keys with pay-as-you-go pricing, this tool won't help you track costs; check your provider's billing dashboard instead.
+
 - **Auto-discovery** - Automatically detects installed LLM CLI tools
 - **HTTP API** - Query usage limits via REST endpoints
-- **Status page** - Built-in HTML dashboard
 - **Unified Web UI** - All-in-one dashboard showing Claude, Gemini, and Codex usage at a glance
 - **Instant Tab Tracking** - Pin the dashboard to your browser tab and see live usage updates via favicon and title changes
 - **Lightweight** - Single dependency (node-pty)
 - **Multi-agent** - Monitor Claude, Gemini, and Codex simultaneously
 - **Secure by design** - No browser cookies, web scraping, or credential access
-
-## Installation
-
-```bash
-npm install -g agent-tank
-```
-
-Or run directly with npx:
-
-```bash
-npx agent-tank
-```
 
 ## Usage
 
@@ -92,6 +80,18 @@ You can use a JSON configuration file:
 
 ```bash
 agent-tank -c config.json
+```
+
+## Installation
+
+```bash
+npm install -g agent-tank
+```
+
+Or run directly with npx:
+
+```bash
+npx agent-tank
 ```
 
 ## HTTP API
