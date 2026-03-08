@@ -47,14 +47,35 @@ agent-tank --port 8080
 
 ```
 Options:
-  --claude          Enable Claude monitoring
-  --gemini          Enable Gemini monitoring
-  --codex           Enable Codex monitoring
-  --port <port>     HTTP server port (default: 3456)
-  --config, -c      Path to config file (JSON)
-  --auto-discover   Auto-discover available agents (default: true)
-  --help, -h        Show help message
+  --claude              Enable Claude monitoring
+  --gemini              Enable Gemini monitoring
+  --codex               Enable Codex monitoring
+  --port <port>         HTTP server port (default: 3456)
+  --host <host>         Bind address (default: 127.0.0.1)
+  --auth-user <user>    HTTP Basic Auth username
+  --auth-pass <pass>    HTTP Basic Auth password
+  --auth-token <token>  API key for Bearer token auth
+  --fresh-process       Spawn a new process per refresh (default: false)
+  --config, -c          Path to config file (JSON)
+  --auto-discover       Auto-discover available agents (default: true)
+  --auto-refresh        Enable/disable background auto-refresh (default: true)
+  --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60)
+  --help, -h            Show this help message
 ```
+
+### Environment Variables
+
+Environment variables override CLI flags and config file settings:
+
+| Variable | Description |
+|----------|-------------|
+| `AGENT_TANK_USER` | Basic auth username (overrides `--auth-user`) |
+| `AGENT_TANK_PASS` | Basic auth password (overrides `--auth-pass`) |
+| `AGENT_TANK_TOKEN` | API key (overrides `--auth-token`) |
+| `AGENT_TANK_HOST` | Bind address (overrides `--host`) |
+| `AGENT_TANK_FRESH_PROCESS` | Use fresh process per refresh (`1` or `true`) |
+| `AGENT_TANK_AUTO_REFRESH` | Enable/disable background auto-refresh (`1`/`true` or `0`/`false`) |
+| `AGENT_TANK_AUTO_REFRESH_INTERVAL` | Auto-refresh interval in seconds |
 
 ### Configuration File
 
@@ -82,6 +103,7 @@ agent-tank -c config.json
 | GET | `/` | HTML status page |
 | GET | `/status` | JSON status for all agents |
 | GET | `/status/:agent` | JSON status for specific agent |
+| GET | `/config` | Auto-refresh configuration (JSON) |
 | POST | `/refresh` | Refresh all agents |
 | POST | `/refresh/:agent` | Refresh specific agent |
 
