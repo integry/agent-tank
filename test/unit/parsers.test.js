@@ -979,6 +979,48 @@ describe('Graceful Degradation', () => {
     });
   });
 
+  describe('hasCompleteOutput – session error detection', () => {
+    it('detects "session expired" as complete output', () => {
+      const agent = new ClaudeAgent();
+      expect(agent.hasCompleteOutput('Your session expired. Please sign in again.')).toBe(true);
+    });
+
+    it('detects "session error" as complete output', () => {
+      const agent = new ClaudeAgent();
+      expect(agent.hasCompleteOutput('session error: unable to retrieve usage data')).toBe(true);
+    });
+
+    it('detects "authentication error" as complete output', () => {
+      const agent = new ClaudeAgent();
+      expect(agent.hasCompleteOutput('Authentication error - please log in again')).toBe(true);
+    });
+
+    it('detects "Failed to load usage" as complete output', () => {
+      const agent = new ClaudeAgent();
+      expect(agent.hasCompleteOutput('Failed to load usage data')).toBe(true);
+    });
+
+    it('detects "Unable to load" as complete output', () => {
+      const agent = new ClaudeAgent();
+      expect(agent.hasCompleteOutput('Unable to load usage information')).toBe(true);
+    });
+
+    it('detects "not authenticated" as complete output', () => {
+      const agent = new ClaudeAgent();
+      expect(agent.hasCompleteOutput('Error: not authenticated')).toBe(true);
+    });
+
+    it('detects rate_limit_error as complete output', () => {
+      const agent = new ClaudeAgent();
+      expect(agent.hasCompleteOutput('rate_limit_error: too many requests')).toBe(true);
+    });
+
+    it('does not treat normal loading screen as complete', () => {
+      const agent = new ClaudeAgent();
+      expect(agent.hasCompleteOutput('Loading usage data…')).toBe(false);
+    });
+  });
+
   describe('GeminiAgent', () => {
     it('returns empty models array for malformed output', () => {
       const agent = new GeminiAgent();

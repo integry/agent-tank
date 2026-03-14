@@ -34,8 +34,8 @@ class ClaudeAgent extends BaseAgent {
 
   hasCompleteOutput(output) {
     const clean = this.stripAnsi(output);
-    // Detect error responses (rate limiting) — treat as complete
-    if (/rate.?limited|rate_limit_error|Failed to load usage/i.test(clean)) return true;
+    // Detect error responses (rate limiting, session errors) — treat as complete
+    if (/rate.?limited|rate_limit_error|Failed to load usage|session.?expired|session.?error|invalid.?session|authentication.?error|auth.?failed|Unable to (?:load|fetch)|Error loading|could not (?:load|fetch)|not authenticated|login required|sign.?in required/i.test(clean)) return true;
     // Basic requirements - must have actual usage data, not just the loading screen
     const hasSession = clean.includes('Current session');
     const hasWeekly = clean.includes('Current week');

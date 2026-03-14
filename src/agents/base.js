@@ -66,7 +66,7 @@ class BaseAgent {
       const output = await this.runCommand();
       console.log(`[${this.name}] Got output, length: ${output.length} chars`);
 
-      // Check for rate limit errors before parsing
+      // Check for rate limit and session errors before parsing
       // Match actual error messages, not incidental mentions like "rate limits and credits"
       const cleanOutput = this.stripAnsi(output);
       if (/rate.?limited|rate_limit_error/i.test(cleanOutput)) {
@@ -74,6 +74,16 @@ class BaseAgent {
         this.error = 'Rate limited — using cached data';
         this.lastUpdated = new Date().toISOString();
         // Don't overwrite this.usage — keep the last known good data
+        return;
+      }
+
+      // Check for session/auth errors — preserve cached data if available
+      const sessionErrorMatch = cleanOutput.match(/session.?expired|session.?error|invalid.?session|authentication.?error|auth.?failed|Unable to (?:load|fetch)|Error loading|could not (?:load|fetch)|Failed to load usage|not authenticated|login required|sign.?in required/i);
+      if (sessionErrorMatch) {
+        const errorMsg = sessionErrorMatch[0];
+        console.log(`[${this.name}] Session error detected: ${errorMsg}`);
+        this.error = this.usage ? `Session error — using cached data` : `Session error: ${errorMsg}`;
+        this.lastUpdated = new Date().toISOString();
         return;
       }
 
