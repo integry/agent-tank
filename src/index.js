@@ -3,11 +3,11 @@ const { ClaudeAgent } = require('./agents/claude.js');
 const { GeminiAgent } = require('./agents/gemini.js');
 const { CodexAgent } = require('./agents/codex.js');
 const { discoverAgents } = require('./discovery.js');
-const { statusPage } = require('./status-page.js');
 const { fetchPublicStatus } = require('./public-status.js');
 const { HistoryStore, DEFAULT_RETENTION_DAYS } = require('./history-store.js');
-const { evaluatePace } = require('./pace-evaluator.js');
-const { CYCLE_DURATIONS } = require('./usage-formatters.js');
+const { extractSnapshotMetrics } = require('./snapshot-metrics.js');
+const { attachPaceEvaluation } = require('./pace-attachment.js');
+const { handleRequest } = require('./http-handler.js');
 
 class AgentTank {
   constructor(options = {}) {
@@ -232,37 +232,7 @@ class AgentTank {
    * @private
    */
   _extractSnapshotMetrics(agentName, usage) {
-    switch (agentName) {
-      case 'claude':
-        return {
-          session: usage.session?.percent ?? null,
-          weeklyAll: usage.weeklyAll?.percent ?? null,
-          weeklySonnet: usage.weeklySonnet?.percent ?? null,
-          weekly: usage.weekly?.percent ?? null,
-          extraUsage: usage.extraUsage?.percent ?? null
-        };
-      case 'gemini':
-        if (usage.models && Array.isArray(usage.models)) {
-          const models = {};
-          for (const model of usage.models) {
-            models[model.model] = model.percentUsed ?? null;
-          }
-          return { models };
-        }
-        return null;
-      case 'codex':
-        return {
-          fiveHour: usage.fiveHour?.percentUsed ?? null,
-          weekly: usage.weekly?.percentUsed ?? null,
-          modelLimits: usage.modelLimits?.map(ml => ({
-            name: ml.name,
-            fiveHour: ml.fiveHour?.percentUsed ?? null,
-            weekly: ml.weekly?.percentUsed ?? null
-          })) ?? null
-        };
-      default:
-        return usage;
-    }
+    return extractSnapshotMetrics(agentName, usage);
   }
 
   /**
@@ -270,121 +240,7 @@ class AgentTank {
    * @private
    */
   _attachPaceEvaluation(agentName, usage) {
-    switch (agentName) {
-      case 'claude':
-        this._attachClaudePace(usage);
-        break;
-      case 'gemini':
-        this._attachGeminiPace(usage);
-        break;
-      case 'codex':
-        this._attachCodexPace(usage);
-        break;
-    }
-  }
-
-  /**
-   * Attach pace evaluation to Claude usage metrics.
-   * @private
-   */
-  _attachClaudePace(usage) {
-    const sections = [
-      { data: usage.session, cycle: 'session' },
-      { data: usage.weeklyAll, cycle: 'weekly' },
-      { data: usage.weeklySonnet, cycle: 'weekly' },
-      { data: usage.weekly, cycle: 'weekly' },
-      { data: usage.extraUsage, cycle: 'weekly' }
-    ];
-
-    for (const { data, cycle } of sections) {
-      if (data && typeof data.percent === 'number' && typeof data.resetsInSeconds === 'number') {
-        const paceEval = evaluatePace({
-          usagePercent: data.percent,
-          resetsInSeconds: data.resetsInSeconds,
-          cycleDurationSeconds: CYCLE_DURATIONS[cycle]
-        });
-        if (paceEval) {
-          data.paceEval = paceEval;
-        }
-      }
-    }
-  }
-
-  /**
-   * Attach pace evaluation to Gemini usage metrics.
-   * @private
-   */
-  _attachGeminiPace(usage) {
-    if (usage.models && Array.isArray(usage.models)) {
-      for (const model of usage.models) {
-        if (typeof model.percentUsed === 'number' && typeof model.resetsInSeconds === 'number') {
-          const paceEval = evaluatePace({
-            usagePercent: model.percentUsed,
-            resetsInSeconds: model.resetsInSeconds,
-            cycleDurationSeconds: CYCLE_DURATIONS.sessionGemini
-          });
-          if (paceEval) {
-            model.paceEval = paceEval;
-          }
-        }
-      }
-    }
-  }
-
-  /**
-   * Attach pace evaluation to Codex usage metrics.
-   * @private
-   */
-  _attachCodexPace(usage) {
-    // Main limits
-    if (usage.fiveHour && typeof usage.fiveHour.percentUsed === 'number' && typeof usage.fiveHour.resetsInSeconds === 'number') {
-      const paceEval = evaluatePace({
-        usagePercent: usage.fiveHour.percentUsed,
-        resetsInSeconds: usage.fiveHour.resetsInSeconds,
-        cycleDurationSeconds: CYCLE_DURATIONS.fiveHour
-      });
-      if (paceEval) {
-        usage.fiveHour.paceEval = paceEval;
-      }
-    }
-
-    if (usage.weekly && typeof usage.weekly.percentUsed === 'number' && typeof usage.weekly.resetsInSeconds === 'number') {
-      const paceEval = evaluatePace({
-        usagePercent: usage.weekly.percentUsed,
-        resetsInSeconds: usage.weekly.resetsInSeconds,
-        cycleDurationSeconds: CYCLE_DURATIONS.weekly
-      });
-      if (paceEval) {
-        usage.weekly.paceEval = paceEval;
-      }
-    }
-
-    // Per-model limits
-    if (usage.modelLimits && Array.isArray(usage.modelLimits)) {
-      for (const ml of usage.modelLimits) {
-        if (ml.fiveHour && typeof ml.fiveHour.percentUsed === 'number' && typeof ml.fiveHour.resetsInSeconds === 'number') {
-          const paceEval = evaluatePace({
-            usagePercent: ml.fiveHour.percentUsed,
-            resetsInSeconds: ml.fiveHour.resetsInSeconds,
-            cycleDurationSeconds: CYCLE_DURATIONS.fiveHour
-          });
-          if (paceEval) {
-            ml.fiveHour.paceEval = paceEval;
-          }
-        }
-
-        if (ml.weekly && typeof ml.weekly.percentUsed === 'number' && typeof ml.weekly.resetsInSeconds === 'number') {
-          const paceEval = evaluatePace({
-            usagePercent: ml.weekly.percentUsed,
-            resetsInSeconds: ml.weekly.resetsInSeconds,
-            cycleDurationSeconds: CYCLE_DURATIONS.weekly
-          });
-          if (paceEval) {
-            ml.weekly.paceEval = paceEval;
-          }
-        }
-      }
-    }
+    attachPaceEvaluation(agentName, usage);
   }
 
   async refreshAgent(name) {
@@ -470,118 +326,8 @@ class AgentTank {
 
   startServer() {
     this.server = http.createServer(async (req, res) => {
-      const url = new URL(req.url, `http://localhost:${this.port}`);
-      const path = url.pathname;
-
-      // CORS headers
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-
-      if (req.method === 'OPTIONS') {
-        res.writeHead(204);
-        res.end();
-        return;
-      }
-
-      if (!this.authenticate(req, url)) {
-        res.setHeader('WWW-Authenticate', 'Basic realm="LLM Limit Watcher"');
-        res.writeHead(401);
-        res.end(JSON.stringify({ error: 'Unauthorized' }));
-        return;
-      }
-
       try {
-        // Routes
-        if (req.method === 'GET' && path === '/') {
-          res.setHeader('Content-Type', 'text/html');
-          res.writeHead(200);
-          res.end(statusPage(this.getStatus()));
-          return;
-        }
-
-        if (req.method === 'GET' && path === '/status') {
-          const status = this.getStatus();
-          console.log(`[HTTP] GET /status - returning status for ${Object.keys(status).length} agents`);
-          res.setHeader('Content-Type', 'application/json');
-          res.writeHead(200);
-          res.end(JSON.stringify(status, null, 2));
-          return;
-        }
-
-        if (req.method === 'GET' && path === '/config') {
-          const config = {
-            autoRefresh: {
-              enabled: this.autoRefresh.enabled && this.autoRefresh.interval > 0,
-              interval: this.autoRefresh.interval, // in seconds
-            },
-            history: {
-              retentionDays: this.historyRetentionDays,
-            },
-            lastRefreshedAt: this.lastRefreshedAt,
-          };
-          res.setHeader('Content-Type', 'application/json');
-          res.writeHead(200);
-          res.end(JSON.stringify(config, null, 2));
-          return;
-        }
-
-        if (req.method === 'GET' && path === '/history') {
-          const stats = this.getHistoryStats();
-          res.setHeader('Content-Type', 'application/json');
-          res.writeHead(200);
-          res.end(JSON.stringify(stats, null, 2));
-          return;
-        }
-
-        if (req.method === 'GET' && path.startsWith('/history/')) {
-          const agentName = path.slice(9);
-          const history = this.getHistory(agentName);
-          res.setHeader('Content-Type', 'application/json');
-          res.writeHead(200);
-          res.end(JSON.stringify(history, null, 2));
-          return;
-        }
-
-        if (req.method === 'GET' && path.startsWith('/status/')) {
-          const agentName = path.slice(8);
-          const status = this.getAgentStatus(agentName);
-          if (!status) {
-            res.writeHead(404);
-            res.end(JSON.stringify({ error: 'Agent not found' }));
-            return;
-          }
-          res.setHeader('Content-Type', 'application/json');
-          res.writeHead(200);
-          res.end(JSON.stringify(status, null, 2));
-          return;
-        }
-
-        if (req.method === 'POST' && path === '/refresh') {
-          await this.refreshAll();
-          res.setHeader('Content-Type', 'application/json');
-          res.writeHead(200);
-          res.end(JSON.stringify({ success: true, status: this.getStatus() }));
-          return;
-        }
-
-        if (req.method === 'POST' && path.startsWith('/refresh/')) {
-          const agentName = path.slice(9);
-          try {
-            await this.refreshAgent(agentName);
-            res.setHeader('Content-Type', 'application/json');
-            res.writeHead(200);
-            res.end(JSON.stringify({ success: true, status: this.getAgentStatus(agentName) }));
-          } catch (err) {
-            res.writeHead(404);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // 404
-        res.writeHead(404);
-        res.end(JSON.stringify({ error: 'Not found' }));
-
+        await handleRequest(req, res, this);
       } catch (err) {
         console.error('Server error:', err);
         res.writeHead(500);
