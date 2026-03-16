@@ -15,6 +15,7 @@ class AgentTank {
     this.auth = options.auth || {};
     this.agents = new Map();
     this.server = null;
+    this.skipServer = options.skipServer || false; // Skip HTTP server in one-shot mode
 
     // Auto-refresh configuration (backend periodic refresh)
     this.autoRefresh = {
@@ -61,8 +62,10 @@ class AgentTank {
       }
     }
 
-    // Start HTTP server immediately so it's available during agent loading
-    this.startServer();
+    // Start HTTP server immediately so it's available during agent loading (unless skipped)
+    if (!this.skipServer) {
+      this.startServer();
+    }
 
     // Pre-spawn persistent processes in parallel before sending commands
     if (!this.freshProcess) {
@@ -80,8 +83,10 @@ class AgentTank {
     console.log('Fetching initial usage data...');
     await this.refreshAll();
 
-    // Start backend auto-refresh if enabled
-    this.startAutoRefresh();
+    // Start backend auto-refresh if enabled (skip in one-shot mode)
+    if (!this.skipServer) {
+      this.startAutoRefresh();
+    }
   }
 
   startAutoRefresh() {

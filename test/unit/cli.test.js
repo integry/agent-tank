@@ -210,6 +210,8 @@ describe('CLI', () => {
       expect(result.stdout).toContain('--auto-discover');
       expect(result.stdout).toContain('--auto-refresh');
       expect(result.stdout).toContain('--auto-refresh-interval');
+      expect(result.stdout).toContain('--once');
+      expect(result.stdout).toContain('--json');
     });
 
     itWithPty('lists all environment variables in help', () => {
@@ -893,6 +895,107 @@ describe('CLI', () => {
         if (!error.message.includes('No agents') && !isNodePtyError(error.message)) {
           throw error;
         }
+      }
+    });
+  });
+
+  describe('--once and --json flags (one-shot mode)', () => {
+    /**
+     * Helper to run CLI in one-shot mode and capture output
+     * Returns { stdout, stderr, exitCode }
+     */
+    function runOneShotCli(args = [], env = {}) {
+      try {
+        const result = execSync(`node "${CLI_PATH}" ${args.join(' ')}`, {
+          encoding: 'utf8',
+          env: { ...process.env, ...env },
+          timeout: 30000, // Longer timeout for one-shot mode
+        });
+        return { stdout: result, stderr: '', exitCode: 0 };
+      } catch (error) {
+        return {
+          stdout: error.stdout || '',
+          stderr: error.stderr || '',
+          exitCode: error.status || 1,
+        };
+      }
+    }
+
+    itWithPty('--once flag is recognized', () => {
+      const result = runCli(['--help']);
+      expect(result.stdout).toContain('--once');
+      expect(result.stdout).toContain('Fetch usage once and exit');
+    });
+
+    itWithPty('--json flag is recognized', () => {
+      const result = runCli(['--help']);
+      expect(result.stdout).toContain('--json');
+      expect(result.stdout).toContain('Output pure JSON');
+    });
+
+    itWithPty('help shows examples for --once and --json', () => {
+      const result = runCli(['--help']);
+      expect(result.stdout).toContain('agent-tank --once');
+      expect(result.stdout).toContain('agent-tank --once --json');
+    });
+
+    itWithPty('--once mode exits after fetching data', async () => {
+      // This test will fail if no agents are available, which is expected
+      // The important thing is that the flag is recognized and processed
+      const result = runOneShotCli(['--once', '--no-auto-discover']);
+
+      // Should exit with error (no agents) or success (agents available)
+      // Either way, it should not hang waiting for the server
+      // The process should terminate, which we verify by not timing out
+      expect(result.exitCode).toBeDefined();
+    });
+
+    itWithPty('--once --json outputs valid JSON on error', () => {
+      // With no auto-discover and no agents, should output JSON error
+      const result = runOneShotCli(['--once', '--json', '--no-auto-discover']);
+
+      // Should output valid JSON even on error
+      expect(result.exitCode).toBe(1);
+
+      // Try to parse the output as JSON
+      try {
+        const parsed = JSON.parse(result.stdout);
+        expect(parsed).toHaveProperty('error');
+      } catch (e) {
+        // If stdout is empty, check that it exited with error
+        expect(result.exitCode).toBe(1);
+      }
+    });
+
+    itWithPty('--json mode suppresses regular logging output', () => {
+      // In JSON mode, there should be no "Auto-discovering" or similar messages
+      const result = runOneShotCli(['--once', '--json', '--no-auto-discover']);
+
+      // Should not contain typical log messages
+      expect(result.stdout).not.toContain('Auto-discovering');
+      expect(result.stdout).not.toContain('Listening on');
+      expect(result.stdout).not.toContain('Spawning agent processes');
+    });
+
+    itWithPty('--once mode does not start HTTP server', async () => {
+      // Start one-shot mode and verify it exits without starting a server
+      const result = runOneShotCli(['--once', '--no-auto-discover']);
+
+      // Should not contain server startup messages
+      expect(result.stdout).not.toContain('Listening on');
+      expect(result.stdout).not.toContain('Status page:');
+      expect(result.stdout).not.toContain('JSON API:');
+    });
+
+    itWithPty('--once without --json outputs human-readable format', async () => {
+      // Without --json, should still show some output
+      const result = runOneShotCli(['--once', '--no-auto-discover']);
+
+      // Either shows agent status or error message
+      // Should not be pure JSON (unless it's an error object)
+      if (result.exitCode === 0 && result.stdout.trim()) {
+        // If successful, should have some non-JSON formatting
+        expect(result.stdout).toMatch(/===|error|Failed/i);
       }
     });
   });

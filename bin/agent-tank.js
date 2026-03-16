@@ -18,6 +18,8 @@ const options = {
   'auto-discover': { type: 'boolean', default: true },
   'auto-refresh': { type: 'boolean', default: true },
   'auto-refresh-interval': { type: 'string', default: '60' },
+  once: { type: 'boolean', default: false },
+  json: { type: 'boolean', default: false },
 };
 
 const { values } = parseArgs({ options, allowPositionals: false, allowNegative: true });
@@ -42,6 +44,8 @@ Options:
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60, 0 = disabled)
+  --once                Fetch usage once and exit (no HTTP server)
+  --json                Output pure JSON (suppress logging, use with --once)
   --help, -h            Show this help message
 
 Environment variables:
@@ -63,6 +67,8 @@ Examples:
   agent-tank -c ./config.json         # Use config file
   agent-tank --auto-refresh-interval 30  # Refresh every 30 seconds
   agent-tank --no-auto-refresh        # Disable background auto-refresh
+  agent-tank --once                   # Fetch usage once and exit
+  agent-tank --once --json            # Output pure JSON for scripting
 
 HTTP Endpoints:
   GET /              Status page (HTML)
@@ -122,6 +128,19 @@ if (autoRefreshIntervalEnv !== undefined) {
   autoRefreshInterval = config.autoRefresh.interval;
 }
 
+// One-shot and JSON mode flags
+const onceMode = values.once;
+const jsonMode = values.json;
+
+// Suppress console output in JSON mode
+const originalLog = console.log;
+const originalError = console.error;
+if (jsonMode) {
+  console.log = () => {};
+  console.error = () => {};
+  console.warn = () => {};
+}
+
 const watcher = new AgentTank({
   agents: agents.length > 0 ? agents : null, // null = auto-discover
   autoDiscover: values['auto-discover'] && agents.length === 0,
@@ -129,20 +148,57 @@ const watcher = new AgentTank({
   host,
   auth,
   freshProcess,
-  autoRefreshEnabled,
+  autoRefreshEnabled: onceMode ? false : autoRefreshEnabled, // Disable auto-refresh in one-shot mode
   autoRefreshInterval,
+  skipServer: onceMode, // Don't start HTTP server in one-shot mode
 });
 
 // Graceful shutdown
 const shutdown = () => {
-  console.log('\nShutting down...');
+  if (!jsonMode) {
+    originalLog('\nShutting down...');
+  }
   watcher.stop();
   process.exit(0);
 };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-watcher.start().catch(err => {
-  console.error('Failed to start:', err.message);
-  process.exit(1);
-});
+if (onceMode) {
+  // One-shot mode: fetch data once and exit
+  watcher.start().then(() => {
+    const status = watcher.getStatus();
+    if (jsonMode) {
+      // Restore console.log for JSON output
+      console.log = originalLog;
+      console.log(JSON.stringify(status, null, 2));
+    } else {
+      // Output human-readable summary
+      for (const [name, agentStatus] of Object.entries(status)) {
+        originalLog(`\n=== ${name.toUpperCase()} ===`);
+        originalLog(JSON.stringify(agentStatus, null, 2));
+      }
+    }
+    watcher.stop();
+    process.exit(0);
+  }).catch(err => {
+    if (jsonMode) {
+      console.log = originalLog;
+      console.log(JSON.stringify({ error: err.message }, null, 2));
+    } else {
+      originalError('Failed to start:', err.message);
+    }
+    process.exit(1);
+  });
+} else {
+  // Normal mode: start server and keep running
+  watcher.start().catch(err => {
+    if (jsonMode) {
+      console.log = originalLog;
+      console.log(JSON.stringify({ error: err.message }, null, 2));
+    } else {
+      originalError('Failed to start:', err.message);
+    }
+    process.exit(1);
+  });
+}
