@@ -172,6 +172,8 @@ if (onceMode) {
       // Restore console.log for JSON output
       console.log = originalLog;
       console.log(JSON.stringify(status, null, 2));
+      // Suppress console.log again before stopping to avoid "Killing persistent process" messages
+      console.log = () => {};
     } else {
       // Output human-readable summary
       for (const [name, agentStatus] of Object.entries(status)) {
