@@ -271,7 +271,8 @@ describe('AgentTank', () => {
         metadata: null,
         lastUpdated: null,
         error: null,
-        isRefreshing: false
+        isRefreshing: false,
+        publicStatus: null
       });
     });
 
