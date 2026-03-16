@@ -5,6 +5,9 @@ const { CodexAgent } = require('./agents/codex.js');
 const { discoverAgents } = require('./discovery.js');
 const { statusPage } = require('./status-page.js');
 const { fetchPublicStatus } = require('./public-status.js');
+const { HistoryStore, DEFAULT_RETENTION_DAYS } = require('./history-store.js');
+const { evaluatePace } = require('./pace-evaluator.js');
+const { CYCLE_DURATIONS } = require('./usage-formatters.js');
 
 class AgentTank {
   constructor(options = {}) {
@@ -27,6 +30,12 @@ class AgentTank {
     this.autoRefreshTimer = null;
     this.agentRefreshTimers = new Map(); // Per-agent timers for custom intervals
     this.lastRefreshedAt = null;
+
+    // History store for usage snapshots
+    this.historyRetentionDays = options.historyRetentionDays ?? DEFAULT_RETENTION_DAYS;
+    this.historyStore = new HistoryStore({
+      retentionDays: this.historyRetentionDays
+    });
   }
 
   async start() {
@@ -190,7 +199,192 @@ class AgentTank {
 
     this.publicStatus = publicStatusResult;
     this.lastRefreshedAt = new Date().toISOString();
+
+    // Record usage snapshots and attach pace evaluations
+    for (const [name, agent] of this.agents) {
+      if (agent.usage) {
+        this._recordSnapshot(name, agent.usage);
+        this._attachPaceEvaluation(name, agent.usage);
+      }
+    }
+
     console.log('All agents refresh complete\n');
+  }
+
+  /**
+   * Record a usage snapshot to the history store.
+   * @private
+   */
+  _recordSnapshot(agentName, usage) {
+    try {
+      // Extract key metrics for snapshot storage (keep it lightweight)
+      const snapshot = this._extractSnapshotMetrics(agentName, usage);
+      if (snapshot) {
+        this.historyStore.addSnapshot(agentName, snapshot);
+      }
+    } catch (err) {
+      console.error(`[${agentName}] Error recording snapshot:`, err.message);
+    }
+  }
+
+  /**
+   * Extract key metrics from usage data for snapshot storage.
+   * @private
+   */
+  _extractSnapshotMetrics(agentName, usage) {
+    switch (agentName) {
+      case 'claude':
+        return {
+          session: usage.session?.percent ?? null,
+          weeklyAll: usage.weeklyAll?.percent ?? null,
+          weeklySonnet: usage.weeklySonnet?.percent ?? null,
+          weekly: usage.weekly?.percent ?? null,
+          extraUsage: usage.extraUsage?.percent ?? null
+        };
+      case 'gemini':
+        if (usage.models && Array.isArray(usage.models)) {
+          const models = {};
+          for (const model of usage.models) {
+            models[model.model] = model.percentUsed ?? null;
+          }
+          return { models };
+        }
+        return null;
+      case 'codex':
+        return {
+          fiveHour: usage.fiveHour?.percentUsed ?? null,
+          weekly: usage.weekly?.percentUsed ?? null,
+          modelLimits: usage.modelLimits?.map(ml => ({
+            name: ml.name,
+            fiveHour: ml.fiveHour?.percentUsed ?? null,
+            weekly: ml.weekly?.percentUsed ?? null
+          })) ?? null
+        };
+      default:
+        return usage;
+    }
+  }
+
+  /**
+   * Attach pace evaluation data to usage metrics.
+   * @private
+   */
+  _attachPaceEvaluation(agentName, usage) {
+    switch (agentName) {
+      case 'claude':
+        this._attachClaudePace(usage);
+        break;
+      case 'gemini':
+        this._attachGeminiPace(usage);
+        break;
+      case 'codex':
+        this._attachCodexPace(usage);
+        break;
+    }
+  }
+
+  /**
+   * Attach pace evaluation to Claude usage metrics.
+   * @private
+   */
+  _attachClaudePace(usage) {
+    const sections = [
+      { data: usage.session, cycle: 'session' },
+      { data: usage.weeklyAll, cycle: 'weekly' },
+      { data: usage.weeklySonnet, cycle: 'weekly' },
+      { data: usage.weekly, cycle: 'weekly' },
+      { data: usage.extraUsage, cycle: 'weekly' }
+    ];
+
+    for (const { data, cycle } of sections) {
+      if (data && typeof data.percent === 'number' && typeof data.resetsInSeconds === 'number') {
+        const paceEval = evaluatePace({
+          usagePercent: data.percent,
+          resetsInSeconds: data.resetsInSeconds,
+          cycleDurationSeconds: CYCLE_DURATIONS[cycle]
+        });
+        if (paceEval) {
+          data.paceEval = paceEval;
+        }
+      }
+    }
+  }
+
+  /**
+   * Attach pace evaluation to Gemini usage metrics.
+   * @private
+   */
+  _attachGeminiPace(usage) {
+    if (usage.models && Array.isArray(usage.models)) {
+      for (const model of usage.models) {
+        if (typeof model.percentUsed === 'number' && typeof model.resetsInSeconds === 'number') {
+          const paceEval = evaluatePace({
+            usagePercent: model.percentUsed,
+            resetsInSeconds: model.resetsInSeconds,
+            cycleDurationSeconds: CYCLE_DURATIONS.sessionGemini
+          });
+          if (paceEval) {
+            model.paceEval = paceEval;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Attach pace evaluation to Codex usage metrics.
+   * @private
+   */
+  _attachCodexPace(usage) {
+    // Main limits
+    if (usage.fiveHour && typeof usage.fiveHour.percentUsed === 'number' && typeof usage.fiveHour.resetsInSeconds === 'number') {
+      const paceEval = evaluatePace({
+        usagePercent: usage.fiveHour.percentUsed,
+        resetsInSeconds: usage.fiveHour.resetsInSeconds,
+        cycleDurationSeconds: CYCLE_DURATIONS.fiveHour
+      });
+      if (paceEval) {
+        usage.fiveHour.paceEval = paceEval;
+      }
+    }
+
+    if (usage.weekly && typeof usage.weekly.percentUsed === 'number' && typeof usage.weekly.resetsInSeconds === 'number') {
+      const paceEval = evaluatePace({
+        usagePercent: usage.weekly.percentUsed,
+        resetsInSeconds: usage.weekly.resetsInSeconds,
+        cycleDurationSeconds: CYCLE_DURATIONS.weekly
+      });
+      if (paceEval) {
+        usage.weekly.paceEval = paceEval;
+      }
+    }
+
+    // Per-model limits
+    if (usage.modelLimits && Array.isArray(usage.modelLimits)) {
+      for (const ml of usage.modelLimits) {
+        if (ml.fiveHour && typeof ml.fiveHour.percentUsed === 'number' && typeof ml.fiveHour.resetsInSeconds === 'number') {
+          const paceEval = evaluatePace({
+            usagePercent: ml.fiveHour.percentUsed,
+            resetsInSeconds: ml.fiveHour.resetsInSeconds,
+            cycleDurationSeconds: CYCLE_DURATIONS.fiveHour
+          });
+          if (paceEval) {
+            ml.fiveHour.paceEval = paceEval;
+          }
+        }
+
+        if (ml.weekly && typeof ml.weekly.percentUsed === 'number' && typeof ml.weekly.resetsInSeconds === 'number') {
+          const paceEval = evaluatePace({
+            usagePercent: ml.weekly.percentUsed,
+            resetsInSeconds: ml.weekly.resetsInSeconds,
+            cycleDurationSeconds: CYCLE_DURATIONS.weekly
+          });
+          if (paceEval) {
+            ml.weekly.paceEval = paceEval;
+          }
+        }
+      }
+    }
   }
 
   async refreshAgent(name) {
@@ -199,6 +393,31 @@ class AgentTank {
       throw new Error(`Agent not found: ${name}`);
     }
     await agent.refresh();
+
+    // Record snapshot and attach pace evaluation for single agent refresh
+    if (agent.usage) {
+      this._recordSnapshot(name, agent.usage);
+      this._attachPaceEvaluation(name, agent.usage);
+    }
+  }
+
+  /**
+   * Get usage history statistics.
+   *
+   * @returns {Object} History statistics
+   */
+  getHistoryStats() {
+    return this.historyStore.getStats();
+  }
+
+  /**
+   * Get usage history for an agent.
+   *
+   * @param {string} [agentName] - Optional agent name to filter
+   * @returns {Array} History records
+   */
+  getHistory(agentName = null) {
+    return this.historyStore.getHistory(agentName);
   }
 
   getStatus() {
@@ -295,11 +514,31 @@ class AgentTank {
               enabled: this.autoRefresh.enabled && this.autoRefresh.interval > 0,
               interval: this.autoRefresh.interval, // in seconds
             },
+            history: {
+              retentionDays: this.historyRetentionDays,
+            },
             lastRefreshedAt: this.lastRefreshedAt,
           };
           res.setHeader('Content-Type', 'application/json');
           res.writeHead(200);
           res.end(JSON.stringify(config, null, 2));
+          return;
+        }
+
+        if (req.method === 'GET' && path === '/history') {
+          const stats = this.getHistoryStats();
+          res.setHeader('Content-Type', 'application/json');
+          res.writeHead(200);
+          res.end(JSON.stringify(stats, null, 2));
+          return;
+        }
+
+        if (req.method === 'GET' && path.startsWith('/history/')) {
+          const agentName = path.slice(9);
+          const history = this.getHistory(agentName);
+          res.setHeader('Content-Type', 'application/json');
+          res.writeHead(200);
+          res.end(JSON.stringify(history, null, 2));
           return;
         }
 

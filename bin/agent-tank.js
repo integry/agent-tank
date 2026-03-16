@@ -18,6 +18,7 @@ const options = {
   'auto-discover': { type: 'boolean', default: true },
   'auto-refresh': { type: 'boolean', default: true },
   'auto-refresh-interval': { type: 'string', default: '60' },
+  'history-retention-days': { type: 'string', default: '14' },
   once: { type: 'boolean', default: false },
   json: { type: 'boolean', default: false },
 };
@@ -44,6 +45,7 @@ Options:
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60, 0 = disabled)
+  --history-retention-days <days>    Days to retain usage history (default: 14)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
   --help, -h            Show this help message
@@ -56,6 +58,7 @@ Environment variables:
   AGENT_TANK_FRESH_PROCESS  Use fresh process per refresh ("1" or "true")
   AGENT_TANK_AUTO_REFRESH   Enable/disable background auto-refresh ("1" or "true" / "0" or "false")
   AGENT_TANK_AUTO_REFRESH_INTERVAL  Auto-refresh interval in seconds
+  AGENT_TANK_HISTORY_RETENTION_DAYS  Days to retain usage history
 
 Examples:
   agent-tank                          # Auto-discover and monitor all available
@@ -67,6 +70,7 @@ Examples:
   agent-tank -c ./config.json         # Use config file
   agent-tank --auto-refresh-interval 30  # Refresh every 30 seconds
   agent-tank --no-auto-refresh        # Disable background auto-refresh
+  agent-tank --history-retention-days 7  # Keep only 7 days of history
   agent-tank --once                   # Fetch usage once and exit
   agent-tank --once --json            # Output pure JSON for scripting
 
@@ -74,7 +78,9 @@ HTTP Endpoints:
   GET /              Status page (HTML)
   GET /status        All agent statuses (JSON)
   GET /status/:agent Status for specific agent (JSON)
-  GET /config        Auto-refresh configuration (JSON)
+  GET /config        Auto-refresh and history configuration (JSON)
+  GET /history       Usage history statistics (JSON)
+  GET /history/:agent Usage history for specific agent (JSON)
   POST /refresh      Trigger refresh for all agents
   POST /refresh/:agent Trigger refresh for specific agent
 `);
@@ -128,6 +134,15 @@ if (autoRefreshIntervalEnv !== undefined) {
   autoRefreshInterval = config.autoRefresh.interval;
 }
 
+// History retention configuration (env > CLI > config file > default)
+const historyRetentionEnv = process.env.AGENT_TANK_HISTORY_RETENTION_DAYS;
+let historyRetentionDays = parseInt(values['history-retention-days'], 10);
+if (historyRetentionEnv !== undefined) {
+  historyRetentionDays = parseInt(historyRetentionEnv, 10);
+} else if (config.history?.retentionDays !== undefined) {
+  historyRetentionDays = config.history.retentionDays;
+}
+
 // One-shot and JSON mode flags
 const onceMode = values.once;
 const jsonMode = values.json;
@@ -150,6 +165,7 @@ const watcher = new AgentTank({
   freshProcess,
   autoRefreshEnabled: onceMode ? false : autoRefreshEnabled, // Disable auto-refresh in one-shot mode
   autoRefreshInterval,
+  historyRetentionDays,
   skipServer: onceMode, // Don't start HTTP server in one-shot mode
 });
 

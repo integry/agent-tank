@@ -6,7 +6,7 @@
  * faster than time is elapsing.
  */
 
-const { calculatePace, formatPaceWarning } = require('../../src/pace-evaluator');
+const { calculatePace, formatPaceWarning, evaluatePace } = require('../../src/pace-evaluator');
 
 describe('PaceEvaluator', () => {
   describe('calculatePace', () => {
@@ -332,6 +332,308 @@ describe('PaceEvaluator', () => {
 
       // toFixed(1) should give "1.2"
       expect(result).toContain('1.2x pace');
+    });
+  });
+
+  describe('evaluatePace', () => {
+    describe('expected percent calculation', () => {
+      it('calculates expected percent based on elapsed time', () => {
+        // 50% of time elapsed = 50% expected usage
+        const result = evaluatePace({
+          usagePercent: 30,
+          resetsInSeconds: 2.5 * 60 * 60, // 2.5h remaining of 5h
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result.expectedPercent).toBe(50);
+        expect(result.elapsedPercent).toBe(50);
+      });
+
+      it('calculates expected percent at 25% elapsed', () => {
+        const result = evaluatePace({
+          usagePercent: 25,
+          resetsInSeconds: 3.75 * 60 * 60, // 3.75h remaining of 5h
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result.expectedPercent).toBe(25);
+      });
+    });
+
+    describe('burning fast detection', () => {
+      it('detects burning fast when usage exceeds expected by threshold', () => {
+        // 60% usage, 50% expected = 1.2x pace (at threshold)
+        const result = evaluatePace({
+          usagePercent: 60,
+          resetsInSeconds: 2.5 * 60 * 60,
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result.isBurningFast).toBe(true);
+        expect(result.paceRatio).toBe(1.2);
+        expect(result.deltaPercent).toBe(10); // 60 - 50 = 10
+      });
+
+      it('does not flag burning fast when below threshold', () => {
+        // 55% usage, 50% expected = 1.1x pace (below 1.2 threshold)
+        const result = evaluatePace({
+          usagePercent: 55,
+          resetsInSeconds: 2.5 * 60 * 60,
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result.isBurningFast).toBe(false);
+        expect(result.paceRatio).toBe(1.1);
+      });
+
+      it('flags burning fast at 2x pace', () => {
+        // 80% usage, 40% expected = 2x pace
+        const result = evaluatePace({
+          usagePercent: 80,
+          resetsInSeconds: 3 * 60 * 60, // 3h remaining of 5h = 40% elapsed
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result.isBurningFast).toBe(true);
+        expect(result.paceRatio).toBe(2);
+        expect(result.deltaPercent).toBe(40); // 80 - 40 = 40
+      });
+    });
+
+    describe('ETA calculation', () => {
+      it('calculates ETA when burning fast', () => {
+        // 50% usage in 2.5h elapsed (50% of 5h cycle)
+        // Burn rate: 50% per 9000 seconds = 0.00555% per second
+        // Remaining: 50% / 0.00555 = 9000 seconds to reach 100%
+        const result = evaluatePace({
+          usagePercent: 50,
+          resetsInSeconds: 2.5 * 60 * 60, // 2.5h = 9000s remaining
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        // 50% usage, 50% time = 1x pace, not burning fast
+        expect(result.isBurningFast).toBe(false);
+        expect(result.etaSeconds).toBeNull();
+      });
+
+      it('calculates ETA for 1.5x pace', () => {
+        // 75% usage, 50% time elapsed = 1.5x pace
+        // Elapsed: 2.5h = 9000s
+        // Burn rate: 75% / 9000s = 0.00833% per second
+        // Remaining: 25% / 0.00833 = 3000 seconds
+        const result = evaluatePace({
+          usagePercent: 75,
+          resetsInSeconds: 2.5 * 60 * 60,
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result.isBurningFast).toBe(true);
+        expect(result.etaSeconds).toBe(3000);
+      });
+
+      it('calculates ETA for 2x pace', () => {
+        // 80% usage, 40% time elapsed = 2x pace
+        // Elapsed: 2h = 7200s
+        // Burn rate: 80% / 7200s
+        // Remaining: 20% / burn rate
+        const result = evaluatePace({
+          usagePercent: 80,
+          resetsInSeconds: 3 * 60 * 60, // 3h remaining of 5h
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        // 80% in 7200s => 20% in 1800s
+        expect(result.isBurningFast).toBe(true);
+        expect(result.etaSeconds).toBe(1800);
+      });
+
+      it('returns etaSeconds 0 when already at 100%', () => {
+        const result = evaluatePace({
+          usagePercent: 100,
+          resetsInSeconds: 2 * 60 * 60,
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result.etaSeconds).toBe(0);
+      });
+
+      it('returns null etaSeconds when not burning fast', () => {
+        const result = evaluatePace({
+          usagePercent: 30,
+          resetsInSeconds: 2.5 * 60 * 60,
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result.isBurningFast).toBe(false);
+        expect(result.etaSeconds).toBeNull();
+      });
+    });
+
+    describe('delta percent', () => {
+      it('calculates positive delta when ahead of pace', () => {
+        // 70% usage, 50% expected
+        const result = evaluatePace({
+          usagePercent: 70,
+          resetsInSeconds: 2.5 * 60 * 60,
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result.deltaPercent).toBe(20);
+      });
+
+      it('calculates negative delta when behind pace', () => {
+        // 30% usage, 50% expected
+        const result = evaluatePace({
+          usagePercent: 30,
+          resetsInSeconds: 2.5 * 60 * 60,
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result.deltaPercent).toBe(-20);
+      });
+
+      it('calculates zero delta when on pace', () => {
+        const result = evaluatePace({
+          usagePercent: 50,
+          resetsInSeconds: 2.5 * 60 * 60,
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result.deltaPercent).toBe(0);
+      });
+    });
+
+    describe('edge cases', () => {
+      it('handles usage at start of cycle', () => {
+        const result = evaluatePace({
+          usagePercent: 10,
+          resetsInSeconds: 5 * 60 * 60, // Full cycle remaining
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result.expectedPercent).toBe(0);
+        expect(result.elapsedPercent).toBe(0);
+        expect(result.isBurningFast).toBe(true);
+        expect(result.paceRatio).toBe(Infinity);
+        expect(result.etaSeconds).toBe(0); // Already burning if any usage at start
+      });
+
+      it('handles zero usage at start of cycle', () => {
+        const result = evaluatePace({
+          usagePercent: 0,
+          resetsInSeconds: 5 * 60 * 60,
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result.isBurningFast).toBe(false);
+        expect(result.paceRatio).toBe(0);
+        expect(result.etaSeconds).toBeNull();
+      });
+
+      it('handles weekly cycle', () => {
+        const weeklySeconds = 7 * 24 * 60 * 60;
+        // 40% usage, 50% time elapsed = 0.8x pace (under budget)
+        const result = evaluatePace({
+          usagePercent: 40,
+          resetsInSeconds: 3.5 * 24 * 60 * 60,
+          cycleDurationSeconds: weeklySeconds
+        });
+
+        expect(result.expectedPercent).toBe(50);
+        expect(result.isBurningFast).toBe(false);
+        expect(result.deltaPercent).toBe(-10);
+      });
+    });
+
+    describe('invalid inputs', () => {
+      it('returns null for missing usagePercent', () => {
+        const result = evaluatePace({
+          resetsInSeconds: 2 * 60 * 60,
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result).toBeNull();
+      });
+
+      it('returns null for missing resetsInSeconds', () => {
+        const result = evaluatePace({
+          usagePercent: 50,
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        expect(result).toBeNull();
+      });
+
+      it('returns null for missing cycleDurationSeconds', () => {
+        const result = evaluatePace({
+          usagePercent: 50,
+          resetsInSeconds: 2 * 60 * 60
+        });
+
+        expect(result).toBeNull();
+      });
+
+      it('returns null for zero cycleDurationSeconds', () => {
+        const result = evaluatePace({
+          usagePercent: 50,
+          resetsInSeconds: 2 * 60 * 60,
+          cycleDurationSeconds: 0
+        });
+
+        expect(result).toBeNull();
+      });
+
+      it('returns null for negative cycleDurationSeconds', () => {
+        const result = evaluatePace({
+          usagePercent: 50,
+          resetsInSeconds: 2 * 60 * 60,
+          cycleDurationSeconds: -1
+        });
+
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('custom threshold', () => {
+      it('uses custom warning threshold for isBurningFast', () => {
+        // 45% usage, 30% expected = 1.5x pace
+        const result = evaluatePace({
+          usagePercent: 45,
+          resetsInSeconds: 3.5 * 60 * 60, // 70% remaining
+          cycleDurationSeconds: 5 * 60 * 60,
+          warningThreshold: 1.5
+        });
+
+        expect(result.paceRatio).toBe(1.5);
+        expect(result.isBurningFast).toBe(true);
+      });
+
+      it('respects stricter threshold', () => {
+        // 35% usage, 30% expected = ~1.17x pace
+        const result = evaluatePace({
+          usagePercent: 35,
+          resetsInSeconds: 3.5 * 60 * 60,
+          cycleDurationSeconds: 5 * 60 * 60,
+          warningThreshold: 1.1
+        });
+
+        expect(result.isBurningFast).toBe(true);
+      });
+    });
+
+    describe('rounding', () => {
+      it('rounds all percentages to 2 decimal places', () => {
+        const result = evaluatePace({
+          usagePercent: 33.333,
+          resetsInSeconds: 3 * 60 * 60 + 20 * 60, // 3h 20m remaining of 5h
+          cycleDurationSeconds: 5 * 60 * 60
+        });
+
+        // All values should be rounded to 2 decimal places
+        expect(Number.isInteger(result.expectedPercent * 100)).toBe(true);
+        expect(Number.isInteger(result.elapsedPercent * 100)).toBe(true);
+        expect(Number.isInteger(result.deltaPercent * 100)).toBe(true);
+      });
     });
   });
 });
