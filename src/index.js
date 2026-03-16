@@ -3,8 +3,11 @@ const { ClaudeAgent } = require('./agents/claude.js');
 const { GeminiAgent } = require('./agents/gemini.js');
 const { CodexAgent } = require('./agents/codex.js');
 const { discoverAgents } = require('./discovery.js');
-const { statusPage } = require('./status-page.js');
 const { fetchPublicStatus } = require('./public-status.js');
+const { HistoryStore, DEFAULT_RETENTION_DAYS } = require('./history-store.js');
+const { extractSnapshotMetrics } = require('./snapshot-metrics.js');
+const { attachPaceEvaluation } = require('./pace-attachment.js');
+const { handleRequest } = require('./http-handler.js');
 
 class AgentTank {
   constructor(options = {}) {
@@ -27,6 +30,12 @@ class AgentTank {
     this.autoRefreshTimer = null;
     this.agentRefreshTimers = new Map(); // Per-agent timers for custom intervals
     this.lastRefreshedAt = null;
+
+    // History store for usage snapshots
+    this.historyRetentionDays = options.historyRetentionDays ?? DEFAULT_RETENTION_DAYS;
+    this.historyStore = new HistoryStore({
+      retentionDays: this.historyRetentionDays
+    });
   }
 
   async start() {
@@ -190,7 +199,48 @@ class AgentTank {
 
     this.publicStatus = publicStatusResult;
     this.lastRefreshedAt = new Date().toISOString();
+
+    // Record usage snapshots and attach pace evaluations
+    for (const [name, agent] of this.agents) {
+      if (agent.usage) {
+        this._recordSnapshot(name, agent.usage);
+        this._attachPaceEvaluation(name, agent.usage);
+      }
+    }
+
     console.log('All agents refresh complete\n');
+  }
+
+  /**
+   * Record a usage snapshot to the history store.
+   * @private
+   */
+  _recordSnapshot(agentName, usage) {
+    try {
+      // Extract key metrics for snapshot storage (keep it lightweight)
+      const snapshot = this._extractSnapshotMetrics(agentName, usage);
+      if (snapshot) {
+        this.historyStore.addSnapshot(agentName, snapshot);
+      }
+    } catch (err) {
+      console.error(`[${agentName}] Error recording snapshot:`, err.message);
+    }
+  }
+
+  /**
+   * Extract key metrics from usage data for snapshot storage.
+   * @private
+   */
+  _extractSnapshotMetrics(agentName, usage) {
+    return extractSnapshotMetrics(agentName, usage);
+  }
+
+  /**
+   * Attach pace evaluation data to usage metrics.
+   * @private
+   */
+  _attachPaceEvaluation(agentName, usage) {
+    attachPaceEvaluation(agentName, usage);
   }
 
   async refreshAgent(name) {
@@ -199,6 +249,31 @@ class AgentTank {
       throw new Error(`Agent not found: ${name}`);
     }
     await agent.refresh();
+
+    // Record snapshot and attach pace evaluation for single agent refresh
+    if (agent.usage) {
+      this._recordSnapshot(name, agent.usage);
+      this._attachPaceEvaluation(name, agent.usage);
+    }
+  }
+
+  /**
+   * Get usage history statistics.
+   *
+   * @returns {Object} History statistics
+   */
+  getHistoryStats() {
+    return this.historyStore.getStats();
+  }
+
+  /**
+   * Get usage history for an agent.
+   *
+   * @param {string} [agentName] - Optional agent name to filter
+   * @returns {Array} History records
+   */
+  getHistory(agentName = null) {
+    return this.historyStore.getHistory(agentName);
   }
 
   getStatus() {
@@ -251,98 +326,8 @@ class AgentTank {
 
   startServer() {
     this.server = http.createServer(async (req, res) => {
-      const url = new URL(req.url, `http://localhost:${this.port}`);
-      const path = url.pathname;
-
-      // CORS headers
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-
-      if (req.method === 'OPTIONS') {
-        res.writeHead(204);
-        res.end();
-        return;
-      }
-
-      if (!this.authenticate(req, url)) {
-        res.setHeader('WWW-Authenticate', 'Basic realm="LLM Limit Watcher"');
-        res.writeHead(401);
-        res.end(JSON.stringify({ error: 'Unauthorized' }));
-        return;
-      }
-
       try {
-        // Routes
-        if (req.method === 'GET' && path === '/') {
-          res.setHeader('Content-Type', 'text/html');
-          res.writeHead(200);
-          res.end(statusPage(this.getStatus()));
-          return;
-        }
-
-        if (req.method === 'GET' && path === '/status') {
-          const status = this.getStatus();
-          console.log(`[HTTP] GET /status - returning status for ${Object.keys(status).length} agents`);
-          res.setHeader('Content-Type', 'application/json');
-          res.writeHead(200);
-          res.end(JSON.stringify(status, null, 2));
-          return;
-        }
-
-        if (req.method === 'GET' && path === '/config') {
-          const config = {
-            autoRefresh: {
-              enabled: this.autoRefresh.enabled && this.autoRefresh.interval > 0,
-              interval: this.autoRefresh.interval, // in seconds
-            },
-            lastRefreshedAt: this.lastRefreshedAt,
-          };
-          res.setHeader('Content-Type', 'application/json');
-          res.writeHead(200);
-          res.end(JSON.stringify(config, null, 2));
-          return;
-        }
-
-        if (req.method === 'GET' && path.startsWith('/status/')) {
-          const agentName = path.slice(8);
-          const status = this.getAgentStatus(agentName);
-          if (!status) {
-            res.writeHead(404);
-            res.end(JSON.stringify({ error: 'Agent not found' }));
-            return;
-          }
-          res.setHeader('Content-Type', 'application/json');
-          res.writeHead(200);
-          res.end(JSON.stringify(status, null, 2));
-          return;
-        }
-
-        if (req.method === 'POST' && path === '/refresh') {
-          await this.refreshAll();
-          res.setHeader('Content-Type', 'application/json');
-          res.writeHead(200);
-          res.end(JSON.stringify({ success: true, status: this.getStatus() }));
-          return;
-        }
-
-        if (req.method === 'POST' && path.startsWith('/refresh/')) {
-          const agentName = path.slice(9);
-          try {
-            await this.refreshAgent(agentName);
-            res.setHeader('Content-Type', 'application/json');
-            res.writeHead(200);
-            res.end(JSON.stringify({ success: true, status: this.getAgentStatus(agentName) }));
-          } catch (err) {
-            res.writeHead(404);
-            res.end(JSON.stringify({ error: err.message }));
-          }
-          return;
-        }
-
-        // 404
-        res.writeHead(404);
-        res.end(JSON.stringify({ error: 'Not found' }));
-
+        await handleRequest(req, res, this);
       } catch (err) {
         console.error('Server error:', err);
         res.writeHead(500);

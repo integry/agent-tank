@@ -53,6 +53,7 @@ Options:
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60)
+  --history-retention-days <days>    Days to retain usage history (default: 14)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
   --help, -h            Show this help message
@@ -71,6 +72,7 @@ Environment variables override CLI flags and config file settings:
 | `AGENT_TANK_FRESH_PROCESS` | Use fresh process per refresh (`1` or `true`) |
 | `AGENT_TANK_AUTO_REFRESH` | Enable/disable background auto-refresh (`1`/`true` or `0`/`false`) |
 | `AGENT_TANK_AUTO_REFRESH_INTERVAL` | Auto-refresh interval in seconds |
+| `AGENT_TANK_HISTORY_RETENTION_DAYS` | Days to retain usage history (default: 14) |
 
 ### Configuration File
 
@@ -81,13 +83,68 @@ You can use a JSON configuration file:
   "claude": true,
   "gemini": true,
   "codex": false,
-  "port": 8080
+  "port": 8080,
+  "history": {
+    "retentionDays": 7
+  }
 }
 ```
 
 ```bash
 agent-tank -c config.json
 ```
+
+## Usage History & Pace Evaluation
+
+Agent Tank automatically tracks usage history and evaluates whether you're burning through your rate limits faster than expected.
+
+### Features
+
+- **Historical Snapshots**: Usage percentages are stored in `~/.agent-tank/history.json` with timestamps
+- **Automatic Pruning**: Records older than the retention period (default: 14 days) are automatically removed
+- **Pace Evaluation**: Each metric includes a `paceEval` object that calculates:
+  - `expectedPercent`: What your usage should be based on linear pace
+  - `isBurningFast`: Whether you're using faster than the 1.2x threshold
+  - `etaSeconds`: Estimated seconds until you hit 100% (if burning fast)
+  - `deltaPercent`: Difference between actual and expected usage
+
+### Configuration
+
+```bash
+# Keep 7 days of history instead of default 14
+agent-tank --history-retention-days 7
+
+# Via environment variable
+AGENT_TANK_HISTORY_RETENTION_DAYS=7 agent-tank
+```
+
+### API Endpoints
+
+- `GET /history` - Get history statistics (total records, per-agent counts, date ranges)
+- `GET /history/:agent` - Get full history for a specific agent
+
+### Example Pace Evaluation Data
+
+When an agent is burning faster than expected, the `paceEval` object is attached to each metric:
+
+```json
+{
+  "session": {
+    "percent": 60,
+    "resetsInSeconds": 9000,
+    "paceEval": {
+      "expectedPercent": 50,
+      "isBurningFast": true,
+      "etaSeconds": 6000,
+      "paceRatio": 1.2,
+      "elapsedPercent": 50,
+      "deltaPercent": 10
+    }
+  }
+}
+```
+
+This example shows: 50% of the 5-hour session has elapsed, but 60% of usage is consumed. At this pace (1.2x), you'll hit 100% in approximately 6000 seconds (1h 40m).
 
 ## Installation
 
@@ -110,7 +167,9 @@ npx agent-tank
 | GET | `/` | HTML status page |
 | GET | `/status` | JSON status for all agents |
 | GET | `/status/:agent` | JSON status for specific agent |
-| GET | `/config` | Auto-refresh configuration (JSON) |
+| GET | `/config` | Auto-refresh and history configuration (JSON) |
+| GET | `/history` | Usage history statistics (JSON) |
+| GET | `/history/:agent` | Usage history for specific agent (JSON) |
 | POST | `/refresh` | Refresh all agents |
 | POST | `/refresh/:agent` | Refresh specific agent |
 
