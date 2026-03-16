@@ -4,6 +4,7 @@ const path = require('node:path');
 const { agentIcons, refreshIcon, tankIcon, syncIcon, copyIcon } = require('./icons');
 const { formatUsage } = require('./usage-formatters');
 const { clientScript } = require('./client-script');
+const { getStatusBadgeClass, getStatusText } = require('./public-status');
 
 const styles = fs.readFileSync(path.join(__dirname, 'status-page.css'), 'utf8');
 
@@ -30,6 +31,13 @@ function statusPage(status) {
     const icon = agentIcons[name] || '';
     const displayName = name.charAt(0).toUpperCase() + name.slice(1);
 
+    // Public API status badge
+    const publicStatus = data.publicStatus;
+    const badgeClass = publicStatus ? getStatusBadgeClass(publicStatus.status) : 'status-badge-grey';
+    const badgeText = publicStatus ? getStatusText(publicStatus.status) : 'Unknown';
+    const badgeTitle = publicStatus?.description || 'Unable to fetch status';
+    const statusBadgeHtml = `<span class="status-badge ${badgeClass}" title="${badgeTitle}">${badgeText}</span>`;
+
     // Version update notice - check usage.version (Codex) or metadata.updateAvailable (Gemini)
     const version = data.usage?.version || data.metadata?.updateAvailable;
     const updateHtml = (version && version.current && version.latest && version.current !== version.latest)
@@ -47,6 +55,7 @@ function statusPage(status) {
         <h2 class="agent-heading">
           ${icon}
           <span>${displayName}</span>
+          ${statusBadgeHtml}
           <button class="refresh-icon-btn" onclick="refresh('${name}', event)" ${data.isRefreshing ? 'disabled' : ''} title="Refresh ${displayName}">
             ${refreshIcon}
           </button>

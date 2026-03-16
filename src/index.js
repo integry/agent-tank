@@ -4,6 +4,7 @@ const { GeminiAgent } = require('./agents/gemini.js');
 const { CodexAgent } = require('./agents/codex.js');
 const { discoverAgents } = require('./discovery.js');
 const { statusPage } = require('./status-page.js');
+const { fetchPublicStatus } = require('./public-status.js');
 
 class AgentTank {
   constructor(options = {}) {
@@ -15,6 +16,7 @@ class AgentTank {
     this.auth = options.auth || {};
     this.agents = new Map();
     this.server = null;
+    this.publicStatus = {}; // Public API status from upstream providers
 
     // Auto-refresh configuration (backend periodic refresh)
     this.autoRefresh = {
@@ -162,12 +164,26 @@ class AgentTank {
 
   async refreshAll() {
     console.log('\nRefreshing all agents...');
-    const promises = Array.from(this.agents.values()).map(agent =>
-      agent.refresh().catch(err => {
-        console.error(`Error refreshing ${agent.name}:`, err.message);
-      })
-    );
-    await Promise.all(promises);
+    const agentNames = Array.from(this.agents.keys());
+
+    // Fetch PTY agent data and public status concurrently
+    const [, publicStatusResult] = await Promise.all([
+      // Agent PTY refreshes
+      Promise.all(
+        Array.from(this.agents.values()).map(agent =>
+          agent.refresh().catch(err => {
+            console.error(`Error refreshing ${agent.name}:`, err.message);
+          })
+        )
+      ),
+      // Public API status polling
+      fetchPublicStatus(agentNames).catch(err => {
+        console.error('Error fetching public status:', err.message);
+        return {};
+      }),
+    ]);
+
+    this.publicStatus = publicStatusResult;
     this.lastRefreshedAt = new Date().toISOString();
     console.log('All agents refresh complete\n');
   }
@@ -183,7 +199,10 @@ class AgentTank {
   getStatus() {
     const status = {};
     for (const [name, agent] of this.agents) {
-      status[name] = agent.getStatus();
+      status[name] = {
+        ...agent.getStatus(),
+        publicStatus: this.publicStatus[name] || null,
+      };
     }
     return status;
   }

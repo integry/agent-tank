@@ -577,6 +577,69 @@ button .spinner {
   gap: 10px;
 }
 
+/* Public API Status Badge */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 4px;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+.status-badge-green {
+  background: rgba(72, 187, 120, 0.15);
+  color: #48bb78;
+  border: 1px solid rgba(72, 187, 120, 0.3);
+}
+
+.status-badge-yellow {
+  background: rgba(236, 201, 75, 0.15);
+  color: #ecc94b;
+  border: 1px solid rgba(236, 201, 75, 0.3);
+}
+
+.status-badge-red {
+  background: rgba(229, 62, 62, 0.15);
+  color: #e53e3e;
+  border: 1px solid rgba(229, 62, 62, 0.3);
+}
+
+.status-badge-grey {
+  background: rgba(113, 128, 150, 0.15);
+  color: #718096;
+  border: 1px solid rgba(113, 128, 150, 0.3);
+}
+
+/* Light mode badge adjustments */
+body.light-mode .status-badge-green {
+  background: rgba(72, 187, 120, 0.12);
+  color: #38a169;
+  border-color: rgba(56, 161, 105, 0.3);
+}
+
+body.light-mode .status-badge-yellow {
+  background: rgba(236, 201, 75, 0.12);
+  color: #b7791f;
+  border-color: rgba(183, 121, 31, 0.3);
+}
+
+body.light-mode .status-badge-red {
+  background: rgba(229, 62, 62, 0.12);
+  color: #c53030;
+  border-color: rgba(197, 48, 48, 0.3);
+}
+
+body.light-mode .status-badge-grey {
+  background: rgba(113, 128, 150, 0.12);
+  color: #4a5568;
+  border-color: rgba(74, 85, 104, 0.3);
+}
+
 /* Agent icon styling */
 .agent-icon {
   width: 24px;
