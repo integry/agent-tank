@@ -1,4 +1,6 @@
 const { BaseAgent } = require('./base.js');
+const { calculatePace } = require('../pace-evaluator.js');
+const { CYCLE_DURATIONS, parseResetsInToSeconds } = require('../usage-formatters.js');
 
 class ClaudeAgent extends BaseAgent {
   constructor() {
@@ -236,6 +238,26 @@ class ClaudeAgent extends BaseAgent {
     return null;
   }
 
+  // Calculate pace data for a usage section
+  _addPaceData(sectionData, cycleType) {
+    if (!sectionData || sectionData.resetsInSeconds == null) return sectionData;
+
+    const cycleDuration = CYCLE_DURATIONS[cycleType];
+    if (!cycleDuration) return sectionData;
+
+    const paceData = calculatePace({
+      usagePercent: sectionData.percent ?? 0,
+      resetsInSeconds: sectionData.resetsInSeconds,
+      cycleDurationSeconds: cycleDuration
+    });
+
+    if (paceData) {
+      sectionData.pace = paceData;
+    }
+
+    return sectionData;
+  }
+
   parseOutput(output) {
     const clean = this.stripAnsi(output);
     const usage = { session: null, weeklyAll: null, weeklySonnet: null };
@@ -248,27 +270,42 @@ class ClaudeAgent extends BaseAgent {
 
     // Parse session
     const sessionData = this._parseUsageSection(this._extractSection(clean, 'Current\\s+session', 'Current\\s+week'));
-    if (sessionData) usage.session = { label: 'Current session', ...sessionData };
+    if (sessionData) {
+      usage.session = { label: 'Current session', ...sessionData };
+      this._addPaceData(usage.session, 'session');
+    }
 
     // Parse weekly (all models)
     const weeklyAllData = this._parseUsageSection(this._extractSection(clean, 'Current\\s+week\\s*\\(?\\s*all\\s+models\\s*\\)?', 'Current\\s+week\\s*\\(?\\s*Sonnet'));
-    if (weeklyAllData) usage.weeklyAll = { label: 'Current week (all models)', ...weeklyAllData };
+    if (weeklyAllData) {
+      usage.weeklyAll = { label: 'Current week (all models)', ...weeklyAllData };
+      this._addPaceData(usage.weeklyAll, 'weekly');
+    }
 
     // Parse weekly (Sonnet only)
     const weeklySonnetData = this._parseUsageSection(this._extractSection(clean, 'Current\\s+week\\s*\\(?\\s*Sonnet\\s+only\\s*\\)?', 'Extra\\s+usage|esc\\s+to\\s+cancel|Current\\s+week\\s*\\('));
-    if (weeklySonnetData) usage.weeklySonnet = { label: 'Current week (Sonnet only)', ...weeklySonnetData };
+    if (weeklySonnetData) {
+      usage.weeklySonnet = { label: 'Current week (Sonnet only)', ...weeklySonnetData };
+      this._addPaceData(usage.weeklySonnet, 'weekly');
+    }
 
     // Parse extra usage section
     const extraSection = this._extractSection(clean, 'Extra\\s+usage', 'esc\\s+to\\s+cancel');
     if (extraSection) {
       const extraData = this._parseExtraUsage(extraSection);
-      if (extraData) usage.extraUsage = extraData;
+      if (extraData) {
+        usage.extraUsage = extraData;
+        this._addPaceData(usage.extraUsage, 'weekly');
+      }
     }
 
     // Legacy format fallback
     if (!usage.weeklyAll && !usage.weeklySonnet) {
       const legacyWeekly = this._parseLegacyWeekly(clean);
-      if (legacyWeekly) usage.weekly = legacyWeekly;
+      if (legacyWeekly) {
+        usage.weekly = legacyWeekly;
+        this._addPaceData(usage.weekly, 'weekly');
+      }
     }
 
     return usage;

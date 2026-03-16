@@ -1,4 +1,6 @@
 const { BaseAgent } = require('./base.js');
+const { calculatePace } = require('../pace-evaluator.js');
+const { CYCLE_DURATIONS } = require('../usage-formatters.js');
 
 class CodexAgent extends BaseAgent {
   constructor() {
@@ -258,18 +260,36 @@ class CodexAgent extends BaseAgent {
     return { text, seconds: diffSeconds };
   }
 
-  parseLimitEntry(match, label) {
+  parseLimitEntry(match, label, cycleType) {
     const percentLeft = parseFloat(match[1]);
     const resetsAt = match[2].trim();
     const resetData = this.parseResetTime(resetsAt);
-    return {
+    const percentUsed = 100 - percentLeft;
+    const resetsInSeconds = resetData?.seconds || null;
+
+    const entry = {
       percentLeft,
       resetsAt,
       label,
-      percentUsed: 100 - percentLeft,
+      percentUsed,
       resetsIn: resetData?.text || null,
-      resetsInSeconds: resetData?.seconds || null,
+      resetsInSeconds,
     };
+
+    // Calculate pace data
+    const cycleDuration = CYCLE_DURATIONS[cycleType];
+    if (cycleDuration && resetsInSeconds != null) {
+      const paceData = calculatePace({
+        usagePercent: percentUsed,
+        resetsInSeconds,
+        cycleDurationSeconds: cycleDuration
+      });
+      if (paceData) {
+        entry.pace = paceData;
+      }
+    }
+
+    return entry;
   }
 
   parseOutput(output) {
@@ -282,12 +302,12 @@ class CodexAgent extends BaseAgent {
 
     const fiveHourMatch = clean.match(/5h limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i);
     if (fiveHourMatch) {
-      usage.fiveHour = this.parseLimitEntry(fiveHourMatch, '5h limit');
+      usage.fiveHour = this.parseLimitEntry(fiveHourMatch, '5h limit', 'fiveHour');
     }
 
     const weeklyMatch = clean.match(/Weekly limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i);
     if (weeklyMatch) {
-      usage.weekly = this.parseLimitEntry(weeklyMatch, 'Weekly limit');
+      usage.weekly = this.parseLimitEntry(weeklyMatch, 'Weekly limit', 'weekly');
     }
 
     // Parse model-specific limit sections (e.g. "GPT-5.3-Codex-Spark limit:")
@@ -313,11 +333,11 @@ class CodexAgent extends BaseAgent {
       const entry = { name };
       const fh = content.match(limitRegex);
       if (fh) {
-        entry.fiveHour = this.parseLimitEntry(fh, '5h limit');
+        entry.fiveHour = this.parseLimitEntry(fh, '5h limit', 'fiveHour');
       }
       const wk = content.match(weeklyLimitRegex);
       if (wk) {
-        entry.weekly = this.parseLimitEntry(wk, 'Weekly limit');
+        entry.weekly = this.parseLimitEntry(wk, 'Weekly limit', 'weekly');
       }
       if (entry.fiveHour || entry.weekly) {
         modelLimits.push(entry);

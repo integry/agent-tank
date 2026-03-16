@@ -1,4 +1,6 @@
 const { BaseAgent } = require('./base.js');
+const { calculatePace } = require('../pace-evaluator.js');
+const { CYCLE_DURATIONS } = require('../usage-formatters.js');
 
 class GeminiAgent extends BaseAgent {
   constructor() {
@@ -103,17 +105,34 @@ class GeminiAgent extends BaseAgent {
         const model = match[1];
         const usageLeft = parseFloat(match[2]);
         const resetsIn = match[3].trim();
+        const percentUsed = parseFloat((100 - usageLeft).toFixed(1));
+        const resetsInSeconds = this.parseDurationToSeconds(resetsIn);
 
         // Avoid duplicates
         if (!usage.models.find(m => m.model === model)) {
-          usage.models.push({
+          const modelEntry = {
             model,
             usageLeft,
             resetsIn,
             // Normalized fields for consistent display
-            percentUsed: parseFloat((100 - usageLeft).toFixed(1)),
-            resetsInSeconds: this.parseDurationToSeconds(resetsIn),
-          });
+            percentUsed,
+            resetsInSeconds,
+          };
+
+          // Calculate pace data for this model (Gemini uses 24h sessions)
+          const cycleDuration = CYCLE_DURATIONS.sessionGemini;
+          if (cycleDuration && resetsInSeconds != null) {
+            const paceData = calculatePace({
+              usagePercent: percentUsed,
+              resetsInSeconds,
+              cycleDurationSeconds: cycleDuration
+            });
+            if (paceData) {
+              modelEntry.pace = paceData;
+            }
+          }
+
+          usage.models.push(modelEntry);
         }
       }
     }

@@ -72,7 +72,7 @@ describe('UsageFormatters', () => {
         warningMessage: 'Using 1.5x faster than sustainable'
       };
 
-      const result = resetInfoItem('2h 30m', null, 'session', false, paceData);
+      const result = resetInfoItem('2h 30m', null, 'session', { isZero: false, paceData });
 
       expect(result).toContain('pace-warning');
       expect(result).toContain('1.5x pace');
@@ -86,37 +86,38 @@ describe('UsageFormatters', () => {
         warningMessage: null
       };
 
-      const result = resetInfoItem('2h 30m', null, 'session', false, paceData);
+      const result = resetInfoItem('2h 30m', null, 'session', { isZero: false, paceData });
 
       expect(result).not.toContain('pace-warning');
     });
 
     it('does not include pace warning when pace data is null', () => {
-      const result = resetInfoItem('2h 30m', null, 'session', false, null);
+      const result = resetInfoItem('2h 30m', null, 'session', { isZero: false, paceData: null });
 
       expect(result).not.toContain('pace-warning');
     });
 
     it('includes time progress bar', () => {
-      const result = resetInfoItem('2h 30m', null, 'session', false);
+      const result = resetInfoItem('2h 30m', null, 'session', { isZero: false });
 
       expect(result).toContain('time-progress-bar');
       expect(result).toContain('time-progress-fill');
     });
 
     it('hides wrapper when isZero is true', () => {
-      const result = resetInfoItem('5h', null, 'session', true);
+      const result = resetInfoItem('5h', null, 'session', { isZero: true });
 
       expect(result).toContain('style="display:none"');
     });
   });
 
   describe('formatClaudeUsage pace integration', () => {
-    it('calculates pace for session section', () => {
+    it('renders session section with pace data', () => {
       const usage = {
         session: {
           percent: 80,
-          resetsIn: '1h' // 1h remaining of 5h = 4h elapsed = 80% time, 80% usage = 1x pace
+          resetsIn: '1h', // 1h remaining of 5h = 4h elapsed = 80% time, 80% usage = 1x pace
+          pace: { paceRatio: 1.0, elapsedPercent: 80, isWarning: false, warningMessage: null }
         }
       };
 
@@ -132,7 +133,8 @@ describe('UsageFormatters', () => {
       const usage = {
         session: {
           percent: 80,
-          resetsIn: '4h' // 4h remaining of 5h = 1h elapsed = 20% time, 80% usage = 4x pace
+          resetsIn: '4h', // 4h remaining of 5h = 1h elapsed = 20% time, 80% usage = 4x pace
+          pace: { paceRatio: 4.0, elapsedPercent: 20, isWarning: true, warningMessage: 'Using 4.0x faster than sustainable' }
         }
       };
 
@@ -142,11 +144,12 @@ describe('UsageFormatters', () => {
       expect(result).toContain('pace-critical'); // 4x pace is critical
     });
 
-    it('calculates pace for weekly section', () => {
+    it('renders weekly section without pace warning when normal pace', () => {
       const usage = {
         weeklyAll: {
           percent: 50,
-          resetsIn: '3d 12h' // 3.5 days remaining of 7 days = 50% time, 50% usage = 1x pace
+          resetsIn: '3d 12h', // 3.5 days remaining of 7 days = 50% time, 50% usage = 1x pace
+          pace: { paceRatio: 1.0, elapsedPercent: 50, isWarning: false, warningMessage: null }
         }
       };
 
@@ -160,7 +163,8 @@ describe('UsageFormatters', () => {
       const usage = {
         weeklyAll: {
           percent: 60,
-          resetsIn: '6d' // 6 days remaining = ~14% time elapsed, 60% usage = ~4x pace
+          resetsIn: '6d', // 6 days remaining = ~14% time elapsed, 60% usage = ~4x pace
+          pace: { paceRatio: 4.2, elapsedPercent: 14.3, isWarning: true, warningMessage: 'Using 4.2x faster than sustainable' }
         }
       };
 
@@ -169,13 +173,14 @@ describe('UsageFormatters', () => {
       expect(result).toContain('pace-warning');
     });
 
-    it('calculates pace for extra usage section', () => {
+    it('renders extra usage section', () => {
       const usage = {
         extraUsage: {
           percent: 50,
           spent: 25,
           budget: 50,
-          resetsIn: '3d 12h'
+          resetsIn: '3d 12h',
+          pace: { paceRatio: 1.0, elapsedPercent: 50, isWarning: false, warningMessage: null }
         }
       };
 
@@ -185,21 +190,22 @@ describe('UsageFormatters', () => {
       expect(result).toContain('$25.00 / $50.00');
     });
 
-    it('handles missing resetsIn gracefully', () => {
+    it('handles missing pace data gracefully', () => {
       const usage = {
         session: {
-          percent: 50
-          // No resetsIn
+          percent: 50,
+          resetsIn: '2h 30m'
+          // No pace data
         }
       };
 
       const result = formatClaudeUsage(usage);
 
       expect(result).toContain('Session');
-      expect(result).not.toContain('pace-warning'); // Can't calculate without time
+      expect(result).not.toContain('pace-warning'); // No pace data = no warning
     });
 
-    it('renders all sections with pace calculation', () => {
+    it('renders all sections', () => {
       const usage = {
         session: { percent: 30, resetsIn: '3h 30m' },
         weeklyAll: { percent: 40, resetsIn: '5d' },
@@ -215,12 +221,13 @@ describe('UsageFormatters', () => {
   });
 
   describe('formatCodexUsage pace integration', () => {
-    it('calculates pace for 5h limit', () => {
+    it('renders 5h limit without pace warning when normal pace', () => {
       const usage = {
         model: 'GPT-4',
         fiveHour: {
           percentUsed: 50,
-          resetsIn: '2h 30m' // 2.5h remaining of 5h = 50% time, 50% usage = 1x pace
+          resetsIn: '2h 30m', // 2.5h remaining of 5h = 50% time, 50% usage = 1x pace
+          pace: { paceRatio: 1.0, elapsedPercent: 50, isWarning: false, warningMessage: null }
         }
       };
 
@@ -235,7 +242,8 @@ describe('UsageFormatters', () => {
         model: 'GPT-4',
         fiveHour: {
           percentUsed: 80,
-          resetsIn: '4h' // 4h remaining of 5h = 1h elapsed = 20% time, 80% usage = 4x pace
+          resetsIn: '4h', // 4h remaining of 5h = 1h elapsed = 20% time, 80% usage = 4x pace
+          pace: { paceRatio: 4.0, elapsedPercent: 20, isWarning: true, warningMessage: 'Using 4.0x faster than sustainable' }
         }
       };
 
@@ -245,12 +253,13 @@ describe('UsageFormatters', () => {
       expect(result).toContain('pace-critical');
     });
 
-    it('calculates pace for weekly limit', () => {
+    it('renders weekly limit without pace warning when normal pace', () => {
       const usage = {
         model: 'GPT-4',
         weekly: {
           percentUsed: 40,
-          resetsIn: '4d 4h' // ~4.17 days remaining of 7 = ~40% time, 40% usage = 1x pace
+          resetsIn: '4d 4h', // ~4.17 days remaining of 7 = ~40% time, 40% usage = 1x pace
+          pace: { paceRatio: 1.0, elapsedPercent: 40.5, isWarning: false, warningMessage: null }
         }
       };
 
@@ -265,7 +274,8 @@ describe('UsageFormatters', () => {
         model: 'GPT-4',
         weekly: {
           percentUsed: 70,
-          resetsIn: '6d' // 6 days remaining = ~14% time elapsed, 70% usage = 5x pace
+          resetsIn: '6d', // 6 days remaining = ~14% time elapsed, 70% usage = 5x pace
+          pace: { paceRatio: 4.9, elapsedPercent: 14.3, isWarning: true, warningMessage: 'Using 4.9x faster than sustainable' }
         }
       };
 
@@ -292,12 +302,13 @@ describe('UsageFormatters', () => {
       expect(result).toContain('Weekly');
     });
 
-    it('handles missing resetsIn gracefully', () => {
+    it('handles missing pace data gracefully', () => {
       const usage = {
         model: 'GPT-4',
         fiveHour: {
-          percentUsed: 50
-          // No resetsIn
+          percentUsed: 50,
+          resetsIn: '2h 30m'
+          // No pace data
         }
       };
 
@@ -307,7 +318,7 @@ describe('UsageFormatters', () => {
       expect(result).not.toContain('pace-warning');
     });
 
-    it('renders both fiveHour and weekly with pace', () => {
+    it('renders both fiveHour and weekly', () => {
       const usage = {
         model: 'GPT-4',
         fiveHour: { percentUsed: 25, resetsIn: '4h' },
@@ -322,11 +333,12 @@ describe('UsageFormatters', () => {
   });
 
   describe('pace warning threshold behavior', () => {
-    it('does not show warning at exactly 1.0x pace', () => {
+    it('does not show warning when pace data has isWarning=false', () => {
       const usage = {
         session: {
           percent: 50,
-          resetsIn: '2h 30m' // Exactly 50% time elapsed, 50% usage
+          resetsIn: '2h 30m', // Exactly 50% time elapsed, 50% usage
+          pace: { paceRatio: 1.0, elapsedPercent: 50, isWarning: false, warningMessage: null }
         }
       };
 
@@ -340,7 +352,8 @@ describe('UsageFormatters', () => {
       const usage = {
         session: {
           percent: 59,
-          resetsIn: '2h 30m'
+          resetsIn: '2h 30m',
+          pace: { paceRatio: 1.18, elapsedPercent: 50, isWarning: false, warningMessage: null }
         }
       };
 
@@ -349,12 +362,13 @@ describe('UsageFormatters', () => {
       expect(result).not.toContain('pace-warning');
     });
 
-    it('shows warning at 1.2x pace', () => {
+    it('shows warning when pace data has isWarning=true', () => {
       // 60% usage with 50% time elapsed = 1.2x (at threshold)
       const usage = {
         session: {
           percent: 60,
-          resetsIn: '2h 30m'
+          resetsIn: '2h 30m',
+          pace: { paceRatio: 1.2, elapsedPercent: 50, isWarning: true, warningMessage: 'Using 1.2x faster than sustainable' }
         }
       };
 
