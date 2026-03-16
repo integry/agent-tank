@@ -397,5 +397,4 @@ class BaseAgent {
   }
   stripBoxChars(str) { return str ? str.replace(/[│╭╮╯╰─┌┐└┘├┤┬┴┼║═╔╗╚╝╠╣╦╩╬]/g, '').trim() : str; }
 }
-
 module.exports = { BaseAgent };

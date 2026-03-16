@@ -48,7 +48,8 @@ function getStatusDotClass(value) {
   return 'status-red';
 }
 
-function resetInfoItem(resetsIn, originalValue, cycleType, isZero = false, paceData = null) {
+function resetInfoItem(resetsIn, originalValue, cycleType, options = {}) {
+  const { isZero = false, paceData = null } = options;
   // Always render the wrapper so XHR updates can show/hide it dynamically.
   // Hidden when at 0% (no useful info when at full capacity).
   const hidden = isZero ? ' style="display:none"' : '';
@@ -146,7 +147,7 @@ function formatClaudeUsage(usage) {
 
       html += '<div class="model-container">';
       html += usageItem(label, percent, '% used', { isZero, agentName: 'claude', resetsIn });
-      html += resetInfoItem(data.resetsIn, data.resetsAt, cycle, isZero, paceData);
+      html += resetInfoItem(data.resetsIn, data.resetsAt, cycle, { isZero, paceData });
       html += '</div>';
     }
   }
@@ -174,7 +175,7 @@ function formatClaudeUsage(usage) {
     if (spentLabel) {
       html += `<div class="reset-info"><span class="reset-label">${spentLabel}</span></div>`;
     }
-    html += resetInfoItem(extra.resetsIn, extra.resetsAt, 'weekly', isZero, paceData);
+    html += resetInfoItem(extra.resetsIn, extra.resetsAt, 'weekly', { isZero, paceData });
     html += '</div>';
   }
   return html;
@@ -191,7 +192,7 @@ function formatGeminiUsage(usage) {
       const resetsIn = model.resetsIn || '';
       html += '<div class="model-container">';
       html += usageItem(modelName, percent, '% used', { isZero, isModelName: true, agentName: 'gemini', resetsIn });
-      html += resetInfoItem(model.resetsIn, null, 'sessionGemini', isZero);
+      html += resetInfoItem(model.resetsIn, null, 'sessionGemini', { isZero });
       html += '</div>';
     }
   }
@@ -228,7 +229,7 @@ function formatCodexUsage(usage) {
 
       html += '<div class="model-container nested-container">';
       html += usageItem('5h limit', fiveHourPercent, '% used', { isZero, isNestedMetric: true, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-5h` });
-      html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', isZero, paceData);
+      html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', { isZero, paceData });
       html += '</div>';
     }
     if (ml.weekly) {
@@ -247,7 +248,7 @@ function formatCodexUsage(usage) {
 
       html += '<div class="model-container nested-container">';
       html += usageItem('Weekly', weeklyPercent, '% used', { isZero, isNestedMetric: true, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-weekly` });
-      html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', isZero, paceData);
+      html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', { isZero, paceData });
       html += '</div>';
     }
   }
