@@ -1019,3 +1019,51 @@ body.light-mode .copy-api-btn.copied {
 .favicon-canvas {
   display: none;
 }
+
+/* ===== Pace Warning Feature ===== */
+
+/* Pace warning indicator - shows when usage is out-pacing time */
+.pace-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 2px 6px;
+  background: rgba(236, 201, 75, 0.12);
+  border: 1px solid rgba(236, 201, 75, 0.25);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #ecc94b;
+  cursor: help;
+}
+
+.pace-warning .pace-icon {
+  font-size: 10px;
+}
+
+.pace-warning .pace-text {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* Light mode adjustments for pace warning */
+body.light-mode .pace-warning {
+  background: rgba(236, 201, 75, 0.15);
+  border-color: rgba(183, 121, 31, 0.25);
+  color: #b7791f;
+}
+
+/* Critical pace (2x or higher) - red warning */
+.pace-warning.pace-critical {
+  background: rgba(229, 62, 62, 0.12);
+  border-color: rgba(229, 62, 62, 0.25);
+  color: #e53e3e;
+}
+
+body.light-mode .pace-warning.pace-critical {
+  background: rgba(229, 62, 62, 0.1);
+  border-color: rgba(197, 48, 48, 0.25);
+  color: #c53030;
+}

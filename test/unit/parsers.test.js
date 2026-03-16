@@ -395,6 +395,62 @@ describe('ClaudeAgent', () => {
       expect(result.weeklyAll.percent).toBe(100);
       expect(result.weeklySonnet.percent).toBe(100);
     });
+
+    it('includes pace data in session section', () => {
+      const output = `
+        Current session
+        50% used
+        Resets 2:30pm (America/New_York)
+
+        Current week (all models)
+        25% used
+        Resets Jan 15, 2pm (America/New_York)
+
+        Current week (Sonnet only)
+        10% used
+        Resets Jan 15, 2pm (America/New_York)
+      `;
+
+      const result = agent.parseOutput(output);
+
+      // Session should have pace data when resetsInSeconds is available
+      expect(result.session).not.toBeNull();
+      if (result.session.resetsInSeconds !== null) {
+        expect(result.session.pace).toBeDefined();
+        expect(typeof result.session.pace.paceRatio).toBe('number');
+        expect(typeof result.session.pace.elapsedPercent).toBe('number');
+        expect(typeof result.session.pace.isWarning).toBe('boolean');
+      }
+    });
+
+    it('includes pace data in weekly sections', () => {
+      const output = `
+        Current session
+        30% used
+        Resets 5:00pm (America/New_York)
+
+        Current week (all models)
+        60% used
+        Resets Jan 20, 9am (America/New_York)
+
+        Current week (Sonnet only)
+        40% used
+        Resets Jan 20, 9am (America/New_York)
+      `;
+
+      const result = agent.parseOutput(output);
+
+      // Weekly sections should have pace data
+      if (result.weeklyAll && result.weeklyAll.resetsInSeconds !== null) {
+        expect(result.weeklyAll.pace).toBeDefined();
+        expect(typeof result.weeklyAll.pace.paceRatio).toBe('number');
+      }
+
+      if (result.weeklySonnet && result.weeklySonnet.resetsInSeconds !== null) {
+        expect(result.weeklySonnet.pace).toBeDefined();
+        expect(typeof result.weeklySonnet.pace.paceRatio).toBe('number');
+      }
+    });
   });
 
   describe('parseResetTime', () => {
@@ -617,6 +673,28 @@ describe('GeminiAgent', () => {
       expect(result.models[0].usageLeft).toBe(87.5);
       expect(result.models[0].percentUsed).toBe(12.5);
     });
+
+    it('includes pace data for each model', () => {
+      const output = `
+        gemini-2.5-flash   75% (Resets in 12h)
+        gemini-2.5-pro     50% (Resets in 18h)
+        Usage limits span all sessions
+      `;
+
+      const result = agent.parseOutput(output);
+
+      expect(result.models.length).toBe(2);
+
+      // Each model should have pace data
+      for (const model of result.models) {
+        if (model.resetsInSeconds !== null) {
+          expect(model.pace).toBeDefined();
+          expect(typeof model.pace.paceRatio).toBe('number');
+          expect(typeof model.pace.elapsedPercent).toBe('number');
+          expect(typeof model.pace.isWarning).toBe('boolean');
+        }
+      }
+    });
   });
 
   describe('parseDurationToSeconds', () => {
@@ -823,6 +901,54 @@ describe('CodexAgent', () => {
       expect(result.version.current).toBe('1.0.0');
       expect(result.version.latest).toBe('1.1.0');
     });
+
+    it('includes pace data in fiveHour and weekly limits', () => {
+      const output = `
+        5h limit: [████████░░] 80% left (resets 14:30)
+        Weekly limit: [██████████] 100% left (resets 10:00 on 15 Mar)
+      `;
+
+      const result = agent.parseOutput(output);
+
+      // Both limits should have pace data
+      if (result.fiveHour && result.fiveHour.resetsInSeconds !== null) {
+        expect(result.fiveHour.pace).toBeDefined();
+        expect(typeof result.fiveHour.pace.paceRatio).toBe('number');
+        expect(typeof result.fiveHour.pace.elapsedPercent).toBe('number');
+        expect(typeof result.fiveHour.pace.isWarning).toBe('boolean');
+      }
+
+      if (result.weekly && result.weekly.resetsInSeconds !== null) {
+        expect(result.weekly.pace).toBeDefined();
+        expect(typeof result.weekly.pace.paceRatio).toBe('number');
+      }
+    });
+
+    it('includes pace data in model-specific limits', () => {
+      const output = `
+        5h limit: [████████░░] 80% left (resets 14:30)
+        Weekly limit: [██████████] 100% left (resets 10:00 on 15 Mar)
+
+        GPT-5.3-Codex-Spark limit:
+        5h limit: [██████░░░░] 60% left (resets 15:00)
+        Weekly limit: [████████░░] 80% left (resets 08:00 on 20 Mar)
+      `;
+
+      const result = agent.parseOutput(output);
+
+      expect(result.modelLimits).toBeDefined();
+      expect(result.modelLimits.length).toBeGreaterThan(0);
+
+      // Model-specific limits should also have pace data
+      for (const modelLimit of result.modelLimits) {
+        if (modelLimit.fiveHour && modelLimit.fiveHour.resetsInSeconds !== null) {
+          expect(modelLimit.fiveHour.pace).toBeDefined();
+        }
+        if (modelLimit.weekly && modelLimit.weekly.resetsInSeconds !== null) {
+          expect(modelLimit.weekly.pace).toBeDefined();
+        }
+      }
+    });
   });
 
   describe('parseResetTime', () => {
@@ -873,7 +999,7 @@ describe('CodexAgent', () => {
   describe('parseLimitEntry', () => {
     it('creates correct limit entry structure', () => {
       const match = ['full match', '75', '14:30'];
-      const result = agent.parseLimitEntry(match, '5h limit');
+      const result = agent.parseLimitEntry(match, '5h limit', 'fiveHour');
 
       expect(result.percentLeft).toBe(75);
       expect(result.percentUsed).toBe(25);
@@ -883,16 +1009,27 @@ describe('CodexAgent', () => {
 
     it('includes resetsIn text', () => {
       const match = ['full match', '50', '16:00'];
-      const result = agent.parseLimitEntry(match, 'Weekly limit');
+      const result = agent.parseLimitEntry(match, 'Weekly limit', 'weekly');
 
       expect(result.resetsIn).toBeDefined();
     });
 
     it('includes resetsInSeconds', () => {
       const match = ['full match', '80', '18:30'];
-      const result = agent.parseLimitEntry(match, '5h limit');
+      const result = agent.parseLimitEntry(match, '5h limit', 'fiveHour');
 
       expect(typeof result.resetsInSeconds).toBe('number');
+    });
+
+    it('includes pace data when resetsInSeconds is available', () => {
+      const match = ['full match', '50', '14:30']; // 50% left = 50% used
+      const result = agent.parseLimitEntry(match, '5h limit', 'fiveHour');
+
+      // Pace data should be present
+      expect(result.pace).toBeDefined();
+      expect(result.pace.paceRatio).toBeGreaterThanOrEqual(0);
+      expect(typeof result.pace.elapsedPercent).toBe('number');
+      expect(typeof result.pace.isWarning).toBe('boolean');
     });
   });
 
