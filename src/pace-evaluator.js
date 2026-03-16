@@ -182,12 +182,19 @@ function evaluatePace(options) {
 
 /**
  * Format a pace warning as HTML for display in the UI.
+ * Includes ETA countdown when burning fast.
  *
- * @param {Object|null} paceData - Result from calculatePace()
+ * @param {Object|null} paceData - Result from evaluatePace() or calculatePace()
  * @returns {string} HTML string for the pace warning (empty string if no warning)
  */
 function formatPaceWarning(paceData) {
-  if (!paceData || !paceData.isWarning) {
+  if (!paceData) {
+    return '';
+  }
+
+  // Determine if we should show warning based on isWarning or isBurningFast
+  const shouldShowWarning = paceData.isWarning || paceData.isBurningFast;
+  if (!shouldShowWarning) {
     return '';
   }
 
@@ -195,14 +202,68 @@ function formatPaceWarning(paceData) {
   // Add critical class for 2x or higher pace
   const criticalClass = paceData.paceRatio >= 2 ? ' pace-critical' : '';
 
-  return `<div class="pace-warning${criticalClass}" title="${paceData.warningMessage}">
+  // Build tooltip message
+  let tooltip = paceData.warningMessage || `Using ${paceDisplay}x faster than sustainable`;
+
+  // Generate ETA section if available
+  let etaHtml = '';
+  if (paceData.etaSeconds != null && paceData.etaSeconds >= 0 && paceData.isBurningFast) {
+    const etaString = formatEtaString(paceData.etaSeconds);
+    if (etaString) {
+      etaHtml = `<span class="pace-eta">runs out in ${etaString}</span>`;
+      tooltip += ` • Runs out in ${etaString}`;
+    }
+  }
+
+  return `<div class="pace-warning${criticalClass}" title="${tooltip}">
     <span class="pace-icon">&#9888;</span>
-    <span class="pace-text">${paceDisplay}x pace</span>
+    <span class="pace-text">${paceDisplay}x pace</span>${etaHtml}
   </div>`;
+}
+
+/**
+ * Format ETA seconds into a human-readable string.
+ *
+ * @param {number|null} etaSeconds - Seconds until 100% usage
+ * @returns {string} Formatted ETA string (e.g., "2h 15m", "45m", "~30s")
+ */
+function formatEtaString(etaSeconds) {
+  if (etaSeconds == null || etaSeconds < 0) {
+    return '';
+  }
+
+  if (etaSeconds === 0) {
+    return 'now';
+  }
+
+  const days = Math.floor(etaSeconds / (24 * 60 * 60));
+  const hours = Math.floor((etaSeconds % (24 * 60 * 60)) / (60 * 60));
+  const minutes = Math.floor((etaSeconds % (60 * 60)) / 60);
+
+  const parts = [];
+
+  if (days > 0) {
+    parts.push(`${days}d`);
+  }
+  if (hours > 0) {
+    parts.push(`${hours}h`);
+  }
+  if (minutes > 0 && days === 0) {
+    // Only show minutes if no days (for readability)
+    parts.push(`${minutes}m`);
+  }
+
+  // If less than a minute, show "< 1m"
+  if (parts.length === 0) {
+    return '< 1m';
+  }
+
+  return parts.join(' ');
 }
 
 module.exports = {
   calculatePace,
   formatPaceWarning,
-  evaluatePace
+  evaluatePace,
+  formatEtaString
 };
