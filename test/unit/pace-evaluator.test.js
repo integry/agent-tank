@@ -6,7 +6,7 @@
  * faster than time is elapsing.
  */
 
-const { calculatePace, formatPaceWarning, evaluatePace } = require('../../src/pace-evaluator');
+const { calculatePace, formatPaceWarning, evaluatePace, formatEtaString } = require('../../src/pace-evaluator');
 
 describe('PaceEvaluator', () => {
   describe('calculatePace', () => {
@@ -332,6 +332,132 @@ describe('PaceEvaluator', () => {
 
       // toFixed(1) should give "1.2"
       expect(result).toContain('1.2x pace');
+    });
+
+    describe('ETA display', () => {
+      it('includes ETA when burning fast with etaSeconds', () => {
+        const paceData = {
+          paceRatio: 1.5,
+          isWarning: true,
+          isBurningFast: true,
+          etaSeconds: 3600, // 1 hour
+          warningMessage: 'Using 1.5x faster than sustainable'
+        };
+        const result = formatPaceWarning(paceData);
+
+        expect(result).toContain('pace-eta');
+        expect(result).toContain('runs out in 1h');
+      });
+
+      it('includes ETA in tooltip when burning fast', () => {
+        const paceData = {
+          paceRatio: 2.0,
+          isWarning: true,
+          isBurningFast: true,
+          etaSeconds: 5400, // 1h 30m
+          warningMessage: 'Using 2.0x faster than sustainable'
+        };
+        const result = formatPaceWarning(paceData);
+
+        expect(result).toContain('Runs out in 1h 30m');
+      });
+
+      it('does not include ETA when not burning fast', () => {
+        const paceData = {
+          paceRatio: 1.3,
+          isWarning: true,
+          isBurningFast: false,
+          etaSeconds: null,
+          warningMessage: 'Using 1.3x faster than sustainable'
+        };
+        const result = formatPaceWarning(paceData);
+
+        expect(result).not.toContain('pace-eta');
+        expect(result).not.toContain('runs out');
+      });
+
+      it('does not include ETA when etaSeconds is null', () => {
+        const paceData = {
+          paceRatio: 1.5,
+          isWarning: true,
+          isBurningFast: true,
+          etaSeconds: null,
+          warningMessage: 'Using 1.5x faster than sustainable'
+        };
+        const result = formatPaceWarning(paceData);
+
+        expect(result).not.toContain('pace-eta');
+      });
+
+      it('shows ETA for isBurningFast even if isWarning is false', () => {
+        const paceData = {
+          paceRatio: 1.5,
+          isWarning: false,
+          isBurningFast: true,
+          etaSeconds: 7200, // 2 hours
+          warningMessage: null
+        };
+        const result = formatPaceWarning(paceData);
+
+        expect(result).toContain('pace-warning');
+        expect(result).toContain('runs out in 2h');
+      });
+    });
+  });
+
+  describe('formatEtaString', () => {
+    it('returns empty string for null etaSeconds', () => {
+      expect(formatEtaString(null)).toBe('');
+    });
+
+    it('returns empty string for undefined etaSeconds', () => {
+      expect(formatEtaString(undefined)).toBe('');
+    });
+
+    it('returns empty string for negative etaSeconds', () => {
+      expect(formatEtaString(-100)).toBe('');
+    });
+
+    it('returns "now" for zero etaSeconds', () => {
+      expect(formatEtaString(0)).toBe('now');
+    });
+
+    it('returns "< 1m" for less than 60 seconds', () => {
+      expect(formatEtaString(30)).toBe('< 1m');
+      expect(formatEtaString(59)).toBe('< 1m');
+    });
+
+    it('formats minutes only', () => {
+      expect(formatEtaString(60)).toBe('1m');
+      expect(formatEtaString(300)).toBe('5m');
+      expect(formatEtaString(45 * 60)).toBe('45m');
+    });
+
+    it('formats hours and minutes', () => {
+      expect(formatEtaString(3600)).toBe('1h');
+      expect(formatEtaString(3600 + 30 * 60)).toBe('1h 30m');
+      expect(formatEtaString(2 * 3600 + 15 * 60)).toBe('2h 15m');
+    });
+
+    it('formats hours only when minutes are zero', () => {
+      expect(formatEtaString(2 * 3600)).toBe('2h');
+      expect(formatEtaString(5 * 3600)).toBe('5h');
+    });
+
+    it('formats days and hours', () => {
+      expect(formatEtaString(24 * 3600)).toBe('1d');
+      expect(formatEtaString(24 * 3600 + 5 * 3600)).toBe('1d 5h');
+      expect(formatEtaString(3 * 24 * 3600 + 12 * 3600)).toBe('3d 12h');
+    });
+
+    it('omits minutes when days are present for readability', () => {
+      // When days are present, minutes are omitted for cleaner display
+      expect(formatEtaString(2 * 24 * 3600 + 3 * 3600 + 45 * 60)).toBe('2d 3h');
+    });
+
+    it('handles large values', () => {
+      expect(formatEtaString(7 * 24 * 3600)).toBe('7d');
+      expect(formatEtaString(30 * 24 * 3600)).toBe('30d');
     });
   });
 

@@ -1130,3 +1130,20 @@ body.light-mode .pace-warning.pace-critical {
   border-color: rgba(197, 48, 48, 0.25);
   color: #c53030;
 }
+
+/* Pace ETA indicator - shows "runs out in X" */
+.pace-warning .pace-eta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  margin-left: 4px;
+  padding-left: 4px;
+  border-left: 1px solid currentColor;
+  opacity: 0.85;
+}
+
+/* ETA emphasis for critical pace (2x+) */
+.pace-warning.pace-critical .pace-eta {
+  font-weight: 600;
+  opacity: 1;
+}
