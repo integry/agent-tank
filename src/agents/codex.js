@@ -1,13 +1,267 @@
 const { BaseAgent } = require('./base.js');
 const { calculatePace } = require('../pace-evaluator.js');
 const { CYCLE_DURATIONS } = require('../usage-formatters.js');
+const { JsonRpcClient } = require('../json-rpc-client.js');
 
 class CodexAgent extends BaseAgent {
   constructor() {
     super('codex', 'codex');
+    this._rpcClient = null;
+    this._rpcSupported = null; // null = unknown, true/false = tested
   }
 
   getTimeout() { return 25000; }
+
+  /**
+   * Override runCommand to attempt JSON-RPC first, then fall back to PTY
+   */
+  async runCommand() {
+    // If we already know RPC is not supported, skip directly to PTY
+    if (this._rpcSupported === false) {
+      return this._runWithPty();
+    }
+
+    // Try JSON-RPC first
+    try {
+      const result = await this._runWithJsonRpc();
+      this._rpcSupported = true;
+      return result;
+    } catch (err) {
+      // If this is the first attempt and it failed, mark RPC as unsupported
+      if (this._rpcSupported === null) {
+        console.log(`[${this.name}] JSON-RPC not available, falling back to PTY: ${err.message}`);
+        this._rpcSupported = false;
+      }
+      return this._runWithPty();
+    }
+  }
+
+  /**
+   * Run using JSON-RPC app-server mode
+   * @returns {Promise<string>} - Formatted output string for parsing
+   */
+  async _runWithJsonRpc() {
+    console.log(`[${this.name}] Attempting JSON-RPC mode...`);
+
+    // Clean up any existing RPC client
+    if (this._rpcClient) {
+      this._rpcClient.stop();
+      this._rpcClient = null;
+    }
+
+    // Start the Codex app-server with JSON-RPC
+    this._rpcClient = new JsonRpcClient('codex', ['-s', 'read-only', '-a', 'untrusted', 'app-server'], {
+      cwd: '/tmp',
+      timeout: this.getTimeout(),
+    });
+
+    try {
+      await this._rpcClient.start();
+      console.log(`[${this.name}] JSON-RPC server started`);
+
+      // Fetch rate limits via RPC
+      const rateLimits = await this._rpcClient.call('account/rateLimits/read', {});
+      console.log(`[${this.name}] Received rate limits via JSON-RPC:`, JSON.stringify(rateLimits));
+
+      // Convert RPC response to a format that parseOutput can handle
+      // or directly construct the usage object
+      const output = this._formatRpcResponseAsOutput(rateLimits);
+      return output;
+    } finally {
+      // Always clean up
+      if (this._rpcClient) {
+        this._rpcClient.stop();
+        this._rpcClient = null;
+      }
+    }
+  }
+
+  /**
+   * Format RPC response as if it were PTY output for parseOutput compatibility
+   * Or directly parse and store the usage data
+   * @param {Object} rateLimits - The rate limits from RPC
+   * @returns {string} - Formatted string for parseOutput
+   */
+  _formatRpcResponseAsOutput(rateLimits) {
+    // The RPC response structure may vary, but typically contains rate limit info
+    // We'll construct a string that parseOutput can handle, or directly set usage
+
+    // If the response has the expected structure, convert it
+    // Expected structure from CodexBar analysis:
+    // { fiveHour: { percentLeft, resetsAt, ... }, weekly: { ... }, ... }
+
+    if (!rateLimits) {
+      throw new Error('Empty rate limits response');
+    }
+
+    // Check if we got a structured response we can use directly
+    if (rateLimits.fiveHour || rateLimits.weekly || rateLimits.limits) {
+      // Store the RPC data for direct usage parsing
+      this._rpcRateLimits = rateLimits;
+
+      // Return a marker string that parseOutput will recognize
+      return '__RPC_RESPONSE__';
+    }
+
+    // Handle different response formats
+    if (rateLimits.rateLimits) {
+      // Format: { rateLimits: { fiveHour: {...}, weekly: {...} } }
+      const limits = rateLimits.rateLimits;
+      this._rpcRateLimits = limits;
+      return '__RPC_RESPONSE__';
+    }
+
+    // If structure is unknown, throw to fall back to PTY
+    throw new Error('Unexpected rate limits response structure');
+  }
+
+  /**
+   * Parse usage data from JSON-RPC response
+   * @param {Object} rateLimits - Rate limits from RPC
+   * @returns {Object} - Parsed usage object
+   */
+  _parseRpcRateLimits(rateLimits) {
+    const usage = {
+      fiveHour: null,
+      weekly: null,
+      version: this._spawnVersionInfo || null,
+    };
+
+    // Parse five hour limit
+    if (rateLimits.fiveHour) {
+      usage.fiveHour = this._parseRpcLimitEntry(rateLimits.fiveHour, '5h limit', 'fiveHour');
+    }
+
+    // Parse weekly limit
+    if (rateLimits.weekly) {
+      usage.weekly = this._parseRpcLimitEntry(rateLimits.weekly, 'Weekly limit', 'weekly');
+    }
+
+    // Parse model-specific limits if present
+    if (rateLimits.modelLimits && Array.isArray(rateLimits.modelLimits)) {
+      usage.modelLimits = rateLimits.modelLimits.map(ml => ({
+        name: ml.name || ml.model,
+        fiveHour: ml.fiveHour ? this._parseRpcLimitEntry(ml.fiveHour, '5h limit', 'fiveHour') : null,
+        weekly: ml.weekly ? this._parseRpcLimitEntry(ml.weekly, 'Weekly limit', 'weekly') : null,
+      })).filter(ml => ml.fiveHour || ml.weekly);
+
+      if (usage.modelLimits.length === 0) {
+        delete usage.modelLimits;
+      }
+    }
+
+    // Extract model and account
+    if (rateLimits.model) {
+      usage.model = rateLimits.model;
+    }
+    if (rateLimits.account || rateLimits.email) {
+      usage.account = rateLimits.account || rateLimits.email;
+    }
+
+    // Update metadata
+    if (!this.metadata) {
+      this.metadata = {};
+    }
+    if (rateLimits.model) {
+      this.metadata.model = rateLimits.model;
+    }
+    if (rateLimits.account || rateLimits.email) {
+      this.metadata.email = rateLimits.account || rateLimits.email;
+    }
+    if (rateLimits.sessionId) {
+      this.metadata.sessionId = rateLimits.sessionId;
+    }
+
+    return usage;
+  }
+
+  /**
+   * Parse a single limit entry from RPC response
+   * @param {Object} limit - Limit data from RPC
+   * @param {string} label - Label for the limit
+   * @param {string} cycleType - Cycle type for pace calculation
+   * @returns {Object} - Parsed limit entry
+   */
+  _parseRpcLimitEntry(limit, label, cycleType) {
+    // Handle different possible structures
+    const percentLeft = limit.percentLeft ?? limit.remaining ?? limit.percent ?? 100;
+    const percentUsed = 100 - percentLeft;
+
+    // Handle reset time
+    let resetsAt = limit.resetsAt || limit.resetAt || limit.reset || null;
+    let resetsInSeconds = limit.resetsInSeconds || limit.secondsUntilReset || null;
+    let resetsIn = null;
+
+    // If we have seconds, calculate text
+    if (resetsInSeconds !== null) {
+      resetsIn = this._formatDuration(resetsInSeconds);
+    } else if (resetsAt) {
+      // Try to parse the reset time
+      const resetData = this.parseResetTime(resetsAt);
+      if (resetData) {
+        resetsIn = resetData.text;
+        resetsInSeconds = resetData.seconds;
+      }
+    }
+
+    const entry = {
+      percentLeft,
+      resetsAt,
+      label,
+      percentUsed,
+      resetsIn,
+      resetsInSeconds,
+    };
+
+    // Calculate pace if we have the necessary data
+    const cycleDuration = CYCLE_DURATIONS[cycleType];
+    if (cycleDuration && resetsInSeconds != null) {
+      const paceData = calculatePace({
+        usagePercent: percentUsed,
+        resetsInSeconds,
+        cycleDurationSeconds: cycleDuration,
+      });
+      if (paceData) entry.pace = paceData;
+    }
+
+    return entry;
+  }
+
+  /**
+   * Format seconds as duration string
+   * @param {number} seconds - Seconds to format
+   * @returns {string} - Formatted duration
+   */
+  _formatDuration(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+
+    if (hours > 24) {
+      const days = Math.floor(hours / 24);
+      const remainingHours = hours % 24;
+      return `${days}d ${remainingHours}h`;
+    } else if (hours > 0) {
+      return `${hours}h ${mins}m`;
+    } else {
+      return `${mins}m`;
+    }
+  }
+
+  /**
+   * Run using traditional PTY mode
+   */
+  async _runWithPty() {
+    if (this.freshProcess) {
+      return this._runCommandFresh();
+    }
+
+    // Persistent mode: spawn if needed, then send command
+    if (!this.shell || !this.processReady) {
+      await this.spawnProcess();
+    }
+
+    return this.sendCommandAndWait();
+  }
 
   handleTrustPrompt(shell, output) {
     if (!shell) return false;
@@ -275,6 +529,13 @@ class CodexAgent extends BaseAgent {
   }
 
   parseOutput(output) {
+    // Check if this is an RPC response marker
+    if (output === '__RPC_RESPONSE__' && this._rpcRateLimits) {
+      const usage = this._parseRpcRateLimits(this._rpcRateLimits);
+      this._rpcRateLimits = null; // Clear after use
+      return usage;
+    }
+
     const clean = this.stripAnsi(output);
     const usage = {
       fiveHour: null,
@@ -381,6 +642,33 @@ class CodexAgent extends BaseAgent {
     if (accountMatch) {
       this.metadata.email = this.stripBoxChars(accountMatch[1]);
     }
+  }
+
+  /**
+   * Check if JSON-RPC mode is being used
+   * @returns {boolean|null} - true if RPC is used, false if PTY, null if unknown
+   */
+  get usingJsonRpc() {
+    return this._rpcSupported;
+  }
+
+  /**
+   * Force a specific mode for testing
+   * @param {boolean|null} useRpc - true for RPC, false for PTY, null for auto-detect
+   */
+  setRpcMode(useRpc) {
+    this._rpcSupported = useRpc;
+  }
+
+  /**
+   * Override killProcess to also clean up RPC client
+   */
+  killProcess() {
+    if (this._rpcClient) {
+      this._rpcClient.stop();
+      this._rpcClient = null;
+    }
+    super.killProcess();
   }
 }
 
