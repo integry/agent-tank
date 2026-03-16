@@ -1,4 +1,5 @@
 const { trackIcon } = require('./icons');
+const { formatPaceWarning } = require('./pace-evaluator');
 
 // Cycle duration constants in seconds
 const CYCLE_DURATIONS = {
@@ -47,7 +48,8 @@ function getStatusDotClass(value) {
   return 'status-red';
 }
 
-function resetInfoItem(resetsIn, originalValue, cycleType, isZero = false) {
+function resetInfoItem(resetsIn, originalValue, cycleType, options = {}) {
+  const { isZero = false, paceData = null } = options;
   // Always render the wrapper so XHR updates can show/hide it dynamically.
   // Hidden when at 0% (no useful info when at full capacity).
   const hidden = isZero ? ' style="display:none"' : '';
@@ -67,8 +69,11 @@ function resetInfoItem(resetsIn, originalValue, cycleType, isZero = false) {
     </div>`;
   }
 
+  // Add pace warning if applicable
+  const paceWarningHtml = formatPaceWarning(paceData);
+
   return `<div class="reset-info-wrapper"${hidden}>
-    <div class="usage-item reset-info"${tooltip}><span class="usage-label">↳ Resets in</span><span class="usage-value">${resetsIn || ''}</span></div>
+    <div class="usage-item reset-info"${tooltip}><span class="usage-label">↳ Resets in</span><span class="usage-value">${resetsIn || ''}${paceWarningHtml}</span></div>
     ${timeProgressHtml}
   </div>`;
 }
@@ -130,9 +135,13 @@ function formatClaudeUsage(usage) {
       const percent = data.percent ?? 0;
       const isZero = percent === 0;
       const resetsIn = data.resetsIn || '';
+
+      // Use pre-calculated pace data from the usage object
+      const paceData = data.pace || null;
+
       html += '<div class="model-container">';
       html += usageItem(label, percent, '% used', { isZero, agentName: 'claude', resetsIn });
-      html += resetInfoItem(data.resetsIn, data.resetsAt, cycle, isZero);
+      html += resetInfoItem(data.resetsIn, data.resetsAt, cycle, { isZero, paceData });
       html += '</div>';
     }
   }
@@ -141,15 +150,20 @@ function formatClaudeUsage(usage) {
     const extra = usage.extraUsage;
     const percent = extra.percent ?? 0;
     const isZero = percent === 0;
+    const resetsIn = extra.resetsIn || '';
+
+    // Use pre-calculated pace data from the usage object
+    const paceData = extra.pace || null;
+
     const spentLabel = extra.spent != null && extra.budget != null
       ? `$${extra.spent.toFixed(2)} / $${extra.budget.toFixed(2)}`
       : '';
     html += '<div class="model-container">';
-    html += usageItem('Extra', percent, '% used', { isZero, agentName: 'claude', resetsIn: extra.resetsIn || '' });
+    html += usageItem('Extra', percent, '% used', { isZero, agentName: 'claude', resetsIn });
     if (spentLabel) {
       html += `<div class="reset-info"><span class="reset-label">${spentLabel}</span></div>`;
     }
-    html += resetInfoItem(extra.resetsIn, extra.resetsAt, 'weekly', isZero);
+    html += resetInfoItem(extra.resetsIn, extra.resetsAt, 'weekly', { isZero, paceData });
     html += '</div>';
   }
   return html;
@@ -164,9 +178,13 @@ function formatGeminiUsage(usage) {
       // Use lowercase model name with model-name styling
       const modelName = model.model.toLowerCase();
       const resetsIn = model.resetsIn || '';
+
+      // Use pre-calculated pace data from the usage object
+      const paceData = model.pace || null;
+
       html += '<div class="model-container">';
       html += usageItem(modelName, percent, '% used', { isZero, isModelName: true, agentName: 'gemini', resetsIn });
-      html += resetInfoItem(model.resetsIn, null, 'sessionGemini', isZero);
+      html += resetInfoItem(model.resetsIn, null, 'sessionGemini', { isZero, paceData });
       html += '</div>';
     }
   }
@@ -191,18 +209,26 @@ function formatCodexUsage(usage) {
       const fiveHourPercent = ml.fiveHour.percentUsed ?? 0;
       const isZero = fiveHourPercent === 0;
       const resetsIn = ml.fiveHour.resetsIn || '';
+
+      // Use pre-calculated pace data from the usage object
+      const paceData = ml.fiveHour.pace || null;
+
       html += '<div class="model-container nested-container">';
       html += usageItem('5h limit', fiveHourPercent, '% used', { isZero, isNestedMetric: true, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-5h` });
-      html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', isZero);
+      html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', { isZero, paceData });
       html += '</div>';
     }
     if (ml.weekly) {
       const weeklyPercent = ml.weekly.percentUsed ?? 0;
       const isZero = weeklyPercent === 0;
       const resetsIn = ml.weekly.resetsIn || '';
+
+      // Use pre-calculated pace data from the usage object
+      const paceData = ml.weekly.pace || null;
+
       html += '<div class="model-container nested-container">';
       html += usageItem('Weekly', weeklyPercent, '% used', { isZero, isNestedMetric: true, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-weekly` });
-      html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', isZero);
+      html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', { isZero, paceData });
       html += '</div>';
     }
   }
