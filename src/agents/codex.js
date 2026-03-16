@@ -1,13 +1,95 @@
 const { BaseAgent } = require('./base.js');
-const { calculatePace } = require('../pace-evaluator.js');
-const { CYCLE_DURATIONS } = require('../usage-formatters.js');
+const { JsonRpcClient } = require('../json-rpc-client.js');
+const {
+  formatRpcResponseAsOutput,
+  parseRpcRateLimits,
+} = require('./codex-rpc-helpers.js');
+const {
+  parseResetTime,
+  parseLimitEntry,
+  parseVersionInfo,
+  parseModelLimits,
+  extractMetadataFromOutput,
+} = require('./codex-pty-helpers.js');
 
 class CodexAgent extends BaseAgent {
   constructor() {
     super('codex', 'codex');
+    this._rpcClient = null;
+    this._rpcSupported = null; // null = unknown, true/false = tested
   }
 
   getTimeout() { return 25000; }
+
+  /**
+   * Override runCommand to attempt JSON-RPC first, then fall back to PTY
+   */
+  async runCommand() {
+    if (this._rpcSupported === false) {
+      return this._runWithPty();
+    }
+
+    try {
+      const result = await this._runWithJsonRpc();
+      this._rpcSupported = true;
+      return result;
+    } catch (err) {
+      if (this._rpcSupported === null) {
+        console.log(`[${this.name}] JSON-RPC not available, falling back to PTY: ${err.message}`);
+        this._rpcSupported = false;
+      }
+      return this._runWithPty();
+    }
+  }
+
+  /**
+   * Run using JSON-RPC app-server mode
+   */
+  async _runWithJsonRpc() {
+    console.log(`[${this.name}] Attempting JSON-RPC mode...`);
+
+    if (this._rpcClient) {
+      this._rpcClient.stop();
+      this._rpcClient = null;
+    }
+
+    this._rpcClient = new JsonRpcClient('codex', ['-s', 'read-only', '-a', 'untrusted', 'app-server'], {
+      cwd: '/tmp',
+      timeout: this.getTimeout(),
+    });
+
+    try {
+      await this._rpcClient.start();
+      console.log(`[${this.name}] JSON-RPC server started`);
+
+      const rateLimits = await this._rpcClient.call('account/rateLimits/read', {});
+      console.log(`[${this.name}] Received rate limits via JSON-RPC:`, JSON.stringify(rateLimits));
+
+      const { marker, data } = formatRpcResponseAsOutput(rateLimits);
+      this._rpcRateLimits = data;
+      return marker;
+    } finally {
+      if (this._rpcClient) {
+        this._rpcClient.stop();
+        this._rpcClient = null;
+      }
+    }
+  }
+
+  /**
+   * Run using traditional PTY mode
+   */
+  async _runWithPty() {
+    if (this.freshProcess) {
+      return this._runCommandFresh();
+    }
+
+    if (!this.shell || !this.processReady) {
+      await this.spawnProcess();
+    }
+
+    return this.sendCommandAndWait();
+  }
 
   handleTrustPrompt(shell, output) {
     if (!shell) return false;
@@ -30,15 +112,7 @@ class CodexAgent extends BaseAgent {
   }
 
   parseVersionInfo(output) {
-    const clean = this.stripAnsi(output);
-    const versionInfo = {};
-    const updateMatch = clean.match(/([\d.]+)\s*->\s*([\d.]+)/);
-    if (updateMatch) { versionInfo.current = updateMatch[1]; versionInfo.latest = updateMatch[2]; return versionInfo; }
-    const currentMatch = clean.match(/OpenAI Codex[^(]*\(v?([\d.]+)\)/i);
-    if (currentMatch) versionInfo.current = currentMatch[1];
-    const patterns = [/v?([\d.]+)\s*(?:is\s+)?available/i, /new version[:\s]+v?([\d.]+)/i, /update to v?([\d.]+)/i, /latest[:\s]+v?([\d.]+)/i];
-    for (const p of patterns) { const m = clean.match(p); if (m && m[1] !== versionInfo.current) { versionInfo.latest = m[1]; break; } }
-    return Object.keys(versionInfo).length > 0 ? versionInfo : null;
+    return parseVersionInfo(output, this.stripAnsi.bind(this));
   }
 
   isReadyForCommands(output) { return this.isReadyForStatus(output); }
@@ -116,12 +190,10 @@ class CodexAgent extends BaseAgent {
 
       const spawnDataHandler = this.shell.onData((data) => {
         spawnOutput += data;
-
         this.handleInteractivePrompts(this.shell, data, spawnOutput, state);
 
         if (this.isReadyForStatus(spawnOutput)) {
           console.log(`[${this.name}] Process ready for commands`);
-          // Capture version info from spawn output (update screen appears here)
           const versionFromSpawn = this.parseVersionInfo(spawnOutput);
           if (versionFromSpawn) {
             this._spawnVersionInfo = versionFromSpawn;
@@ -180,8 +252,6 @@ class CodexAgent extends BaseAgent {
         }
       }, this.getTimeout());
 
-      // Start retry timer immediately — on first run the model may still
-      // be loading so /status won't return limits yet
       retryTimer = setInterval(() => {
         if (!this.hasCompleteOutput(this.output) && this.shell) {
           console.log(`[${this.name}] Retrying /status...`);
@@ -192,7 +262,6 @@ class CodexAgent extends BaseAgent {
 
       this._onDataCallback = () => {
         if (this.hasCompleteOutput(this.output)) {
-          // Delay to let additional model sections render
           if (!settleTimer) {
             console.log(`[${this.name}] Complete output detected, waiting to settle...`);
             settleTimer = setTimeout(() => finish(this.output), 200);
@@ -210,76 +279,38 @@ class CodexAgent extends BaseAgent {
   }
 
   parseResetTime(resetStr) {
-    if (!resetStr) return null;
-
-    const now = new Date();
-    let resetDate;
-
-    // Format: "HH:MM" (today) or "HH:MM on DD Mon"
-    const timeOnDateMatch = resetStr.match(/(\d{1,2}):(\d{2})\s*on\s*(\d{1,2})\s*(\w+)/i);
-    const timeOnlyMatch = resetStr.match(/^(\d{1,2}):(\d{2})$/);
-
-    if (timeOnDateMatch) {
-      const [, hours, minutes, day, month] = timeOnDateMatch;
-      const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-      const monthIndex = monthNames.indexOf(month.toLowerCase().substring(0, 3));
-      resetDate = new Date(now.getFullYear(), monthIndex, parseInt(day), parseInt(hours), parseInt(minutes));
-      // If the date is in the past, it's next year
-      if (resetDate < now) {
-        resetDate.setFullYear(resetDate.getFullYear() + 1);
-      }
-    } else if (timeOnlyMatch) {
-      const [, hours, minutes] = timeOnlyMatch;
-      resetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(hours), parseInt(minutes));
-      // If time is in the past, it's tomorrow
-      if (resetDate < now) {
-        resetDate.setDate(resetDate.getDate() + 1);
-      }
-    } else {
-      return { text: resetStr, seconds: null }; // Return original if can't parse
-    }
-
-    const diffMs = resetDate - now;
-    if (diffMs <= 0) return { text: 'soon', seconds: 0 };
-
-    const diffSeconds = Math.floor(diffMs / 1000);
-    const diffMins = Math.floor(diffSeconds / 60);
-    const hours = Math.floor(diffMins / 60);
-    const mins = diffMins % 60;
-
-    let text;
-    if (hours > 24) {
-      const days = Math.floor(hours / 24);
-      const remainingHours = hours % 24;
-      text = `${days}d ${remainingHours}h`;
-    } else if (hours > 0) {
-      text = `${hours}h ${mins}m`;
-    } else {
-      text = `${mins}m`;
-    }
-
-    return { text, seconds: diffSeconds };
+    return parseResetTime(resetStr);
   }
 
   parseLimitEntry(match, label, cycleType) {
-    const percentLeft = parseFloat(match[1]), resetsAt = match[2].trim();
-    const resetData = this.parseResetTime(resetsAt), percentUsed = 100 - percentLeft;
-    const resetsInSeconds = resetData?.seconds || null;
-    const entry = { percentLeft, resetsAt, label, percentUsed, resetsIn: resetData?.text || null, resetsInSeconds };
-    const cycleDuration = CYCLE_DURATIONS[cycleType];
-    if (cycleDuration && resetsInSeconds != null) {
-      const paceData = calculatePace({ usagePercent: percentUsed, resetsInSeconds, cycleDurationSeconds: cycleDuration });
-      if (paceData) entry.pace = paceData;
-    }
-    return entry;
+    return parseLimitEntry(match, label, cycleType);
   }
 
   parseOutput(output) {
+    // Check if this is an RPC response marker
+    if (output === '__RPC_RESPONSE__' && this._rpcRateLimits) {
+      const context = {
+        versionInfo: this._spawnVersionInfo || null,
+        parseResetTime: this.parseResetTime.bind(this),
+      };
+      const { usage, metadataUpdates } = parseRpcRateLimits(this._rpcRateLimits, context);
+      this._rpcRateLimits = null;
+
+      // Apply metadata updates
+      if (!this.metadata) this.metadata = {};
+      Object.assign(this.metadata, metadataUpdates);
+
+      return usage;
+    }
+
     const clean = this.stripAnsi(output);
     const usage = {
       fiveHour: null,
       weekly: null,
-      version: (() => { const v = { ...this._spawnVersionInfo, ...this.parseVersionInfo(output) }; return Object.keys(v).length > 0 ? v : null; })(),
+      version: (() => {
+        const v = { ...this._spawnVersionInfo, ...this.parseVersionInfo(output) };
+        return Object.keys(v).length > 0 ? v : null;
+      })(),
     };
 
     const fiveHourMatch = clean.match(/5h limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i);
@@ -292,44 +323,11 @@ class CodexAgent extends BaseAgent {
       usage.weekly = this.parseLimitEntry(weeklyMatch, 'Weekly limit', 'weekly');
     }
 
-    // Parse model-specific limit sections (e.g. "GPT-5.3-Codex-Spark limit:")
-    const modelHeaderRegex = /([\w][\w.-]+)\s+limit:\s*[│╮╯]?/gi;
-    const limitRegex = /5h limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i;
-    const weeklyLimitRegex = /Weekly limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i;
-
-    const modelLimits = [];
-    let headerMatch;
-    while ((headerMatch = modelHeaderRegex.exec(clean)) !== null) {
-      const name = headerMatch[1];
-      if (/^(5h|Weekly)$/i.test(name)) continue;
-
-      const sectionStart = headerMatch.index + headerMatch[0].length;
-      const remaining = clean.substring(sectionStart);
-      const nextHeader = remaining.search(/[\w][\w.-]*-[\w.-]+\s+limit:/i);
-      const endBox = remaining.indexOf('╰');
-      let sectionEnd = remaining.length;
-      if (nextHeader > 0 && (endBox < 0 || nextHeader < endBox)) sectionEnd = nextHeader;
-      else if (endBox > 0) sectionEnd = endBox;
-      const content = remaining.substring(0, sectionEnd);
-
-      const entry = { name };
-      const fh = content.match(limitRegex);
-      if (fh) {
-        entry.fiveHour = this.parseLimitEntry(fh, '5h limit', 'fiveHour');
-      }
-      const wk = content.match(weeklyLimitRegex);
-      if (wk) {
-        entry.weekly = this.parseLimitEntry(wk, 'Weekly limit', 'weekly');
-      }
-      if (entry.fiveHour || entry.weekly) {
-        modelLimits.push(entry);
-      }
-    }
+    const modelLimits = parseModelLimits(clean);
     if (modelLimits.length > 0) {
       usage.modelLimits = modelLimits;
     }
 
-    // Extract model and account for backward compatibility (also in metadata)
     const modelMatch = clean.match(/Model:\s*([\w.-]+)/i);
     if (modelMatch) {
       usage.model = this.stripBoxChars(modelMatch[1]);
@@ -340,47 +338,31 @@ class CodexAgent extends BaseAgent {
       usage.account = this.stripBoxChars(accountMatch[1]);
     }
 
-    // Update metadata with latest values from status output
     this._updateMetadataFromOutput(clean);
 
     return usage;
   }
 
-  // Extract metadata from /status output
   _updateMetadataFromOutput(clean) {
-    if (!this.metadata) {
-      this.metadata = {};
-    }
+    if (!this.metadata) this.metadata = {};
+    const extracted = extractMetadataFromOutput(clean, this.stripBoxChars.bind(this));
+    Object.assign(this.metadata, extracted);
+  }
 
-    // Extract directory/cwd
-    const dirMatch = clean.match(/(?:Directory|Working directory|Cwd|Current directory):\s*([^\n│]+)/i);
-    if (dirMatch) {
-      this.metadata.directory = this.stripBoxChars(dirMatch[1]);
-    }
+  get usingJsonRpc() {
+    return this._rpcSupported;
+  }
 
-    // Extract session ID
-    const sessionMatch = clean.match(/Session(?:\s+ID)?:\s*([a-f0-9-]+)/i);
-    if (sessionMatch) {
-      this.metadata.sessionId = this.stripBoxChars(sessionMatch[1]);
-    }
+  setRpcMode(useRpc) {
+    this._rpcSupported = useRpc;
+  }
 
-    // Extract collaboration mode (solo/team/etc)
-    const collabMatch = clean.match(/(?:Collaboration|Mode):\s*(\w+)/i);
-    if (collabMatch) {
-      this.metadata.collaborationMode = this.stripBoxChars(collabMatch[1]);
+  killProcess() {
+    if (this._rpcClient) {
+      this._rpcClient.stop();
+      this._rpcClient = null;
     }
-
-    // Extract model
-    const modelMatch = clean.match(/Model:\s*([\w.-]+)/i);
-    if (modelMatch) {
-      this.metadata.model = this.stripBoxChars(modelMatch[1]);
-    }
-
-    // Extract account/email
-    const accountMatch = clean.match(/Account:\s*(\S+@\S+)/i);
-    if (accountMatch) {
-      this.metadata.email = this.stripBoxChars(accountMatch[1]);
-    }
+    super.killProcess();
   }
 }
 

@@ -389,11 +389,24 @@ watcher.stop();
 
 Agent Tank is designed with privacy and security as core principles. Understanding how it collects usage data is essential for users evaluating the tool's security posture.
 
-#### Local PTY-Based Architecture
+#### Local Execution Architecture
 
-The tool operates entirely on your local machine by spawning instances of LLM CLI tools within a pseudo-terminal (PTY). This approach is functionally equivalent to you opening a terminal window and typing commands yourself—Agent Tank simply automates this process.
+The tool operates entirely on your local machine using two different approaches depending on the CLI tool's capabilities:
 
-Here's what happens when Agent Tank queries your usage:
+**JSON-RPC Mode (Codex)**
+
+For the Codex CLI, Agent Tank uses a structured JSON-RPC protocol when available:
+
+1. **Starts the app-server** - Launches `codex -s read-only -a untrusted app-server`
+2. **Sends JSON-RPC requests** - Calls `account/rateLimits/read` via stdin
+3. **Receives structured data** - Parses JSON responses with precise rate limit information
+4. **Falls back to PTY** - Automatically uses PTY mode if JSON-RPC is unavailable (older CLI versions)
+
+This approach provides more reliable data parsing and is the preferred method for Codex.
+
+**PTY-Based Mode (Claude, Gemini, Codex fallback)**
+
+For other CLI tools (and as a fallback for Codex), Agent Tank spawns instances within a pseudo-terminal (PTY). This approach is functionally equivalent to you opening a terminal window and typing commands yourself:
 
 1. **Spawns a local PTY** - Creates a pseudo-terminal session on your machine
 2. **Launches the CLI tool** - Starts the authenticated CLI (e.g., `claude`, `gemini`, or `codex`)
@@ -417,11 +430,12 @@ LLM usage data is sensitive—it can reveal work patterns, subscription tiers, a
 
 #### Supported Commands
 
-| Agent | Command | Output |
-|-------|---------|--------|
-| Claude | `/usage` | Session %, Weekly % |
-| Gemini | `/stats` | Model-specific usage % |
-| Codex | `/status` | 5h limit %, Weekly % |
+| Agent | Method | Command/RPC | Output |
+|-------|--------|-------------|--------|
+| Claude | PTY | `/usage` | Session %, Weekly % |
+| Gemini | PTY | `/stats` | Model-specific usage % |
+| Codex | JSON-RPC | `account/rateLimits/read` | 5h limit %, Weekly % |
+| Codex | PTY (fallback) | `/status` | 5h limit %, Weekly % |
 
 ## Troubleshooting
 
