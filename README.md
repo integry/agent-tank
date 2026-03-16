@@ -28,6 +28,12 @@ agent-tank --claude --gemini
 
 # Use a custom port (default: 3456)
 agent-tank --port 8080
+
+# Fetch usage once and exit (no HTTP server)
+agent-tank --once
+
+# Output pure JSON for scripting/piping
+agent-tank --once --json
 ```
 
 ### Command Line Options
@@ -47,6 +53,8 @@ Options:
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60)
+  --once                Fetch usage once and exit (no HTTP server)
+  --json                Output pure JSON (suppress logging, use with --once)
   --help, -h            Show this help message
 ```
 

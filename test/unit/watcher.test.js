@@ -74,6 +74,10 @@ describe('AgentTank', () => {
       it('initializes lastRefreshedAt as null', () => {
         expect(tank.lastRefreshedAt).toBeNull();
       });
+
+      it('disables skipServer by default', () => {
+        expect(tank.skipServer).toBe(false);
+      });
     });
 
     describe('with specific options', () => {
@@ -130,6 +134,11 @@ describe('AgentTank', () => {
         expect(tank.autoRefresh.interval).toBe(0);
       });
 
+      it('enables skipServer when set to true', () => {
+        const tank = new AgentTank({ skipServer: true });
+        expect(tank.skipServer).toBe(true);
+      });
+
       it('combines multiple options correctly', () => {
         const tank = new AgentTank({
           port: 9999,
@@ -139,7 +148,8 @@ describe('AgentTank', () => {
           freshProcess: true,
           autoRefreshEnabled: false,
           autoRefreshInterval: 300,
-          auth: { token: 'abc123' }
+          auth: { token: 'abc123' },
+          skipServer: true
         });
 
         expect(tank.port).toBe(9999);
@@ -150,6 +160,7 @@ describe('AgentTank', () => {
         expect(tank.autoRefresh.enabled).toBe(false);
         expect(tank.autoRefresh.interval).toBe(300);
         expect(tank.auth).toEqual({ token: 'abc123' });
+        expect(tank.skipServer).toBe(true);
       });
     });
   });
