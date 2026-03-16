@@ -10,25 +10,21 @@ class CodexAgent extends BaseAgent {
   getTimeout() { return 25000; }
 
   handleTrustPrompt(shell, output) {
-    const trustPatterns = ['Do you trust', 'trust the files', 'trust this folder', 'Trust this workspace', 'allow access'];
-    if (trustPatterns.some(p => output.toLowerCase().includes(p.toLowerCase()))) {
-      console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
-      shell.write('y\r');
-      setTimeout(() => { console.log(`[${this.name}] Sending Enter to proceed...`); shell.write('\r'); }, 500);
-      return true;
-    }
-    return false;
+    const patterns = ['Do you trust', 'trust the files', 'trust this folder', 'Trust this workspace', 'allow access'];
+    if (!patterns.some(p => output.toLowerCase().includes(p.toLowerCase()))) return false;
+    console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
+    shell.write('y\r');
+    setTimeout(() => { console.log(`[${this.name}] Sending Enter to proceed...`); shell.write('\r'); }, 500);
+    return true;
   }
 
   handleUpdateScreen(shell, output) {
     const clean = this.stripAnsi(output);
-    if (/u?pdate available/i.test(clean) && /[\d.]+\s*->\s*[\d.]+/.test(clean) && /skip/i.test(clean)) {
-      console.log(`[${this.name}] Detected update screen, selecting '2' to skip...`);
-      shell.write('2');
-      setTimeout(() => shell.write('\r'), 300);
-      return true;
-    }
-    return false;
+    if (!(/u?pdate available/i.test(clean) && /[\d.]+\s*->\s*[\d.]+/.test(clean) && /skip/i.test(clean))) return false;
+    console.log(`[${this.name}] Detected update screen, selecting '2' to skip...`);
+    shell.write('2');
+    setTimeout(() => shell.write('\r'), 300);
+    return true;
   }
 
   parseVersionInfo(output) {
@@ -261,34 +257,15 @@ class CodexAgent extends BaseAgent {
   }
 
   parseLimitEntry(match, label, cycleType) {
-    const percentLeft = parseFloat(match[1]);
-    const resetsAt = match[2].trim();
-    const resetData = this.parseResetTime(resetsAt);
-    const percentUsed = 100 - percentLeft;
+    const percentLeft = parseFloat(match[1]), resetsAt = match[2].trim();
+    const resetData = this.parseResetTime(resetsAt), percentUsed = 100 - percentLeft;
     const resetsInSeconds = resetData?.seconds || null;
-
-    const entry = {
-      percentLeft,
-      resetsAt,
-      label,
-      percentUsed,
-      resetsIn: resetData?.text || null,
-      resetsInSeconds,
-    };
-
-    // Calculate pace data
+    const entry = { percentLeft, resetsAt, label, percentUsed, resetsIn: resetData?.text || null, resetsInSeconds };
     const cycleDuration = CYCLE_DURATIONS[cycleType];
     if (cycleDuration && resetsInSeconds != null) {
-      const paceData = calculatePace({
-        usagePercent: percentUsed,
-        resetsInSeconds,
-        cycleDurationSeconds: cycleDuration
-      });
-      if (paceData) {
-        entry.pace = paceData;
-      }
+      const paceData = calculatePace({ usagePercent: percentUsed, resetsInSeconds, cycleDurationSeconds: cycleDuration });
+      if (paceData) entry.pace = paceData;
     }
-
     return entry;
   }
 

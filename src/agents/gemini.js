@@ -88,6 +88,14 @@ class GeminiAgent extends BaseAgent {
     setTimeout(() => shell.write('\r'), 1000);
   }
 
+  // Calculate pace data for a model entry (Gemini uses 24h sessions)
+  _addPaceData(entry, resetsInSeconds) {
+    const cycleDuration = CYCLE_DURATIONS.sessionGemini;
+    if (!cycleDuration || resetsInSeconds == null) return;
+    const paceData = calculatePace({ usagePercent: entry.percentUsed, resetsInSeconds, cycleDurationSeconds: cycleDuration });
+    if (paceData) entry.pace = paceData;
+  }
+
   parseOutput(output) {
     const clean = this.stripAnsi(output);
     const usage = {
@@ -110,28 +118,8 @@ class GeminiAgent extends BaseAgent {
 
         // Avoid duplicates
         if (!usage.models.find(m => m.model === model)) {
-          const modelEntry = {
-            model,
-            usageLeft,
-            resetsIn,
-            // Normalized fields for consistent display
-            percentUsed,
-            resetsInSeconds,
-          };
-
-          // Calculate pace data for this model (Gemini uses 24h sessions)
-          const cycleDuration = CYCLE_DURATIONS.sessionGemini;
-          if (cycleDuration && resetsInSeconds != null) {
-            const paceData = calculatePace({
-              usagePercent: percentUsed,
-              resetsInSeconds,
-              cycleDurationSeconds: cycleDuration
-            });
-            if (paceData) {
-              modelEntry.pace = paceData;
-            }
-          }
-
+          const modelEntry = { model, usageLeft, resetsIn, percentUsed, resetsInSeconds };
+          this._addPaceData(modelEntry, resetsInSeconds);
           usage.models.push(modelEntry);
         }
       }

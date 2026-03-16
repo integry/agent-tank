@@ -1,6 +1,6 @@
 const { BaseAgent } = require('./base.js');
 const { calculatePace } = require('../pace-evaluator.js');
-const { CYCLE_DURATIONS, parseResetsInToSeconds } = require('../usage-formatters.js');
+const { CYCLE_DURATIONS } = require('../usage-formatters.js');
 
 class ClaudeAgent extends BaseAgent {
   constructor() {
@@ -24,14 +24,12 @@ class ClaudeAgent extends BaseAgent {
   }
 
   handleTrustPrompt(shell, output) {
-    const trustPatterns = ['Do you trust', 'trust the files', 'trust this folder', 'Trust this workspace', 'allow access'];
-    if (trustPatterns.some(pattern => output.toLowerCase().includes(pattern.toLowerCase()))) {
-      console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
-      shell.write('y\r');
-      setTimeout(() => { console.log(`[${this.name}] Sending Enter to proceed...`); shell.write('\r'); }, 500);
-      return true;
-    }
-    return false;
+    const patterns = ['Do you trust', 'trust the files', 'trust this folder', 'Trust this workspace', 'allow access'];
+    if (!patterns.some(p => output.toLowerCase().includes(p.toLowerCase()))) return false;
+    console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
+    shell.write('y\r');
+    setTimeout(() => { console.log(`[${this.name}] Sending Enter to proceed...`); shell.write('\r'); }, 500);
+    return true;
   }
 
   hasCompleteOutput(output) {
@@ -79,12 +77,8 @@ class ClaudeAgent extends BaseAgent {
 
   // Format duration from seconds to readable text
   _formatDuration(diffSeconds) {
-    const diffMins = Math.floor(diffSeconds / 60);
-    const hours = Math.floor(diffMins / 60);
-    const mins = diffMins % 60;
-    if (hours > 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
-    if (hours > 0) return `${hours}h ${mins}m`;
-    return `${mins}m`;
+    const mins = Math.floor(diffSeconds / 60), hours = Math.floor(mins / 60), m = mins % 60;
+    return hours > 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : hours > 0 ? `${hours}h ${m}m` : `${m}m`;
   }
 
   // Parse date with time: "Jan 22, 1pm" or date-only: "Apr 1"
@@ -136,41 +130,23 @@ class ClaudeAgent extends BaseAgent {
 
   sendCommands(shell, _output) {
     console.log(`[${this.name}] Sending /usage command...`);
-    // Escape dismisses any previous output/UI, then type command + Enter.
-    // Need sufficient delay after Escape for Claude Code to fully process
-    // the dialog dismissal and return to a clean prompt state.
-    if (this.freshProcess) {
-      setTimeout(() => shell.write('\x1b'), 50);
-      setTimeout(() => shell.write('/usage'), 600);
-      setTimeout(() => shell.write('\r'), 1000);
-    } else {
-      setTimeout(() => shell.write('\x1b'), 50);
-      setTimeout(() => shell.write('/usage'), 600);
-      setTimeout(() => shell.write('\r'), 1000);
-    }
+    // Escape dismisses any previous output/UI, then type command + Enter
+    setTimeout(() => shell.write('\x1b'), 50);
+    setTimeout(() => shell.write('/usage'), 600);
+    setTimeout(() => shell.write('\r'), 1000);
   }
 
-  // After getting /usage output, dismiss the dialog so the next refresh
-  // starts with a clean prompt (prevents "Status dialog dismissed" cascade).
+  // After getting /usage output, dismiss dialog so next refresh starts with clean prompt
   async sendCommandAndWait() {
     const result = await super.sendCommandAndWait();
-    if (this.shell) {
-      this.shell.write('\x1b');
-      // Wait for Claude Code to process the dismissal and return to prompt
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      // Clear accumulated dismissal output so it doesn't pollute the next command
-      this.output = '';
-    }
+    if (this.shell) { this.shell.write('\x1b'); await new Promise(r => setTimeout(r, 1000)); this.output = ''; }
     return result;
   }
 
   // Extract section between two regex patterns from text
   _extractSection(text, start, end) {
-    const regex = end
-      ? new RegExp(`${start}([\\s\\S]*?)(?=${end}|$)`, 'i')
-      : new RegExp(`${start}([\\s\\S]*)$`, 'i');
-    const match = text.match(regex);
-    return match ? match[1] : null;
+    const regex = end ? new RegExp(`${start}([\\s\\S]*?)(?=${end}|$)`, 'i') : new RegExp(`${start}([\\s\\S]*)$`, 'i');
+    return text.match(regex)?.[1] || null;
   }
 
   // Extract reset time string from a section (handles PTY corruption)
@@ -199,12 +175,8 @@ class ClaudeAgent extends BaseAgent {
     if (!section) return null;
     const percentMatch = section.match(/(\d+)\s*%\s*used/i);
     if (!percentMatch) return null;
-    const resetsAt = this._extractResetTime(section);
-    const resetData = resetsAt ? this.parseResetTime(resetsAt) : null;
-    return {
-      percent: parseFloat(percentMatch[1]), resetsAt,
-      resetsIn: resetData?.text || null, resetsInSeconds: resetData?.seconds || null,
-    };
+    const resetsAt = this._extractResetTime(section), resetData = resetsAt ? this.parseResetTime(resetsAt) : null;
+    return { percent: parseFloat(percentMatch[1]), resetsAt, resetsIn: resetData?.text || null, resetsInSeconds: resetData?.seconds || null };
   }
 
   // Parse extra usage section with budget info
@@ -241,20 +213,10 @@ class ClaudeAgent extends BaseAgent {
   // Calculate pace data for a usage section
   _addPaceData(sectionData, cycleType) {
     if (!sectionData || sectionData.resetsInSeconds == null) return sectionData;
-
     const cycleDuration = CYCLE_DURATIONS[cycleType];
     if (!cycleDuration) return sectionData;
-
-    const paceData = calculatePace({
-      usagePercent: sectionData.percent ?? 0,
-      resetsInSeconds: sectionData.resetsInSeconds,
-      cycleDurationSeconds: cycleDuration
-    });
-
-    if (paceData) {
-      sectionData.pace = paceData;
-    }
-
+    const paceData = calculatePace({ usagePercent: sectionData.percent ?? 0, resetsInSeconds: sectionData.resetsInSeconds, cycleDurationSeconds: cycleDuration });
+    if (paceData) sectionData.pace = paceData;
     return sectionData;
   }
 
@@ -362,12 +324,8 @@ class ClaudeAgent extends BaseAgent {
 
   _hasCompleteStatusOutput(output) {
     const clean = this.stripAnsi(output);
-    // /status output typically contains session info and prompt
     const hasSessionInfo = /session/i.test(clean) || /working directory|cwd/i.test(clean);
-    const hasPrompt = clean.includes('? for shortcuts') ||
-                      clean.includes('❯') ||
-                      clean.includes('> ') ||
-                      clean.includes('esc to');
+    const hasPrompt = ['? for shortcuts', '❯', '> ', 'esc to'].some(p => clean.includes(p));
     return hasSessionInfo && hasPrompt;
   }
 
