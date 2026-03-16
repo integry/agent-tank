@@ -78,6 +78,18 @@ describe('AgentTank', () => {
       it('disables skipServer by default', () => {
         expect(tank.skipServer).toBe(false);
       });
+
+      it('enables keepalive by default', () => {
+        expect(tank.keepalive.enabled).toBe(true);
+      });
+
+      it('sets default keepalive interval to 300 seconds', () => {
+        expect(tank.keepalive.interval).toBe(300);
+      });
+
+      it('initializes keepaliveManager as null', () => {
+        expect(tank.keepaliveManager).toBeNull();
+      });
     });
 
     describe('with specific options', () => {
@@ -137,6 +149,21 @@ describe('AgentTank', () => {
       it('enables skipServer when set to true', () => {
         const tank = new AgentTank({ skipServer: true });
         expect(tank.skipServer).toBe(true);
+      });
+
+      it('disables keepalive when keepaliveEnabled is false', () => {
+        const tank = new AgentTank({ keepaliveEnabled: false });
+        expect(tank.keepalive.enabled).toBe(false);
+      });
+
+      it('accepts custom keepalive interval', () => {
+        const tank = new AgentTank({ keepaliveInterval: 600 });
+        expect(tank.keepalive.interval).toBe(600);
+      });
+
+      it('accepts zero keepalive interval (disabled)', () => {
+        const tank = new AgentTank({ keepaliveInterval: 0 });
+        expect(tank.keepalive.interval).toBe(0);
       });
 
       it('combines multiple options correctly', () => {
@@ -403,6 +430,49 @@ describe('AgentTank', () => {
       tank.stop();
 
       expect(tank.agentRefreshTimers.size).toBe(0);
+    });
+
+    it('stops keepalive manager if running', () => {
+      // Simulate a running keepalive manager
+      tank.keepaliveManager = {
+        stop: jest.fn()
+      };
+
+      tank.stop();
+
+      expect(tank.keepaliveManager).toBeNull();
+    });
+  });
+
+  describe('getKeepaliveStatus', () => {
+    let tank;
+
+    beforeEach(() => {
+      tank = new AgentTank();
+    });
+
+    it('returns default status when manager not initialized', () => {
+      const status = tank.getKeepaliveStatus();
+
+      expect(status).toEqual({
+        enabled: true,
+        interval: 300,
+        isRunning: false,
+        registeredAgents: [],
+        lastKeepaliveAt: null,
+      });
+    });
+
+    it('returns custom config values when manager not initialized', () => {
+      const customTank = new AgentTank({
+        keepaliveEnabled: false,
+        keepaliveInterval: 600,
+      });
+
+      const status = customTank.getKeepaliveStatus();
+
+      expect(status.enabled).toBe(false);
+      expect(status.interval).toBe(600);
     });
   });
 });

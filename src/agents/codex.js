@@ -364,6 +364,39 @@ class CodexAgent extends BaseAgent {
     }
     super.killProcess();
   }
+
+  /**
+   * Lightweight keepalive to prevent session expiration.
+   * For Codex, this maintains the PTY session.
+   *
+   * @returns {Promise<boolean>} True if keepalive succeeded
+   */
+  async keepalive() {
+    // In JSON-RPC mode, there's no persistent session to keep alive
+    if (this._rpcSupported === true) {
+      console.log(`[${this.name}] Keepalive skipped (JSON-RPC mode)`);
+      return true;
+    }
+
+    if (this.freshProcess) {
+      console.log(`[${this.name}] Keepalive skipped (fresh process mode)`);
+      return true;
+    }
+
+    if (!this.shell || !this.processReady) {
+      console.log(`[${this.name}] Keepalive: spawning process...`);
+      await this.spawnProcess();
+    }
+
+    if (this.shell) {
+      console.log(`[${this.name}] Keepalive: sending ping...`);
+      // Send escape key to dismiss any UI and trigger activity
+      this.shell.write('\x1b');
+      return true;
+    }
+
+    return false;
+  }
 }
 
 module.exports = { CodexAgent };

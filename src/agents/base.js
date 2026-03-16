@@ -378,6 +378,38 @@ class BaseAgent {
   hasCompleteOutput(_o) { return false; }
   sendCommands(_s, _o) { }
   parseOutput(_o) { return null; }
+
+  /**
+   * Lightweight keepalive method to prevent session expiration.
+   * Sends a minimal command to keep the session active.
+   * Subclasses can override for agent-specific behavior.
+   *
+   * @returns {Promise<boolean>} True if keepalive succeeded
+   */
+  async keepalive() {
+    // Default implementation: ensure process is spawned and ready
+    // This maintains the PTY connection which keeps the session alive
+    if (this.freshProcess) {
+      // In fresh process mode, nothing to keep alive
+      console.log(`[${this.name}] Keepalive skipped (fresh process mode)`);
+      return true;
+    }
+
+    if (!this.shell || !this.processReady) {
+      console.log(`[${this.name}] Keepalive: spawning process...`);
+      await this.spawnProcess();
+    }
+
+    // Send a lightweight command (escape key) to trigger activity
+    // This prevents session timeout without generating output
+    if (this.shell) {
+      console.log(`[${this.name}] Keepalive: sending ping...`);
+      this.shell.write('\x1b'); // Escape key - clears any pending UI state
+      return true;
+    }
+
+    return false;
+  }
   /* eslint-disable no-control-regex */
   static ANSI_CURSOR_RIGHT = /\x1B\[(\d+)C/g;
   static ANSI_ESCAPE_SEQ = /\x1B\[[0-9;?]*[a-zA-Z]/g;

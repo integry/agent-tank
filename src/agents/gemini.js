@@ -255,6 +255,33 @@ class GeminiAgent extends BaseAgent {
 
     return Object.keys(metadata).length > 0 ? metadata : null;
   }
+
+  /**
+   * Lightweight keepalive to prevent session expiration.
+   * Sends escape key to maintain the PTY session without triggering API calls.
+   *
+   * @returns {Promise<boolean>} True if keepalive succeeded
+   */
+  async keepalive() {
+    if (this.freshProcess) {
+      console.log(`[${this.name}] Keepalive skipped (fresh process mode)`);
+      return true;
+    }
+
+    if (!this.shell || !this.processReady) {
+      console.log(`[${this.name}] Keepalive: spawning process...`);
+      await this.spawnProcess();
+    }
+
+    if (this.shell) {
+      console.log(`[${this.name}] Keepalive: sending ping...`);
+      // Send escape key to dismiss any UI and trigger activity
+      this.shell.write('\x1b');
+      return true;
+    }
+
+    return false;
+  }
 }
 
 module.exports = { GeminiAgent };
