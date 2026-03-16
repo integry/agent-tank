@@ -364,6 +364,15 @@ class CodexAgent extends BaseAgent {
     }
     super.killProcess();
   }
+
+  /** Lightweight keepalive to prevent session expiration. @returns {Promise<boolean>} True if keepalive succeeded */
+  async keepalive() {
+    if (this._rpcSupported === true) { console.log(`[${this.name}] Keepalive skipped (JSON-RPC mode)`); return true; }
+    if (this.freshProcess) { console.log(`[${this.name}] Keepalive skipped (fresh process mode)`); return true; }
+    if (!this.shell || !this.processReady) { console.log(`[${this.name}] Keepalive: spawning process...`); await this.spawnProcess(); }
+    if (this.shell) { console.log(`[${this.name}] Keepalive: sending ping...`); this.shell.write('\x1b'); return true; }
+    return false;
+  }
 }
 
 module.exports = { CodexAgent };

@@ -53,6 +53,8 @@ Options:
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60)
+  --keepalive           Enable/disable session keepalive (default: true)
+  --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300)
   --history-retention-days <days>    Days to retain usage history (default: 14)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
@@ -72,6 +74,8 @@ Environment variables override CLI flags and config file settings:
 | `AGENT_TANK_FRESH_PROCESS` | Use fresh process per refresh (`1` or `true`) |
 | `AGENT_TANK_AUTO_REFRESH` | Enable/disable background auto-refresh (`1`/`true` or `0`/`false`) |
 | `AGENT_TANK_AUTO_REFRESH_INTERVAL` | Auto-refresh interval in seconds |
+| `AGENT_TANK_KEEPALIVE` | Enable/disable session keepalive (`1`/`true` or `0`/`false`) |
+| `AGENT_TANK_KEEPALIVE_INTERVAL` | Session keepalive interval in seconds (default: 300) |
 | `AGENT_TANK_HISTORY_RETENTION_DAYS` | Days to retain usage history (default: 14) |
 
 ### Configuration File
@@ -93,6 +97,36 @@ You can use a JSON configuration file:
 ```bash
 agent-tank -c config.json
 ```
+
+## Session Keepalive
+
+Agent Tank includes an automatic session keepalive feature that prevents LLM CLI sessions from expiring due to inactivity. This is especially useful for Claude and Codex, which have session timeouts that require periodic activity.
+
+### How It Works
+
+The keepalive manager runs in the background and periodically sends lightweight "ping" commands to each agent's PTY session. This maintains the connection without triggering API calls or affecting rate limits.
+
+### Configuration
+
+```bash
+# Use default keepalive (every 5 minutes)
+agent-tank
+
+# Custom keepalive interval (every 10 minutes)
+agent-tank --keepalive-interval 600
+
+# Disable keepalive
+agent-tank --no-keepalive
+
+# Via environment variable
+AGENT_TANK_KEEPALIVE_INTERVAL=600 agent-tank
+```
+
+### Notes
+
+- Keepalive is automatically disabled in fresh process mode (`--fresh-process`) since there are no persistent sessions to maintain
+- Keepalive is also disabled in one-shot mode (`--once`)
+- The feature only affects PTY-based sessions; JSON-RPC mode (used by Codex when available) doesn't require keepalive
 
 ## Usage History & Pace Evaluation
 

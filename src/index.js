@@ -8,6 +8,7 @@ const { HistoryStore, DEFAULT_RETENTION_DAYS } = require('./history-store.js');
 const { extractSnapshotMetrics } = require('./snapshot-metrics.js');
 const { attachPaceEvaluation } = require('./pace-attachment.js');
 const { handleRequest } = require('./http-handler.js');
+const { KeepaliveManager } = require('./keepalive-manager.js');
 
 class AgentTank {
   constructor(options = {}) {
@@ -36,6 +37,13 @@ class AgentTank {
     this.historyStore = new HistoryStore({
       retentionDays: this.historyRetentionDays
     });
+
+    // Keepalive manager for session maintenance
+    this.keepalive = {
+      enabled: options.keepaliveEnabled !== false, // Default: true
+      interval: options.keepaliveInterval ?? 300,  // Default: 5 minutes (300 seconds)
+    };
+    this.keepaliveManager = null;
   }
 
   async start() {
@@ -97,8 +105,22 @@ class AgentTank {
     // Start backend auto-refresh if enabled (skip in one-shot mode)
     if (!this.skipServer) {
       this.startAutoRefresh();
+      this.startKeepalive();
     }
   }
+
+  /** Start the keepalive manager to maintain agent sessions. */
+  startKeepalive() {
+    this.stopKeepalive();
+    if (!this.keepalive.enabled || this.keepalive.interval <= 0) { console.log('Session keepalive: disabled'); return; }
+    if (this.freshProcess) { console.log('Session keepalive: disabled (fresh process mode)'); return; }
+    this.keepaliveManager = new KeepaliveManager({ enabled: this.keepalive.enabled, interval: this.keepalive.interval });
+    for (const [name, agent] of this.agents) { this.keepaliveManager.register(name, agent); }
+    this.keepaliveManager.start(); console.log(`Session keepalive: every ${this.keepalive.interval}s`);
+  }
+
+  /** Stop the keepalive manager. */
+  stopKeepalive() { if (this.keepaliveManager) { this.keepaliveManager.stop(); this.keepaliveManager = null; } }
 
   startAutoRefresh() {
     // Stop any existing timers
@@ -350,12 +372,19 @@ class AgentTank {
 
   stop() {
     this.stopAutoRefresh();
+    this.stopKeepalive();
     for (const agent of this.agents.values()) {
       agent.killProcess();
     }
     if (this.server) {
       this.server.close();
     }
+  }
+
+  /** Get keepalive status. @returns {Object|null} Keepalive manager status or null if not initialized */
+  getKeepaliveStatus() {
+    if (this.keepaliveManager) return this.keepaliveManager.getStatus();
+    return { enabled: this.keepalive.enabled, interval: this.keepalive.interval, isRunning: false, registeredAgents: [], lastKeepaliveAt: null };
   }
 }
 

@@ -19,6 +19,8 @@ const options = {
   'auto-refresh': { type: 'boolean', default: true },
   'auto-refresh-interval': { type: 'string', default: '60' },
   'history-retention-days': { type: 'string', default: '14' },
+  'keepalive': { type: 'boolean', default: true },
+  'keepalive-interval': { type: 'string', default: '300' },
   once: { type: 'boolean', default: false },
   json: { type: 'boolean', default: false },
 };
@@ -45,6 +47,8 @@ Options:
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60, 0 = disabled)
+  --keepalive           Enable/disable session keepalive (default: true)
+  --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300, 0 = disabled)
   --history-retention-days <days>    Days to retain usage history (default: 14)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
@@ -58,6 +62,8 @@ Environment variables:
   AGENT_TANK_FRESH_PROCESS  Use fresh process per refresh ("1" or "true")
   AGENT_TANK_AUTO_REFRESH   Enable/disable background auto-refresh ("1" or "true" / "0" or "false")
   AGENT_TANK_AUTO_REFRESH_INTERVAL  Auto-refresh interval in seconds
+  AGENT_TANK_KEEPALIVE      Enable/disable session keepalive ("1" or "true" / "0" or "false")
+  AGENT_TANK_KEEPALIVE_INTERVAL  Session keepalive interval in seconds
   AGENT_TANK_HISTORY_RETENTION_DAYS  Days to retain usage history
 
 Examples:
@@ -70,6 +76,8 @@ Examples:
   agent-tank -c ./config.json         # Use config file
   agent-tank --auto-refresh-interval 30  # Refresh every 30 seconds
   agent-tank --no-auto-refresh        # Disable background auto-refresh
+  agent-tank --keepalive-interval 600 # Send keepalive every 10 minutes
+  agent-tank --no-keepalive           # Disable session keepalive
   agent-tank --history-retention-days 7  # Keep only 7 days of history
   agent-tank --once                   # Fetch usage once and exit
   agent-tank --once --json            # Output pure JSON for scripting
@@ -143,6 +151,23 @@ if (historyRetentionEnv !== undefined) {
   historyRetentionDays = config.history.retentionDays;
 }
 
+// Keepalive configuration (env > CLI > config file)
+const keepaliveEnv = process.env.AGENT_TANK_KEEPALIVE;
+let keepaliveEnabled = values['keepalive'];
+if (keepaliveEnv !== undefined) {
+  keepaliveEnabled = keepaliveEnv === '1' || keepaliveEnv === 'true';
+} else if (config.keepalive?.enabled !== undefined) {
+  keepaliveEnabled = config.keepalive.enabled;
+}
+
+const keepaliveIntervalEnv = process.env.AGENT_TANK_KEEPALIVE_INTERVAL;
+let keepaliveInterval = parseInt(values['keepalive-interval'], 10);
+if (keepaliveIntervalEnv !== undefined) {
+  keepaliveInterval = parseInt(keepaliveIntervalEnv, 10);
+} else if (config.keepalive?.interval !== undefined) {
+  keepaliveInterval = config.keepalive.interval;
+}
+
 // One-shot and JSON mode flags
 const onceMode = values.once;
 const jsonMode = values.json;
@@ -165,6 +190,8 @@ const watcher = new AgentTank({
   freshProcess,
   autoRefreshEnabled: onceMode ? false : autoRefreshEnabled, // Disable auto-refresh in one-shot mode
   autoRefreshInterval,
+  keepaliveEnabled: onceMode ? false : keepaliveEnabled, // Disable keepalive in one-shot mode
+  keepaliveInterval,
   historyRetentionDays,
   skipServer: onceMode, // Don't start HTTP server in one-shot mode
 });
