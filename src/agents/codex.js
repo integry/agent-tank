@@ -373,6 +373,91 @@ class CodexAgent extends BaseAgent {
     if (this.shell) { console.log(`[${this.name}] Keepalive: sending ping...`); this.shell.write('\x1b'); return true; }
     return false;
   }
+
+  /**
+   * Spawns a fresh CLI process, sends /status to refresh the session token,
+   * then tears down the process cleanly. This is a silent operation that
+   * does not affect the main usage/error state.
+   * @returns {Promise<boolean>} True if the ping succeeded
+   */
+  async pingKeepalive() {
+    // If JSON-RPC is supported, skip the ping (session is managed by RPC)
+    if (this._rpcSupported === true) {
+      console.log(`[${this.name}] pingKeepalive: skipped (JSON-RPC mode)`);
+      return true;
+    }
+
+    const pty = require('node-pty');
+    console.log(`[${this.name}] pingKeepalive: spawning fresh process for session refresh...`);
+
+    return new Promise((resolve) => {
+      let shell = null;
+      let output = '';
+      let commandsSent = false;
+      let completed = false;
+      const state = { trustHandled: false, continuationHandled: false, updateHandled: false };
+
+      const cleanup = (success) => {
+        if (completed) return;
+        completed = true;
+        clearTimeout(timer);
+        if (shell) {
+          try { shell.kill(); } catch (_e) { /* Process may already be dead */ }
+        }
+        console.log(`[${this.name}] pingKeepalive: ${success ? 'succeeded' : 'failed'}`);
+        resolve(success);
+      };
+
+      // Use a shorter timeout for keepalive pings (10 seconds)
+      const timer = setTimeout(() => {
+        console.log(`[${this.name}] pingKeepalive: timeout after 10s`);
+        cleanup(false);
+      }, 10000);
+
+      try {
+        shell = pty.spawn(this.command, this.args, {
+          name: 'xterm-256color',
+          cols: 120,
+          rows: 40,
+          cwd: '/tmp',
+          env: { ...process.env, TERM: 'xterm-256color' },
+        });
+      } catch (spawnErr) {
+        console.error(`[${this.name}] pingKeepalive: spawn failed: ${spawnErr.message}`);
+        cleanup(false);
+        return;
+      }
+
+      shell.onData((data) => {
+        output += data;
+
+        // Handle interactive prompts (trust, update screens, etc.)
+        this.handleInteractivePrompts(shell, data, output, state);
+
+        // Respond to terminal capability queries
+        this._respondToTerminalQueries(data, shell);
+
+        // Wait for CLI to be ready, then send /status
+        if (!commandsSent && this.isReadyForStatus(output)) {
+          console.log(`[${this.name}] pingKeepalive: CLI ready, sending /status...`);
+          commandsSent = true;
+          setTimeout(() => shell.write('/status\r'), 100);
+        }
+
+        // Check if /status output is complete (has limit information)
+        if (commandsSent && this.hasCompleteOutput(output)) {
+          console.log(`[${this.name}] pingKeepalive: /status response received`);
+          setTimeout(() => cleanup(true), 100);
+        }
+      });
+
+      shell.onExit(({ exitCode }) => {
+        console.log(`[${this.name}] pingKeepalive: process exited with code ${exitCode}`);
+        // Consider success if we sent commands (session was refreshed)
+        cleanup(commandsSent);
+      });
+    });
+  }
 }
 
 module.exports = { CodexAgent };
