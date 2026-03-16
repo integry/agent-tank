@@ -1,4 +1,6 @@
 const { BaseAgent } = require('./base.js');
+const { calculatePace } = require('../pace-evaluator.js');
+const { CYCLE_DURATIONS } = require('../usage-formatters.js');
 
 class CodexAgent extends BaseAgent {
   constructor() {
@@ -8,25 +10,23 @@ class CodexAgent extends BaseAgent {
   getTimeout() { return 25000; }
 
   handleTrustPrompt(shell, output) {
-    const trustPatterns = ['Do you trust', 'trust the files', 'trust this folder', 'Trust this workspace', 'allow access'];
-    if (trustPatterns.some(p => output.toLowerCase().includes(p.toLowerCase()))) {
-      console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
-      shell.write('y\r');
-      setTimeout(() => { console.log(`[${this.name}] Sending Enter to proceed...`); shell.write('\r'); }, 500);
-      return true;
-    }
-    return false;
+    if (!shell) return false;
+    const patterns = ['Do you trust', 'trust the files', 'trust this folder', 'Trust this workspace', 'allow access'];
+    if (!patterns.some(p => output.toLowerCase().includes(p.toLowerCase()))) return false;
+    console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
+    shell.write('y\r');
+    setTimeout(() => { if (shell) { console.log(`[${this.name}] Sending Enter to proceed...`); shell.write('\r'); } }, 500);
+    return true;
   }
 
   handleUpdateScreen(shell, output) {
+    if (!shell) return false;
     const clean = this.stripAnsi(output);
-    if (/u?pdate available/i.test(clean) && /[\d.]+\s*->\s*[\d.]+/.test(clean) && /skip/i.test(clean)) {
-      console.log(`[${this.name}] Detected update screen, selecting '2' to skip...`);
-      shell.write('2');
-      setTimeout(() => shell.write('\r'), 300);
-      return true;
-    }
-    return false;
+    if (!(/u?pdate available/i.test(clean) && /[\d.]+\s*->\s*[\d.]+/.test(clean) && /skip/i.test(clean))) return false;
+    console.log(`[${this.name}] Detected update screen, selecting '2' to skip...`);
+    shell.write('2');
+    setTimeout(() => { if (shell) shell.write('\r'); }, 300);
+    return true;
   }
 
   parseVersionInfo(output) {
@@ -43,9 +43,10 @@ class CodexAgent extends BaseAgent {
 
   isReadyForCommands(output) { return this.isReadyForStatus(output); }
   isReadyForStatus(output) { return output.includes('? for shortcuts') || output.includes('To get started'); }
-  sendCommands(shell, _output) { console.log(`[${this.name}] Sending /status command...`); setTimeout(() => shell.write('/status\r'), 100); }
+  sendCommands(shell, _output) { console.log(`[${this.name}] Sending /status command...`); setTimeout(() => { if (shell) shell.write('/status\r'); }, 100); }
 
   _handleAdditionalPrompts(shell, _data, output) {
+    if (!shell) return;
     if (!this._updateHandled && this.handleUpdateScreen(shell, output)) {
       this._updateHandled = true;
       return;
@@ -60,6 +61,8 @@ class CodexAgent extends BaseAgent {
   }
 
   handleInteractivePrompts(shell, data, output, state) {
+    if (!shell) return false;
+
     if (!state.trustHandled && this.handleTrustPrompt(shell, output)) {
       state.trustHandled = true;
       return true;
@@ -180,7 +183,7 @@ class CodexAgent extends BaseAgent {
       // Start retry timer immediately — on first run the model may still
       // be loading so /status won't return limits yet
       retryTimer = setInterval(() => {
-        if (!this.hasCompleteOutput(this.output)) {
+        if (!this.hasCompleteOutput(this.output) && this.shell) {
           console.log(`[${this.name}] Retrying /status...`);
           this.output = '';
           this.shell.write('/status\r');
@@ -198,7 +201,7 @@ class CodexAgent extends BaseAgent {
       };
 
       console.log(`[${this.name}] Sending /status to persistent process...`);
-      setTimeout(() => this.shell.write('/status\r'), 100);
+      setTimeout(() => { if (this.shell) this.shell.write('/status\r'); }, 100);
     });
   }
 
@@ -258,18 +261,17 @@ class CodexAgent extends BaseAgent {
     return { text, seconds: diffSeconds };
   }
 
-  parseLimitEntry(match, label) {
-    const percentLeft = parseFloat(match[1]);
-    const resetsAt = match[2].trim();
-    const resetData = this.parseResetTime(resetsAt);
-    return {
-      percentLeft,
-      resetsAt,
-      label,
-      percentUsed: 100 - percentLeft,
-      resetsIn: resetData?.text || null,
-      resetsInSeconds: resetData?.seconds || null,
-    };
+  parseLimitEntry(match, label, cycleType) {
+    const percentLeft = parseFloat(match[1]), resetsAt = match[2].trim();
+    const resetData = this.parseResetTime(resetsAt), percentUsed = 100 - percentLeft;
+    const resetsInSeconds = resetData?.seconds || null;
+    const entry = { percentLeft, resetsAt, label, percentUsed, resetsIn: resetData?.text || null, resetsInSeconds };
+    const cycleDuration = CYCLE_DURATIONS[cycleType];
+    if (cycleDuration && resetsInSeconds != null) {
+      const paceData = calculatePace({ usagePercent: percentUsed, resetsInSeconds, cycleDurationSeconds: cycleDuration });
+      if (paceData) entry.pace = paceData;
+    }
+    return entry;
   }
 
   parseOutput(output) {
@@ -282,12 +284,12 @@ class CodexAgent extends BaseAgent {
 
     const fiveHourMatch = clean.match(/5h limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i);
     if (fiveHourMatch) {
-      usage.fiveHour = this.parseLimitEntry(fiveHourMatch, '5h limit');
+      usage.fiveHour = this.parseLimitEntry(fiveHourMatch, '5h limit', 'fiveHour');
     }
 
     const weeklyMatch = clean.match(/Weekly limit:\s*\[.*?\]\s*(\d+)%\s*left\s*\(resets\s*([^)]+)\)/i);
     if (weeklyMatch) {
-      usage.weekly = this.parseLimitEntry(weeklyMatch, 'Weekly limit');
+      usage.weekly = this.parseLimitEntry(weeklyMatch, 'Weekly limit', 'weekly');
     }
 
     // Parse model-specific limit sections (e.g. "GPT-5.3-Codex-Spark limit:")
@@ -313,11 +315,11 @@ class CodexAgent extends BaseAgent {
       const entry = { name };
       const fh = content.match(limitRegex);
       if (fh) {
-        entry.fiveHour = this.parseLimitEntry(fh, '5h limit');
+        entry.fiveHour = this.parseLimitEntry(fh, '5h limit', 'fiveHour');
       }
       const wk = content.match(weeklyLimitRegex);
       if (wk) {
-        entry.weekly = this.parseLimitEntry(wk, 'Weekly limit');
+        entry.weekly = this.parseLimitEntry(wk, 'Weekly limit', 'weekly');
       }
       if (entry.fiveHour || entry.weekly) {
         modelLimits.push(entry);
