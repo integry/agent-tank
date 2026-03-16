@@ -10,20 +10,22 @@ class CodexAgent extends BaseAgent {
   getTimeout() { return 25000; }
 
   handleTrustPrompt(shell, output) {
+    if (!shell) return false;
     const patterns = ['Do you trust', 'trust the files', 'trust this folder', 'Trust this workspace', 'allow access'];
     if (!patterns.some(p => output.toLowerCase().includes(p.toLowerCase()))) return false;
     console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
     shell.write('y\r');
-    setTimeout(() => { console.log(`[${this.name}] Sending Enter to proceed...`); shell.write('\r'); }, 500);
+    setTimeout(() => { if (shell) { console.log(`[${this.name}] Sending Enter to proceed...`); shell.write('\r'); } }, 500);
     return true;
   }
 
   handleUpdateScreen(shell, output) {
+    if (!shell) return false;
     const clean = this.stripAnsi(output);
     if (!(/u?pdate available/i.test(clean) && /[\d.]+\s*->\s*[\d.]+/.test(clean) && /skip/i.test(clean))) return false;
     console.log(`[${this.name}] Detected update screen, selecting '2' to skip...`);
     shell.write('2');
-    setTimeout(() => shell.write('\r'), 300);
+    setTimeout(() => { if (shell) shell.write('\r'); }, 300);
     return true;
   }
 
@@ -41,9 +43,10 @@ class CodexAgent extends BaseAgent {
 
   isReadyForCommands(output) { return this.isReadyForStatus(output); }
   isReadyForStatus(output) { return output.includes('? for shortcuts') || output.includes('To get started'); }
-  sendCommands(shell, _output) { console.log(`[${this.name}] Sending /status command...`); setTimeout(() => shell.write('/status\r'), 100); }
+  sendCommands(shell, _output) { console.log(`[${this.name}] Sending /status command...`); setTimeout(() => { if (shell) shell.write('/status\r'); }, 100); }
 
   _handleAdditionalPrompts(shell, _data, output) {
+    if (!shell) return;
     if (!this._updateHandled && this.handleUpdateScreen(shell, output)) {
       this._updateHandled = true;
       return;
@@ -58,6 +61,8 @@ class CodexAgent extends BaseAgent {
   }
 
   handleInteractivePrompts(shell, data, output, state) {
+    if (!shell) return false;
+
     if (!state.trustHandled && this.handleTrustPrompt(shell, output)) {
       state.trustHandled = true;
       return true;
@@ -178,7 +183,7 @@ class CodexAgent extends BaseAgent {
       // Start retry timer immediately — on first run the model may still
       // be loading so /status won't return limits yet
       retryTimer = setInterval(() => {
-        if (!this.hasCompleteOutput(this.output)) {
+        if (!this.hasCompleteOutput(this.output) && this.shell) {
           console.log(`[${this.name}] Retrying /status...`);
           this.output = '';
           this.shell.write('/status\r');
@@ -196,7 +201,7 @@ class CodexAgent extends BaseAgent {
       };
 
       console.log(`[${this.name}] Sending /status to persistent process...`);
-      setTimeout(() => this.shell.write('/status\r'), 100);
+      setTimeout(() => { if (this.shell) this.shell.write('/status\r'); }, 100);
     });
   }
 
