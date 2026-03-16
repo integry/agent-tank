@@ -109,50 +109,18 @@ class AgentTank {
     }
   }
 
-  /**
-   * Start the keepalive manager to maintain agent sessions.
-   */
+  /** Start the keepalive manager to maintain agent sessions. */
   startKeepalive() {
-    // Stop any existing keepalive manager
     this.stopKeepalive();
-
-    // Check if keepalive should be enabled
-    if (!this.keepalive.enabled || this.keepalive.interval <= 0) {
-      console.log('Session keepalive: disabled');
-      return;
-    }
-
-    // Skip if in fresh process mode (no persistent sessions to maintain)
-    if (this.freshProcess) {
-      console.log('Session keepalive: disabled (fresh process mode)');
-      return;
-    }
-
-    // Create and configure the keepalive manager
-    this.keepaliveManager = new KeepaliveManager({
-      enabled: this.keepalive.enabled,
-      interval: this.keepalive.interval,
-    });
-
-    // Register all agents with the keepalive manager
-    for (const [name, agent] of this.agents) {
-      this.keepaliveManager.register(name, agent);
-    }
-
-    // Start the keepalive scheduler
-    this.keepaliveManager.start();
-    console.log(`Session keepalive: every ${this.keepalive.interval}s`);
+    if (!this.keepalive.enabled || this.keepalive.interval <= 0) { console.log('Session keepalive: disabled'); return; }
+    if (this.freshProcess) { console.log('Session keepalive: disabled (fresh process mode)'); return; }
+    this.keepaliveManager = new KeepaliveManager({ enabled: this.keepalive.enabled, interval: this.keepalive.interval });
+    for (const [name, agent] of this.agents) { this.keepaliveManager.register(name, agent); }
+    this.keepaliveManager.start(); console.log(`Session keepalive: every ${this.keepalive.interval}s`);
   }
 
-  /**
-   * Stop the keepalive manager.
-   */
-  stopKeepalive() {
-    if (this.keepaliveManager) {
-      this.keepaliveManager.stop();
-      this.keepaliveManager = null;
-    }
-  }
+  /** Stop the keepalive manager. */
+  stopKeepalive() { if (this.keepaliveManager) { this.keepaliveManager.stop(); this.keepaliveManager = null; } }
 
   startAutoRefresh() {
     // Stop any existing timers
@@ -413,22 +381,10 @@ class AgentTank {
     }
   }
 
-  /**
-   * Get keepalive status.
-   *
-   * @returns {Object|null} Keepalive manager status or null if not initialized
-   */
+  /** Get keepalive status. @returns {Object|null} Keepalive manager status or null if not initialized */
   getKeepaliveStatus() {
-    if (this.keepaliveManager) {
-      return this.keepaliveManager.getStatus();
-    }
-    return {
-      enabled: this.keepalive.enabled,
-      interval: this.keepalive.interval,
-      isRunning: false,
-      registeredAgents: [],
-      lastKeepaliveAt: null,
-    };
+    if (this.keepaliveManager) return this.keepaliveManager.getStatus();
+    return { enabled: this.keepalive.enabled, interval: this.keepalive.interval, isRunning: false, registeredAgents: [], lastKeepaliveAt: null };
   }
 }
 
