@@ -11,6 +11,7 @@ const {
   parseModelLimits,
   extractMetadataFromOutput,
 } = require('./codex-pty-helpers.js');
+const { pingKeepalive } = require('./keepalive-helper.js');
 
 class CodexAgent extends BaseAgent {
   constructor() {
@@ -372,6 +373,24 @@ class CodexAgent extends BaseAgent {
     if (!this.shell || !this.processReady) { console.log(`[${this.name}] Keepalive: spawning process...`); await this.spawnProcess(); }
     if (this.shell) { console.log(`[${this.name}] Keepalive: sending ping...`); this.shell.write('\x1b'); return true; }
     return false;
+  }
+
+  /** Spawns fresh CLI, sends /status to refresh session, then tears down cleanly. @returns {Promise<boolean>} */
+  async pingKeepalive() {
+    if (this._rpcSupported === true) { console.log(`[${this.name}] pingKeepalive: skipped (JSON-RPC mode)`); return true; }
+    const state = { trustHandled: false, continuationHandled: false, updateHandled: false };
+    return pingKeepalive({
+      name: this.name,
+      command: this.command,
+      args: this.args,
+      env: { ...process.env, TERM: 'xterm-256color' },
+      termName: 'xterm-256color',
+      isReady: (output) => this.isReadyForStatus(output),
+      sendCommand: (shell) => setTimeout(() => shell.write('/status\r'), 100),
+      isComplete: (output) => this.hasCompleteOutput(output),
+      handlePrompts: (shell, data, output) => this.handleInteractivePrompts(shell, data, output, state),
+      respondToTerminalQueries: (data, shell) => this._respondToTerminalQueries(data, shell),
+    });
   }
 }
 

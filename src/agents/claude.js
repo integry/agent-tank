@@ -1,6 +1,7 @@
 const { BaseAgent } = require('./base.js');
 const { calculatePace } = require('../pace-evaluator.js');
 const { CYCLE_DURATIONS } = require('../usage-formatters.js');
+const { pingKeepalive } = require('./keepalive-helper.js');
 
 class ClaudeAgent extends BaseAgent {
   constructor() {
@@ -332,43 +333,18 @@ class ClaudeAgent extends BaseAgent {
   _parseStatusOutput(output) {
     const clean = this.stripAnsi(output);
     const metadata = {};
-
-    // Extract session ID
-    const sessionMatch = clean.match(/Session(?:\s+ID)?:\s*([a-f0-9-]+)/i);
-    if (sessionMatch) {
-      metadata.sessionId = this.stripBoxChars(sessionMatch[1]);
+    const patterns = [
+      ['sessionId', /Session(?:\s+ID)?:\s*([a-f0-9-]+)/i],
+      ['cwd', /(?:Working directory|Cwd|Current directory|Directory):\s*([^\n│]+)/i],
+      ['organization', /(?:Organization|Org):\s*([^\n│]+)/i],
+      ['email', /(?:Email|Account|User|Logged in as):\s*(\S+@\S+)/i],
+      ['model', /(?:Model|Using model):\s*(claude[-\w.]+)/i],
+      ['version', /(?:Version|Claude Code):\s*v?([\d.]+)/i],
+    ];
+    for (const [key, regex] of patterns) {
+      const match = clean.match(regex);
+      if (match) metadata[key] = this.stripBoxChars(match[1]);
     }
-
-    // Extract working directory/cwd
-    const cwdMatch = clean.match(/(?:Working directory|Cwd|Current directory|Directory):\s*([^\n│]+)/i);
-    if (cwdMatch) {
-      metadata.cwd = this.stripBoxChars(cwdMatch[1]);
-    }
-
-    // Extract organization
-    const orgMatch = clean.match(/(?:Organization|Org):\s*([^\n│]+)/i);
-    if (orgMatch) {
-      metadata.organization = this.stripBoxChars(orgMatch[1]);
-    }
-
-    // Extract email/account
-    const emailMatch = clean.match(/(?:Email|Account|User|Logged in as):\s*(\S+@\S+)/i);
-    if (emailMatch) {
-      metadata.email = this.stripBoxChars(emailMatch[1]);
-    }
-
-    // Extract model if present
-    const modelMatch = clean.match(/(?:Model|Using model):\s*(claude[-\w.]+)/i);
-    if (modelMatch) {
-      metadata.model = this.stripBoxChars(modelMatch[1]);
-    }
-
-    // Extract version if present
-    const versionMatch = clean.match(/(?:Version|Claude Code):\s*v?([\d.]+)/i);
-    if (versionMatch) {
-      metadata.version = this.stripBoxChars(versionMatch[1]);
-    }
-
     return Object.keys(metadata).length > 0 ? metadata : null;
   }
 
@@ -378,6 +354,26 @@ class ClaudeAgent extends BaseAgent {
     if (!this.shell || !this.processReady) { console.log(`[${this.name}] Keepalive: spawning process...`); await this.spawnProcess(); }
     if (this.shell) { console.log(`[${this.name}] Keepalive: sending ping...`); this.shell.write('\x1b'); return true; }
     return false;
+  }
+
+  /** Spawns fresh CLI, sends /status to refresh session, then tears down cleanly. @returns {Promise<boolean>} */
+  async pingKeepalive() {
+    return pingKeepalive({
+      name: this.name,
+      command: this.command,
+      args: this.args,
+      env: this.getEnv(),
+      termName: 'xterm-color',
+      isReady: (output) => this.isReadyForCommands(output),
+      sendCommand: (shell) => {
+        setTimeout(() => shell.write('\x1b'), 50);
+        setTimeout(() => shell.write('/status'), 300);
+        setTimeout(() => shell.write('\r'), 500);
+      },
+      isComplete: (output) => this._hasCompleteStatusOutput(output),
+      handlePrompts: (shell, _data, output) => this.handleTrustPrompt(shell, output),
+      respondToTerminalQueries: (data, shell) => this._respondToTerminalQueries(data, shell),
+    });
   }
 }
 
