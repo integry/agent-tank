@@ -52,7 +52,9 @@ Options:
   --config, -c          Path to config file (JSON)
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
+  --auto-refresh-mode <mode>         Refresh mode: none, interval, activity (default: activity)
   --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60)
+  --activity-debounce <ms>           Activity debounce interval in milliseconds (default: 5000)
   --keepalive           Enable/disable session keepalive (default: true)
   --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300)
   --history-retention-days <days>    Days to retain usage history (default: 14)
@@ -73,7 +75,9 @@ Environment variables override CLI flags and config file settings:
 | `AGENT_TANK_HOST` | Bind address (overrides `--host`) |
 | `AGENT_TANK_FRESH_PROCESS` | Use fresh process per refresh (`1` or `true`) |
 | `AGENT_TANK_AUTO_REFRESH` | Enable/disable background auto-refresh (`1`/`true` or `0`/`false`) |
+| `AGENT_TANK_AUTO_REFRESH_MODE` | Refresh mode: `none`, `interval`, or `activity` (default: `activity`) |
 | `AGENT_TANK_AUTO_REFRESH_INTERVAL` | Auto-refresh interval in seconds |
+| `AGENT_TANK_ACTIVITY_DEBOUNCE` | Activity debounce interval in milliseconds (default: 5000) |
 | `AGENT_TANK_KEEPALIVE` | Enable/disable session keepalive (`1`/`true` or `0`/`false`) |
 | `AGENT_TANK_KEEPALIVE_INTERVAL` | Session keepalive interval in seconds (default: 300) |
 | `AGENT_TANK_HISTORY_RETENTION_DAYS` | Days to retain usage history (default: 14) |
@@ -97,6 +101,60 @@ You can use a JSON configuration file:
 ```bash
 agent-tank -c config.json
 ```
+
+## Activity-Based Polling
+
+Agent Tank supports intelligent activity-based polling that monitors local log directories for LLM CLI activity. Instead of polling on a fixed interval (which can waste resources during idle periods), activity mode only triggers usage refreshes when you're actively using the CLI tools.
+
+### How It Works
+
+1. **Log Directory Monitoring**: Agent Tank watches the following directories for file changes:
+   - Claude: `~/.config/claude/projects/`, `~/.claude/`
+   - Codex: `~/.codex/sessions/`, `~/.codex/`
+   - Gemini: `~/.config/gemini/`, `~/.gemini/`
+
+2. **Debounced Detection**: When activity is detected, a configurable debounce timer starts. This prevents excessive refreshes during bursts of activity.
+
+3. **On-Demand Refresh Cycles**: After the debounce period, a refresh cycle begins and continues at the configured interval while activity is ongoing.
+
+4. **Idle State**: When no more activity is detected, polling stops to conserve resources.
+
+### Auto-Refresh Modes
+
+Agent Tank supports three refresh modes:
+
+| Mode | Description |
+|------|-------------|
+| `activity` | (Default) Monitors log directories and refreshes when CLI activity is detected |
+| `interval` | Traditional interval-based polling at fixed intervals |
+| `none` | No automatic refresh; manual refresh only via `POST /refresh` |
+
+### Configuration
+
+```bash
+# Use activity-based polling (default)
+agent-tank
+
+# Use activity mode with custom debounce (wait 10 seconds after activity)
+agent-tank --activity-debounce 10000
+
+# Use traditional interval-based polling
+agent-tank --auto-refresh-mode interval
+
+# Disable all auto-refresh (manual only)
+agent-tank --auto-refresh-mode none
+
+# Via environment variables
+AGENT_TANK_AUTO_REFRESH_MODE=activity agent-tank
+AGENT_TANK_ACTIVITY_DEBOUNCE=10000 agent-tank
+```
+
+### Notes
+
+- Activity mode automatically falls back to interval mode if no log directories are found
+- The debounce interval is specified in milliseconds (default: 5000ms = 5 seconds)
+- During active usage, refreshes occur at the `--auto-refresh-interval` rate (default: 60 seconds)
+- Activity mode is disabled in one-shot mode (`--once`)
 
 ## Session Keepalive
 
