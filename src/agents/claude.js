@@ -1,6 +1,7 @@
 const { BaseAgent } = require('./base.js');
 const { calculatePace } = require('../pace-evaluator.js');
 const { CYCLE_DURATIONS } = require('../usage-formatters.js');
+const { pingKeepalive } = require('./keepalive-helper.js');
 
 class ClaudeAgent extends BaseAgent {
   constructor() {
@@ -332,43 +333,18 @@ class ClaudeAgent extends BaseAgent {
   _parseStatusOutput(output) {
     const clean = this.stripAnsi(output);
     const metadata = {};
-
-    // Extract session ID
-    const sessionMatch = clean.match(/Session(?:\s+ID)?:\s*([a-f0-9-]+)/i);
-    if (sessionMatch) {
-      metadata.sessionId = this.stripBoxChars(sessionMatch[1]);
+    const patterns = [
+      ['sessionId', /Session(?:\s+ID)?:\s*([a-f0-9-]+)/i],
+      ['cwd', /(?:Working directory|Cwd|Current directory|Directory):\s*([^\n│]+)/i],
+      ['organization', /(?:Organization|Org):\s*([^\n│]+)/i],
+      ['email', /(?:Email|Account|User|Logged in as):\s*(\S+@\S+)/i],
+      ['model', /(?:Model|Using model):\s*(claude[-\w.]+)/i],
+      ['version', /(?:Version|Claude Code):\s*v?([\d.]+)/i],
+    ];
+    for (const [key, regex] of patterns) {
+      const match = clean.match(regex);
+      if (match) metadata[key] = this.stripBoxChars(match[1]);
     }
-
-    // Extract working directory/cwd
-    const cwdMatch = clean.match(/(?:Working directory|Cwd|Current directory|Directory):\s*([^\n│]+)/i);
-    if (cwdMatch) {
-      metadata.cwd = this.stripBoxChars(cwdMatch[1]);
-    }
-
-    // Extract organization
-    const orgMatch = clean.match(/(?:Organization|Org):\s*([^\n│]+)/i);
-    if (orgMatch) {
-      metadata.organization = this.stripBoxChars(orgMatch[1]);
-    }
-
-    // Extract email/account
-    const emailMatch = clean.match(/(?:Email|Account|User|Logged in as):\s*(\S+@\S+)/i);
-    if (emailMatch) {
-      metadata.email = this.stripBoxChars(emailMatch[1]);
-    }
-
-    // Extract model if present
-    const modelMatch = clean.match(/(?:Model|Using model):\s*(claude[-\w.]+)/i);
-    if (modelMatch) {
-      metadata.model = this.stripBoxChars(modelMatch[1]);
-    }
-
-    // Extract version if present
-    const versionMatch = clean.match(/(?:Version|Claude Code):\s*v?([\d.]+)/i);
-    if (versionMatch) {
-      metadata.version = this.stripBoxChars(versionMatch[1]);
-    }
-
     return Object.keys(metadata).length > 0 ? metadata : null;
   }
 
@@ -380,84 +356,23 @@ class ClaudeAgent extends BaseAgent {
     return false;
   }
 
-  /**
-   * Spawns a fresh CLI process, sends /status to refresh the session token,
-   * then tears down the process cleanly. This is a silent operation that
-   * does not affect the main usage/error state.
-   * @returns {Promise<boolean>} True if the ping succeeded
-   */
+  /** Spawns fresh CLI, sends /status to refresh session, then tears down cleanly. @returns {Promise<boolean>} */
   async pingKeepalive() {
-    const pty = require('node-pty');
-    console.log(`[${this.name}] pingKeepalive: spawning fresh process for session refresh...`);
-
-    return new Promise((resolve) => {
-      let shell = null;
-      let output = '';
-      let commandsSent = false;
-      let completed = false;
-
-      const cleanup = (success) => {
-        if (completed) return;
-        completed = true;
-        clearTimeout(timer);
-        if (shell) {
-          try { shell.kill(); } catch (_e) { /* Process may already be dead */ }
-        }
-        console.log(`[${this.name}] pingKeepalive: ${success ? 'succeeded' : 'failed'}`);
-        resolve(success);
-      };
-
-      // Use a shorter timeout for keepalive pings (10 seconds)
-      const timer = setTimeout(() => {
-        console.log(`[${this.name}] pingKeepalive: timeout after 10s`);
-        cleanup(false);
-      }, 10000);
-
-      try {
-        shell = pty.spawn(this.command, this.args, {
-          name: 'xterm-color',
-          cols: 120,
-          rows: 40,
-          cwd: '/tmp',
-          env: this.getEnv(),
-        });
-      } catch (spawnErr) {
-        console.error(`[${this.name}] pingKeepalive: spawn failed: ${spawnErr.message}`);
-        cleanup(false);
-        return;
-      }
-
-      shell.onData((data) => {
-        output += data;
-
-        // Handle trust prompt
-        if (this.handleTrustPrompt(shell, output)) return;
-
-        // Respond to terminal capability queries
-        this._respondToTerminalQueries(data, shell);
-
-        // Wait for CLI to be ready, then send /status
-        if (!commandsSent && this.isReadyForCommands(output)) {
-          console.log(`[${this.name}] pingKeepalive: CLI ready, sending /status...`);
-          commandsSent = true;
-          // Send escape first to dismiss any UI, then /status
-          setTimeout(() => shell.write('\x1b'), 50);
-          setTimeout(() => shell.write('/status'), 300);
-          setTimeout(() => shell.write('\r'), 500);
-        }
-
-        // Check if /status output is complete
-        if (commandsSent && this._hasCompleteStatusOutput(output)) {
-          console.log(`[${this.name}] pingKeepalive: /status response received`);
-          setTimeout(() => cleanup(true), 100);
-        }
-      });
-
-      shell.onExit(({ exitCode }) => {
-        console.log(`[${this.name}] pingKeepalive: process exited with code ${exitCode}`);
-        // Consider success if we sent commands (session was refreshed)
-        cleanup(commandsSent);
-      });
+    return pingKeepalive({
+      name: this.name,
+      command: this.command,
+      args: this.args,
+      env: this.getEnv(),
+      termName: 'xterm-color',
+      isReady: (output) => this.isReadyForCommands(output),
+      sendCommand: (shell) => {
+        setTimeout(() => shell.write('\x1b'), 50);
+        setTimeout(() => shell.write('/status'), 300);
+        setTimeout(() => shell.write('\r'), 500);
+      },
+      isComplete: (output) => this._hasCompleteStatusOutput(output),
+      handlePrompts: (shell, _data, output) => this.handleTrustPrompt(shell, output),
+      respondToTerminalQueries: (data, shell) => this._respondToTerminalQueries(data, shell),
     });
   }
 }
