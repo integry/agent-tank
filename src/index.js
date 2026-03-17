@@ -9,6 +9,15 @@ const { extractSnapshotMetrics } = require('./snapshot-metrics.js');
 const { attachPaceEvaluation } = require('./pace-attachment.js');
 const { handleRequest } = require('./http-handler.js');
 const { KeepaliveManager } = require('./keepalive-manager.js');
+const { ActivityMonitor } = require('./activity-monitor.js');
+
+/**
+ * Valid auto-refresh modes:
+ * - 'none': No automatic refresh (manual refresh only)
+ * - 'interval': Traditional interval-based polling (refreshes at fixed intervals)
+ * - 'activity': Activity-based polling (refreshes when log activity is detected)
+ */
+const AUTO_REFRESH_MODES = ['none', 'interval', 'activity'];
 
 class AgentTank {
   constructor(options = {}) {
@@ -24,13 +33,35 @@ class AgentTank {
     this.skipServer = options.skipServer || false; // Skip HTTP server in one-shot mode
 
     // Auto-refresh configuration (backend periodic refresh)
-    this.autoRefresh = {
-      enabled: options.autoRefreshEnabled !== false, // Default: true
-      interval: options.autoRefreshInterval ?? 60,   // Default: 60 seconds, 0 = disabled
-    };
+    // Determine the mode: 'none', 'interval', or 'activity' (default: 'activity')
+    const rawMode = options.autoRefreshMode ?? 'activity';
+    const autoRefreshMode = AUTO_REFRESH_MODES.includes(rawMode) ? rawMode : 'activity';
+
+    // Handle backwards compatibility: if autoRefreshEnabled is explicitly false, use 'none' mode
+    if (options.autoRefreshEnabled === false) {
+      this.autoRefresh = {
+        mode: 'none',
+        enabled: false,
+        interval: options.autoRefreshInterval ?? 60,
+        activityDebounce: options.activityDebounce ?? 5000, // Default: 5 seconds in ms
+      };
+    } else {
+      this.autoRefresh = {
+        mode: autoRefreshMode,
+        enabled: autoRefreshMode !== 'none',
+        interval: options.autoRefreshInterval ?? 60,   // Default: 60 seconds
+        activityDebounce: options.activityDebounce ?? 5000, // Default: 5 seconds in ms
+      };
+    }
+
     this.autoRefreshTimer = null;
     this.agentRefreshTimers = new Map(); // Per-agent timers for custom intervals
     this.lastRefreshedAt = null;
+
+    // Activity monitor for activity-based polling
+    this.activityMonitor = null;
+    this.activityRefreshTimer = null; // Timer for activity-triggered refresh cycle
+    this.isActivityRefreshing = false; // Flag to track if we're in an activity refresh cycle
 
     // History store for usage snapshots
     this.historyRetentionDays = options.historyRetentionDays ?? DEFAULT_RETENTION_DAYS;
@@ -127,12 +158,115 @@ class AgentTank {
     this.stopAutoRefresh();
 
     // Check if auto-refresh should be enabled
-    if (!this.autoRefresh.enabled || this.autoRefresh.interval <= 0) {
+    if (!this.autoRefresh.enabled || this.autoRefresh.mode === 'none') {
       console.log('Backend auto-refresh: disabled');
       return;
     }
 
+    // Handle activity-based mode
+    if (this.autoRefresh.mode === 'activity') {
+      this._startActivityBasedRefresh();
+      return;
+    }
+
+    // Interval-based mode (traditional polling)
+    this._startIntervalBasedRefresh();
+  }
+
+  /**
+   * Start activity-based auto-refresh.
+   * Monitors log directories and triggers refresh cycles when activity is detected.
+   * @private
+   */
+  _startActivityBasedRefresh() {
+    const agentNames = Array.from(this.agents.keys());
+    const debounceMs = this.autoRefresh.activityDebounce;
+    const intervalSeconds = this.autoRefresh.interval;
+
+    console.log(`Backend auto-refresh: activity mode (debounce: ${debounceMs}ms, cycle interval: ${intervalSeconds}s)`);
+
+    this.activityMonitor = new ActivityMonitor({
+      debounceInterval: debounceMs,
+      agents: agentNames,
+      onActivity: (event) => {
+        this._handleActivityDetected(event);
+      },
+    });
+
+    const startResult = this.activityMonitor.start();
+
+    if (startResult.agentCount === 0) {
+      console.log('[ActivityMonitor] No log directories found to monitor, falling back to interval mode');
+      this._startIntervalBasedRefresh();
+      return;
+    }
+
+    console.log(`[ActivityMonitor] Monitoring ${startResult.monitoredDirs.length} directories`);
+  }
+
+  /**
+   * Handle activity detection from the ActivityMonitor.
+   * Starts an on-demand refresh cycle that continues while activity is detected.
+   * @param {Object} event - Activity event from ActivityMonitor
+   * @private
+   */
+  _handleActivityDetected(event) {
+    console.log(`[Activity] Detected for ${event.agent}, starting refresh cycle...`);
+
+    // If we're already in a refresh cycle, the existing timer will handle it
+    if (this.isActivityRefreshing) {
+      console.log('[Activity] Already in refresh cycle, activity will extend it');
+      return;
+    }
+
+    this.isActivityRefreshing = true;
+    this._runActivityRefreshCycle();
+  }
+
+  /**
+   * Run a single iteration of the activity refresh cycle.
+   * Schedules the next iteration if activity is still being detected.
+   * @private
+   */
+  async _runActivityRefreshCycle() {
+    // Refresh all agents
+    try {
+      console.log('[Activity-refresh] Running refresh cycle...');
+      await this.refreshAll();
+    } catch (err) {
+      console.error('[Activity-refresh] Error during refresh:', err.message);
+    }
+
+    // Check if there's still pending activity or recent activity
+    const hasPending = this.activityMonitor && this.activityMonitor.hasPendingActivity();
+
+    if (hasPending) {
+      // Schedule next refresh cycle at the configured interval
+      const intervalMs = this.autoRefresh.interval * 1000;
+      console.log(`[Activity-refresh] More activity pending, scheduling next cycle in ${this.autoRefresh.interval}s`);
+
+      this.activityRefreshTimer = setTimeout(() => {
+        this._runActivityRefreshCycle();
+      }, intervalMs);
+    } else {
+      // No more activity, go idle
+      console.log('[Activity-refresh] No more pending activity, going idle');
+      this.isActivityRefreshing = false;
+      this.activityRefreshTimer = null;
+    }
+  }
+
+  /**
+   * Start interval-based auto-refresh (traditional polling).
+   * @private
+   */
+  _startIntervalBasedRefresh() {
     const globalInterval = this.autoRefresh.interval;
+
+    if (globalInterval <= 0) {
+      console.log('Backend auto-refresh: disabled (interval is 0)');
+      return;
+    }
 
     // Separate agents into those using the global interval and those needing a slower cadence
     const globalAgents = [];
@@ -158,7 +292,7 @@ class AgentTank {
     }
 
     if (globalAgents.length > 0) {
-      console.log(`Backend auto-refresh [${globalAgents.join(', ')}]: every ${globalInterval}s`);
+      console.log(`Backend auto-refresh [${globalAgents.join(', ')}]: every ${globalInterval}s (interval mode)`);
       this.autoRefreshTimer = setInterval(async () => {
         console.log(`[Auto-refresh] Refreshing ${globalAgents.join(', ')}...`);
         const promises = globalAgents.map(name => {
@@ -174,6 +308,7 @@ class AgentTank {
   }
 
   stopAutoRefresh() {
+    // Stop interval-based timers
     if (this.autoRefreshTimer) {
       clearInterval(this.autoRefreshTimer);
       this.autoRefreshTimer = null;
@@ -182,6 +317,17 @@ class AgentTank {
       clearInterval(timer);
     }
     this.agentRefreshTimers.clear();
+
+    // Stop activity-based refresh
+    if (this.activityRefreshTimer) {
+      clearTimeout(this.activityRefreshTimer);
+      this.activityRefreshTimer = null;
+    }
+    if (this.activityMonitor) {
+      this.activityMonitor.stop();
+      this.activityMonitor = null;
+    }
+    this.isActivityRefreshing = false;
   }
 
   createAgent(name) {
@@ -386,6 +532,44 @@ class AgentTank {
     if (this.keepaliveManager) return this.keepaliveManager.getStatus();
     return { enabled: this.keepalive.enabled, interval: this.keepalive.interval, isRunning: false, registeredAgents: [], lastKeepaliveAt: null };
   }
+
+  /**
+   * Get activity monitor status.
+   * @returns {Object} Activity monitor status
+   */
+  getActivityMonitorStatus() {
+    if (this.activityMonitor) {
+      return {
+        ...this.activityMonitor.getStatus(),
+        isActivityRefreshing: this.isActivityRefreshing,
+      };
+    }
+    return {
+      isMonitoring: false,
+      debounceInterval: this.autoRefresh.activityDebounce,
+      monitoredAgents: [],
+      agentCount: 0,
+      activityCount: 0,
+      lastActivityAt: {},
+      hasPendingActivity: false,
+      pendingAgents: [],
+      isActivityRefreshing: false,
+    };
+  }
+
+  /**
+   * Get the auto-refresh configuration.
+   * @returns {Object} Auto-refresh configuration
+   */
+  getAutoRefreshConfig() {
+    return {
+      mode: this.autoRefresh.mode,
+      enabled: this.autoRefresh.enabled,
+      interval: this.autoRefresh.interval,
+      activityDebounce: this.autoRefresh.activityDebounce,
+      lastRefreshedAt: this.lastRefreshedAt,
+    };
+  }
 }
 
-module.exports = { AgentTank };
+module.exports = { AgentTank, AUTO_REFRESH_MODES };
