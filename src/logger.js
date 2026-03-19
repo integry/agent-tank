@@ -47,7 +47,7 @@ const AGENT_COLORS = {
 const URL_PATTERN = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g;
 
 /**
- * Highlights URLs in a string with underline and blue color
+ * Highlights URLs in a string with underline and bright cyan color
  * @param {string} text - The text to process
  * @returns {string} - Text with highlighted URLs
  */
@@ -56,7 +56,7 @@ function highlightUrls(text) {
     return text;
   }
   return text.replace(URL_PATTERN, (url) => {
-    return `${ANSI.blue}${ANSI.underline}${url}${ANSI.reset}`;
+    return `${ANSI.brightCyan}${ANSI.underline}${url}${ANSI.reset}`;
   });
 }
 

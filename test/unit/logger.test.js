@@ -207,7 +207,7 @@ describe('Logger', () => {
     it('highlights HTTP URLs', () => {
       const text = 'Visit http://example.com for more';
       const result = logger.highlightUrls(text);
-      expect(result).toContain(logger.ANSI.blue);
+      expect(result).toContain(logger.ANSI.brightCyan);
       expect(result).toContain(logger.ANSI.underline);
       expect(result).toContain('http://example.com');
     });
@@ -215,7 +215,7 @@ describe('Logger', () => {
     it('highlights HTTPS URLs', () => {
       const text = 'Visit https://secure.example.com';
       const result = logger.highlightUrls(text);
-      expect(result).toContain(logger.ANSI.blue);
+      expect(result).toContain(logger.ANSI.brightCyan);
       expect(result).toContain(logger.ANSI.underline);
       expect(result).toContain('https://secure.example.com');
     });
@@ -223,7 +223,7 @@ describe('Logger', () => {
     it('highlights multiple URLs', () => {
       const text = 'Links: https://one.com and https://two.com';
       const result = logger.highlightUrls(text);
-      const urlCount = (result.match(/\x1b\[34m/g) || []).length;
+      const urlCount = (result.match(/\x1b\[96m/g) || []).length;
       expect(urlCount).toBe(2);
     });
 

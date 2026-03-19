@@ -1,4 +1,5 @@
 const http = require('node:http');
+const path = require('node:path');
 const { ClaudeAgent } = require('./agents/claude.js');
 const { GeminiAgent } = require('./agents/gemini.js');
 const { CodexAgent } = require('./agents/codex.js');
@@ -6,6 +7,9 @@ const { discoverAgents } = require('./discovery.js');
 const { statusPage } = require('./status-page.js');
 const { fetchPublicStatus } = require('./public-status.js');
 const logger = require('./logger.js');
+
+// Load package.json for version info
+const pkg = require(path.join(__dirname, '..', 'package.json'));
 
 class AgentTank {
   constructor(options = {}) {
@@ -30,7 +34,36 @@ class AgentTank {
     this.lastRefreshedAt = null;
   }
 
+  /**
+   * Display startup banner with website URL, version, and author copyright
+   */
+  displayStartupBanner() {
+    const ANSI = logger.ANSI;
+    const version = pkg.version || '1.0.0';
+    const homepage = pkg.homepage || 'https://github.com/integry/agent-tank';
+    const author = pkg.author || 'Rinalds Uzkalns';
+    const year = new Date().getFullYear();
+
+    console.log('');
+    console.log(`${ANSI.brightCyan}${ANSI.bold}  ___                    _     _____             _   ${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}${ANSI.bold} / _ \\                  | |   |_   _|           | |  ${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}${ANSI.bold}/ /_\\ \\ __ _  ___ _ __ | |_    | | __ _ _ __   | | _${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}${ANSI.bold}|  _  |/ _\` |/ _ \\ '_ \\| __|   | |/ _\` | '_ \\  | |/ /${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}${ANSI.bold}| | | | (_| |  __/ | | | |_    | | (_| | | | | |   < ${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}${ANSI.bold}\\_| |_/\\__, |\\___|_| |_|\\__|   \\_/\\__,_|_| |_| |_|\\_\\${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}${ANSI.bold}        __/ |                                        ${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}${ANSI.bold}       |___/                                         ${ANSI.reset}`);
+    console.log('');
+    console.log(`${ANSI.dim}Version ${version}${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}${ANSI.underline}${homepage}${ANSI.reset}`);
+    console.log(`${ANSI.dim}© ${year} ${author}${ANSI.reset}`);
+    console.log('');
+  }
+
   async start() {
+    // Display startup banner with website URL, version, and copyright
+    this.displayStartupBanner();
+
     // Initialize agents
     let agentNames = this.requestedAgents;
 
