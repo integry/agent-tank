@@ -55,7 +55,7 @@ class AgentTank {
     console.log(`${ANSI.brightCyan}${ANSI.bold}       |___/                                         ${ANSI.reset}`);
     console.log('');
     console.log(`${ANSI.dim}Version ${version}${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}${ANSI.underline}${homepage}${ANSI.reset}`);
+    console.log(`${ANSI.brightWhite}${ANSI.underline}${homepage}${ANSI.reset}`);
     console.log(`${ANSI.dim}© ${year} ${author}${ANSI.reset}`);
     console.log('');
 
