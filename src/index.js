@@ -45,13 +45,14 @@ class AgentTank {
     const year = new Date().getFullYear();
 
     console.log('');
-    // ASCII art logo matching the brand: battery/tank icon + "AGENT TANK" text
-    console.log(`${ANSI.brightCyan}  ┌─────┐${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  │     │${ANSI.reset}   ${ANSI.brightWhite}AGENT ${ANSI.brightCyan}${ANSI.bold}TANK${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  │ ─── │${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  │ ─── │${ANSI.reset}   ${ANSI.dim}Monitor your AI agent usage${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  │ ─── │${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  ╰─────╯${ANSI.reset}`);
+    // ASCII art logo matching the brand: tank/container icon with fluid level lines
+    // The logo resembles a container with rounded cap and three level indicator bars
+    console.log(`${ANSI.brightCyan}   ╭─────╮${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  ╭┴─────┴╮${ANSI.reset}    ${ANSI.brightWhite}AGENT ${ANSI.brightCyan}${ANSI.bold}TANK${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ${ANSI.reset}${ANSI.brightCyan}━━━━━${ANSI.reset} ${ANSI.brightCyan}│${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ${ANSI.reset}${ANSI.brightCyan}━━━━━${ANSI.reset} ${ANSI.brightCyan}│${ANSI.reset}    ${ANSI.dim}Monitor your AI agent usage${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ${ANSI.reset}${ANSI.brightCyan}━━━━━${ANSI.reset} ${ANSI.brightCyan}│${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  ╰───────╯${ANSI.reset}`);
     console.log('');
     console.log(`${ANSI.dim}Version ${version}${ANSI.reset}`);
     console.log(`${ANSI.brightWhite}${ANSI.underline}${homepage}${ANSI.reset}`);
