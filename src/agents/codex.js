@@ -120,7 +120,12 @@ class CodexAgent extends BaseAgent {
   }
 
   isReadyForCommands(output) { return this.isReadyForStatus(output); }
-  isReadyForStatus(output) { return output.includes('? for shortcuts') || output.includes('To get started'); }
+  isReadyForStatus(output) {
+    return output.includes('? for shortcuts') ||
+           output.includes('To get started') ||
+           output.includes('% left') ||
+           /›\s*\S/.test(this.stripAnsi(output));
+  }
   sendCommands(shell, _output) { logger.agent(this.name, 'Sending /status command...'); setTimeout(() => { if (shell) shell.write('/status\r'); }, 100); }
 
   _handleAdditionalPrompts(shell, _data, output) {
@@ -280,7 +285,11 @@ class CodexAgent extends BaseAgent {
   }
 
   hasCompleteOutput(output) {
-    return output.includes('5h limit') && output.includes('Weekly limit');
+    if (output.includes('5h limit') && output.includes('Weekly limit')) return true;
+    // Detect when Codex reports limits are unavailable — no point retrying
+    const clean = this.stripAnsi(output);
+    if (/data not available|limits.*unavailable|no usage data/i.test(clean)) return true;
+    return false;
   }
 
   parseResetTime(resetStr) {
