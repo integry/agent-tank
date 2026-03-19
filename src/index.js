@@ -51,10 +51,10 @@ class AgentTank {
     console.log(`${ANSI.brightCyan}    ╭───╮${ANSI.reset}`);
     console.log(`${ANSI.brightCyan}  ╭─┴───┴─╮${ANSI.reset}  ${ANSI.brightWhite}█████╗  ██████╗ ███████╗███╗   ██╗████████╗${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}████████╗ █████╗ ███╗   ██╗██╗  ██╗${ANSI.reset}`);
     console.log(`${ANSI.brightCyan}  │ ━━━━━ │${ANSI.reset}  ${ANSI.brightWhite}██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}╚══██╔══╝██╔══██╗████╗  ██║██║ ██╔╝${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  │ ━━━━━ │${ANSI.reset}  ${ANSI.brightWhite}███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   ${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}██║   ███████║██╔██╗ ██║█████╔╝${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  │ ━━━━━ │${ANSI.reset}  ${ANSI.brightWhite}██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   ${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}██║   ██╔══██║██║╚██╗██║██╔═██╗${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  │ ━━━━━ │${ANSI.reset}  ${ANSI.brightWhite}██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   ${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}██║   ██║  ██║██║ ╚████║██║  ██╗${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  ╰───────╯${ANSI.reset}  ${ANSI.brightWhite}╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}╚═╝   ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ━━━━━ │${ANSI.reset}  ${ANSI.brightWhite}███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   ${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}   ██║   ███████║██╔██╗ ██║█████╔╝ ${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ━━━━━ │${ANSI.reset}  ${ANSI.brightWhite}██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   ${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}   ██║   ██╔══██║██║╚██╗██║██╔═██╗ ${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ━━━━━ │${ANSI.reset}  ${ANSI.brightWhite}██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   ${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}   ██║   ██║  ██║██║ ╚████║██║  ██╗${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  ╰───────╯${ANSI.reset}  ${ANSI.brightWhite}╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝${ANSI.reset}`);
     console.log('');
     console.log(`${ANSI.dim}               Monitor your AI agent usage${ANSI.reset}`);
     console.log('');
