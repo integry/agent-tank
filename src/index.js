@@ -35,7 +35,8 @@ class AgentTank {
   }
 
   /**
-   * Display startup banner with website URL, version, and author copyright
+   * Display startup banner with website URL, version, author copyright,
+   * and agent refresh logic description
    */
   displayStartupBanner() {
     const ANSI = logger.ANSI;
@@ -57,6 +58,18 @@ class AgentTank {
     console.log(`${ANSI.dim}Version ${version}${ANSI.reset}`);
     console.log(`${ANSI.brightCyan}${ANSI.underline}${homepage}${ANSI.reset}`);
     console.log(`${ANSI.dim}© ${year} ${author}${ANSI.reset}`);
+    console.log('');
+
+    // Display agent refresh logic description
+    console.log(`${ANSI.cyan}${ANSI.bold}Agent Refresh Logic:${ANSI.reset}`);
+    if (!this.autoRefresh.enabled || this.autoRefresh.interval <= 0) {
+      console.log(`${ANSI.dim}  • Auto-refresh: disabled${ANSI.reset}`);
+    } else {
+      console.log(`${ANSI.dim}  • Auto-refresh: enabled (default interval: ${this.autoRefresh.interval}s)${ANSI.reset}`);
+      console.log(`${ANSI.dim}  • Agents are polled periodically via PTY sessions to fetch usage data${ANSI.reset}`);
+      console.log(`${ANSI.dim}  • Agents with higher minimum intervals use their own refresh timers${ANSI.reset}`);
+    }
+    console.log(`${ANSI.dim}  • Manual refresh available via POST /refresh or POST /refresh/:agent${ANSI.reset}`);
     console.log('');
   }
 
