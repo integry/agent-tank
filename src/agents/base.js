@@ -298,64 +298,19 @@ class BaseAgent {
 
       const timer = setTimeout(() => {
         if (!completed) {
-          completed = true;
-          console.log(`[${this.name}] Timeout after ${timeout}ms, output length: ${output.length}`);
-          if (output.length > 0) {
-            console.log(`[${this.name}] Partial output:`, this.stripAnsi(output).substring(0, 500));
-            // Write full output for debugging
-            require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, output);
-            console.log(`[${this.name}] Full output written to /tmp/${this.name}-output.txt`);
-          }
-          shell.kill();
-          // If we have some output, try to parse it anyway
-          if (output.length > 100) {
-            resolve(output);
-          } else {
-            reject(new Error('Timeout waiting for usage data'));
-          }
+          completed = true; console.log(`[${this.name}] Timeout after ${timeout}ms, output length: ${output.length}`);
+          if (output.length > 0) { console.log(`[${this.name}] Partial output:`, this.stripAnsi(output).substring(0, 500)); require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, output); console.log(`[${this.name}] Full output written to /tmp/${this.name}-output.txt`); }
+          shell.kill(); output.length > 100 ? resolve(output) : reject(new Error('Timeout waiting for usage data'));
         }
       }, timeout);
 
       shell.onData((data) => {
         output += data;
-
-        // Log first data received
-        if (output.length <= data.length) {
-          console.log(`[${this.name}] First data received (${data.length} chars)`);
-          if (data.length < 200) {
-            console.log(`[${this.name}] Initial output:`, this.stripAnsi(data).substring(0, 100));
-          }
-        }
-
-        // Handle trust prompt if agent has this method (only once)
-        if (!trustHandled && this.handleTrustPrompt && this.handleTrustPrompt(shell, output)) {
-          trustHandled = true;
-          return;
-        }
-
-        this._respondToTerminalQueries(data, shell);
-        this._handleAdditionalPrompts(shell, data, output);
-
-        // Send commands when ready
-        if (!commandsSent && this.isReadyForCommands(output)) {
-          console.log(`[${this.name}] Ready for commands, sending...`);
-          commandsSent = true;
-          this.sendCommands(shell, output);
-        }
-
-        // Check if we have enough data to extract usage
-        if (commandsSent && this.hasCompleteOutput(output)) {
-          console.log(`[${this.name}] Complete output detected, finishing...`);
-          // Small delay to capture any remaining output
-          setTimeout(() => {
-            if (!completed) {
-              completed = true;
-              clearTimeout(timer);
-              shell.kill();
-              resolve(output);
-            }
-          }, 300);
-        }
+        if (output.length <= data.length) { console.log(`[${this.name}] First data received (${data.length} chars)`); if (data.length < 200) console.log(`[${this.name}] Initial output:`, this.stripAnsi(data).substring(0, 100)); }
+        if (!trustHandled && this.handleTrustPrompt && this.handleTrustPrompt(shell, output)) { trustHandled = true; return; }
+        this._respondToTerminalQueries(data, shell); this._handleAdditionalPrompts(shell, data, output);
+        if (!commandsSent && this.isReadyForCommands(output)) { console.log(`[${this.name}] Ready for commands, sending...`); commandsSent = true; this.sendCommands(shell, output); }
+        if (commandsSent && this.hasCompleteOutput(output)) { console.log(`[${this.name}] Complete output detected, finishing...`); setTimeout(() => { if (!completed) { completed = true; clearTimeout(timer); shell.kill(); resolve(output); } }, 300); }
       });
 
       shell.onExit(({ exitCode }) => {
@@ -373,28 +328,22 @@ class BaseAgent {
     });
   }
 
-  getTimeout() { return 30000; }
-  isReadyForCommands(_o) { return false; }
-  hasCompleteOutput(_o) { return false; }
-  sendCommands(_s, _o) { }
-  parseOutput(_o) { return null; }
-  /* eslint-disable no-control-regex */
-  static ANSI_CURSOR_RIGHT = /\x1B\[(\d+)C/g;
-  static ANSI_ESCAPE_SEQ = /\x1B\[[0-9;?]*[a-zA-Z]/g;
-  static ANSI_OSC_SEQ = /\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g;
-  static ANSI_DCS_SEQ = /\x1BP[^\x1B]*\x1B\\/g;
-  static ANSI_CHARSET = /\x1B[()#][A-Za-z0-9]/g;
-  static ANSI_TWOCHAR = /\x1B[=>DMEH78cNOZn\\|}{~]/g;
-  static ANSI_LEFTOVER = /\x1B/g;
-  /* eslint-enable no-control-regex */
-  static MULTI_SPACE = /  +/g;
-  stripAnsi(str) {
-    return str.replace(BaseAgent.ANSI_CURSOR_RIGHT, (_, n) => ' '.repeat(parseInt(n)))
-      .replace(BaseAgent.ANSI_ESCAPE_SEQ, '').replace(BaseAgent.ANSI_OSC_SEQ, '')
-      .replace(BaseAgent.ANSI_DCS_SEQ, '').replace(BaseAgent.ANSI_CHARSET, '')
-      .replace(BaseAgent.ANSI_TWOCHAR, '').replace(BaseAgent.ANSI_LEFTOVER, '')
-      .replace(/\r/g, '').replace(BaseAgent.MULTI_SPACE, ' ');
+  getTimeout() { return 30000; } isReadyForCommands(_o) { return false; } hasCompleteOutput(_o) { return false; }
+  sendCommands(_s, _o) { } parseOutput(_o) { return null; }
+
+  /** Lightweight keepalive method to prevent session expiration. Subclasses can override. @returns {Promise<boolean>} True if keepalive succeeded */
+  async keepalive() {
+    if (this.freshProcess) { console.log(`[${this.name}] Keepalive skipped (fresh process mode)`); return true; }
+    if (!this.shell || !this.processReady) { console.log(`[${this.name}] Keepalive: spawning process...`); await this.spawnProcess(); }
+    if (this.shell) { console.log(`[${this.name}] Keepalive: sending ping...`); this.shell.write('\x1b'); return true; }
+    return false;
   }
+  /* eslint-disable no-control-regex */
+  static ANSI_CURSOR_RIGHT = /\x1B\[(\d+)C/g; static ANSI_ESCAPE_SEQ = /\x1B\[[0-9;?]*[a-zA-Z]/g;
+  static ANSI_OSC_SEQ = /\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g; static ANSI_DCS_SEQ = /\x1BP[^\x1B]*\x1B\\/g;
+  static ANSI_CHARSET = /\x1B[()#][A-Za-z0-9]/g; static ANSI_TWOCHAR = /\x1B[=>DMEH78cNOZn\\|}{~]/g;
+  static ANSI_LEFTOVER = /\x1B/g; static MULTI_SPACE = /  +/g; /* eslint-enable no-control-regex */
+  stripAnsi(str) { return str.replace(BaseAgent.ANSI_CURSOR_RIGHT, (_, n) => ' '.repeat(parseInt(n))).replace(BaseAgent.ANSI_ESCAPE_SEQ, '').replace(BaseAgent.ANSI_OSC_SEQ, '').replace(BaseAgent.ANSI_DCS_SEQ, '').replace(BaseAgent.ANSI_CHARSET, '').replace(BaseAgent.ANSI_TWOCHAR, '').replace(BaseAgent.ANSI_LEFTOVER, '').replace(/\r/g, '').replace(BaseAgent.MULTI_SPACE, ' '); }
   stripBoxChars(str) { return str ? str.replace(/[│╭╮╯╰─┌┐└┘├┤┬┴┼║═╔╗╚╝╠╣╦╩╬]/g, '').trim() : str; }
 }
 module.exports = { BaseAgent };

@@ -8,9 +8,9 @@
 // Mock node-pty to avoid native module issues in unit tests
 jest.mock('node-pty', () => ({
   spawn: jest.fn()
-}));
+}), { virtual: true });
 
-const { AgentTank } = require('../../src/index.js');
+const { AgentTank, AUTO_REFRESH_MODES } = require('../../src/index.js');
 
 describe('AgentTank', () => {
   describe('constructor', () => {
@@ -62,6 +62,22 @@ describe('AgentTank', () => {
         expect(tank.autoRefresh.interval).toBe(60);
       });
 
+      it('sets default auto-refresh mode to activity', () => {
+        expect(tank.autoRefresh.mode).toBe('activity');
+      });
+
+      it('sets default activity debounce to 5000ms', () => {
+        expect(tank.autoRefresh.activityDebounce).toBe(5000);
+      });
+
+      it('initializes activityMonitor as null', () => {
+        expect(tank.activityMonitor).toBeNull();
+      });
+
+      it('initializes isActivityRefreshing as false', () => {
+        expect(tank.isActivityRefreshing).toBe(false);
+      });
+
       it('initializes autoRefreshTimer as null', () => {
         expect(tank.autoRefreshTimer).toBeNull();
       });
@@ -77,6 +93,18 @@ describe('AgentTank', () => {
 
       it('disables skipServer by default', () => {
         expect(tank.skipServer).toBe(false);
+      });
+
+      it('enables keepalive by default', () => {
+        expect(tank.keepalive.enabled).toBe(true);
+      });
+
+      it('sets default keepalive interval to 300 seconds', () => {
+        expect(tank.keepalive.interval).toBe(300);
+      });
+
+      it('initializes keepaliveManager as null', () => {
+        expect(tank.keepaliveManager).toBeNull();
       });
     });
 
@@ -134,9 +162,58 @@ describe('AgentTank', () => {
         expect(tank.autoRefresh.interval).toBe(0);
       });
 
+      it('accepts autoRefreshMode of none', () => {
+        const tank = new AgentTank({ autoRefreshMode: 'none' });
+        expect(tank.autoRefresh.mode).toBe('none');
+        expect(tank.autoRefresh.enabled).toBe(false);
+      });
+
+      it('accepts autoRefreshMode of interval', () => {
+        const tank = new AgentTank({ autoRefreshMode: 'interval' });
+        expect(tank.autoRefresh.mode).toBe('interval');
+        expect(tank.autoRefresh.enabled).toBe(true);
+      });
+
+      it('accepts autoRefreshMode of activity', () => {
+        const tank = new AgentTank({ autoRefreshMode: 'activity' });
+        expect(tank.autoRefresh.mode).toBe('activity');
+        expect(tank.autoRefresh.enabled).toBe(true);
+      });
+
+      it('defaults to activity mode for invalid autoRefreshMode', () => {
+        const tank = new AgentTank({ autoRefreshMode: 'invalid' });
+        expect(tank.autoRefresh.mode).toBe('activity');
+      });
+
+      it('accepts custom activity debounce', () => {
+        const tank = new AgentTank({ activityDebounce: 10000 });
+        expect(tank.autoRefresh.activityDebounce).toBe(10000);
+      });
+
+      it('sets mode to none when autoRefreshEnabled is false', () => {
+        const tank = new AgentTank({ autoRefreshEnabled: false });
+        expect(tank.autoRefresh.mode).toBe('none');
+        expect(tank.autoRefresh.enabled).toBe(false);
+      });
+
       it('enables skipServer when set to true', () => {
         const tank = new AgentTank({ skipServer: true });
         expect(tank.skipServer).toBe(true);
+      });
+
+      it('disables keepalive when keepaliveEnabled is false', () => {
+        const tank = new AgentTank({ keepaliveEnabled: false });
+        expect(tank.keepalive.enabled).toBe(false);
+      });
+
+      it('accepts custom keepalive interval', () => {
+        const tank = new AgentTank({ keepaliveInterval: 600 });
+        expect(tank.keepalive.interval).toBe(600);
+      });
+
+      it('accepts zero keepalive interval (disabled)', () => {
+        const tank = new AgentTank({ keepaliveInterval: 0 });
+        expect(tank.keepalive.interval).toBe(0);
       });
 
       it('combines multiple options correctly', () => {
@@ -403,6 +480,134 @@ describe('AgentTank', () => {
       tank.stop();
 
       expect(tank.agentRefreshTimers.size).toBe(0);
+    });
+
+    it('stops keepalive manager if running', () => {
+      // Simulate a running keepalive manager
+      tank.keepaliveManager = {
+        stop: jest.fn()
+      };
+
+      tank.stop();
+
+      expect(tank.keepaliveManager).toBeNull();
+    });
+  });
+
+  describe('getKeepaliveStatus', () => {
+    let tank;
+
+    beforeEach(() => {
+      tank = new AgentTank();
+    });
+
+    it('returns default status when manager not initialized', () => {
+      const status = tank.getKeepaliveStatus();
+
+      expect(status).toEqual({
+        enabled: true,
+        interval: 300,
+        isRunning: false,
+        registeredAgents: [],
+        lastKeepaliveAt: null,
+      });
+    });
+
+    it('returns custom config values when manager not initialized', () => {
+      const customTank = new AgentTank({
+        keepaliveEnabled: false,
+        keepaliveInterval: 600,
+      });
+
+      const status = customTank.getKeepaliveStatus();
+
+      expect(status.enabled).toBe(false);
+      expect(status.interval).toBe(600);
+    });
+  });
+
+  describe('getActivityMonitorStatus', () => {
+    let tank;
+
+    beforeEach(() => {
+      tank = new AgentTank();
+    });
+
+    it('returns default status when monitor not initialized', () => {
+      const status = tank.getActivityMonitorStatus();
+
+      expect(status).toEqual({
+        isMonitoring: false,
+        debounceInterval: 5000,
+        monitoredAgents: [],
+        agentCount: 0,
+        activityCount: 0,
+        lastActivityAt: {},
+        hasPendingActivity: false,
+        pendingAgents: [],
+        isActivityRefreshing: false,
+      });
+    });
+
+    it('returns custom debounce interval when configured', () => {
+      const customTank = new AgentTank({
+        activityDebounce: 10000,
+      });
+
+      const status = customTank.getActivityMonitorStatus();
+      expect(status.debounceInterval).toBe(10000);
+    });
+  });
+
+  describe('getAutoRefreshConfig', () => {
+    let tank;
+
+    beforeEach(() => {
+      tank = new AgentTank();
+    });
+
+    it('returns correct configuration', () => {
+      const config = tank.getAutoRefreshConfig();
+
+      expect(config).toEqual({
+        mode: 'activity',
+        enabled: true,
+        interval: 60,
+        activityDebounce: 5000,
+        lastRefreshedAt: null,
+      });
+    });
+
+    it('returns custom configuration when provided', () => {
+      const customTank = new AgentTank({
+        autoRefreshMode: 'interval',
+        autoRefreshInterval: 120,
+        activityDebounce: 10000,
+      });
+
+      const config = customTank.getAutoRefreshConfig();
+
+      expect(config.mode).toBe('interval');
+      expect(config.interval).toBe(120);
+      expect(config.activityDebounce).toBe(10000);
+    });
+  });
+
+  describe('AUTO_REFRESH_MODES constant', () => {
+    it('contains none mode', () => {
+      expect(AUTO_REFRESH_MODES).toContain('none');
+    });
+
+    it('contains interval mode', () => {
+      expect(AUTO_REFRESH_MODES).toContain('interval');
+    });
+
+    it('contains activity mode', () => {
+      expect(AUTO_REFRESH_MODES).toContain('activity');
+    });
+
+    it('has exactly 3 modes', () => {
+      expect(AUTO_REFRESH_MODES).toHaveLength(3);
     });
   });
 });

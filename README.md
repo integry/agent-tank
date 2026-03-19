@@ -52,7 +52,12 @@ Options:
   --config, -c          Path to config file (JSON)
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
+  --auto-refresh-mode <mode>         Refresh mode: none, interval, activity (default: activity)
   --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60)
+  --activity-debounce <ms>           Activity debounce interval in milliseconds (default: 5000)
+  --keepalive           Enable/disable session keepalive (default: true)
+  --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300)
+  --history-retention-days <days>    Days to retain usage history (default: 14)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
   --help, -h            Show this help message
@@ -70,7 +75,12 @@ Environment variables override CLI flags and config file settings:
 | `AGENT_TANK_HOST` | Bind address (overrides `--host`) |
 | `AGENT_TANK_FRESH_PROCESS` | Use fresh process per refresh (`1` or `true`) |
 | `AGENT_TANK_AUTO_REFRESH` | Enable/disable background auto-refresh (`1`/`true` or `0`/`false`) |
+| `AGENT_TANK_AUTO_REFRESH_MODE` | Refresh mode: `none`, `interval`, or `activity` (default: `activity`) |
 | `AGENT_TANK_AUTO_REFRESH_INTERVAL` | Auto-refresh interval in seconds |
+| `AGENT_TANK_ACTIVITY_DEBOUNCE` | Activity debounce interval in milliseconds (default: 5000) |
+| `AGENT_TANK_KEEPALIVE` | Enable/disable session keepalive (`1`/`true` or `0`/`false`) |
+| `AGENT_TANK_KEEPALIVE_INTERVAL` | Session keepalive interval in seconds (default: 300) |
+| `AGENT_TANK_HISTORY_RETENTION_DAYS` | Days to retain usage history (default: 14) |
 
 ### Configuration File
 
@@ -81,13 +91,152 @@ You can use a JSON configuration file:
   "claude": true,
   "gemini": true,
   "codex": false,
-  "port": 8080
+  "port": 8080,
+  "history": {
+    "retentionDays": 7
+  }
 }
 ```
 
 ```bash
 agent-tank -c config.json
 ```
+
+## Activity-Based Polling
+
+Agent Tank supports intelligent activity-based polling that monitors local log directories for LLM CLI activity. Instead of polling on a fixed interval (which can waste resources during idle periods), activity mode only triggers usage refreshes when you're actively using the CLI tools.
+
+### How It Works
+
+1. **Log Directory Monitoring**: Agent Tank watches the following directories for file changes:
+   - Claude: `~/.config/claude/projects/`, `~/.claude/`
+   - Codex: `~/.codex/sessions/`, `~/.codex/`
+   - Gemini: `~/.config/gemini/`, `~/.gemini/`
+
+2. **Debounced Detection**: When activity is detected, a configurable debounce timer starts. This prevents excessive refreshes during bursts of activity.
+
+3. **On-Demand Refresh Cycles**: After the debounce period, a refresh cycle begins and continues at the configured interval while activity is ongoing.
+
+4. **Idle State**: When no more activity is detected, polling stops to conserve resources.
+
+### Auto-Refresh Modes
+
+Agent Tank supports three refresh modes:
+
+| Mode | Description |
+|------|-------------|
+| `activity` | (Default) Monitors log directories and refreshes when CLI activity is detected |
+| `interval` | Traditional interval-based polling at fixed intervals |
+| `none` | No automatic refresh; manual refresh only via `POST /refresh` |
+
+### Configuration
+
+```bash
+# Use activity-based polling (default)
+agent-tank
+
+# Use activity mode with custom debounce (wait 10 seconds after activity)
+agent-tank --activity-debounce 10000
+
+# Use traditional interval-based polling
+agent-tank --auto-refresh-mode interval
+
+# Disable all auto-refresh (manual only)
+agent-tank --auto-refresh-mode none
+
+# Via environment variables
+AGENT_TANK_AUTO_REFRESH_MODE=activity agent-tank
+AGENT_TANK_ACTIVITY_DEBOUNCE=10000 agent-tank
+```
+
+### Notes
+
+- Activity mode automatically falls back to interval mode if no log directories are found
+- The debounce interval is specified in milliseconds (default: 5000ms = 5 seconds)
+- During active usage, refreshes occur at the `--auto-refresh-interval` rate (default: 60 seconds)
+- Activity mode is disabled in one-shot mode (`--once`)
+
+## Session Keepalive
+
+Agent Tank includes an automatic session keepalive feature that prevents LLM CLI sessions from expiring due to inactivity. This is especially useful for Claude and Codex, which have session timeouts that require periodic activity.
+
+### How It Works
+
+The keepalive manager runs in the background and periodically sends lightweight "ping" commands to each agent's PTY session. This maintains the connection without triggering API calls or affecting rate limits.
+
+### Configuration
+
+```bash
+# Use default keepalive (every 5 minutes)
+agent-tank
+
+# Custom keepalive interval (every 10 minutes)
+agent-tank --keepalive-interval 600
+
+# Disable keepalive
+agent-tank --no-keepalive
+
+# Via environment variable
+AGENT_TANK_KEEPALIVE_INTERVAL=600 agent-tank
+```
+
+### Notes
+
+- Keepalive is automatically disabled in fresh process mode (`--fresh-process`) since there are no persistent sessions to maintain
+- Keepalive is also disabled in one-shot mode (`--once`)
+- The feature only affects PTY-based sessions; JSON-RPC mode (used by Codex when available) doesn't require keepalive
+
+## Usage History & Pace Evaluation
+
+Agent Tank automatically tracks usage history and evaluates whether you're burning through your rate limits faster than expected.
+
+### Features
+
+- **Historical Snapshots**: Usage percentages are stored in `~/.agent-tank/history.json` with timestamps
+- **Automatic Pruning**: Records older than the retention period (default: 14 days) are automatically removed
+- **Pace Evaluation**: Each metric includes a `paceEval` object that calculates:
+  - `expectedPercent`: What your usage should be based on linear pace
+  - `isBurningFast`: Whether you're using faster than the 1.2x threshold
+  - `etaSeconds`: Estimated seconds until you hit 100% (if burning fast)
+  - `deltaPercent`: Difference between actual and expected usage
+
+### Configuration
+
+```bash
+# Keep 7 days of history instead of default 14
+agent-tank --history-retention-days 7
+
+# Via environment variable
+AGENT_TANK_HISTORY_RETENTION_DAYS=7 agent-tank
+```
+
+### API Endpoints
+
+- `GET /history` - Get history statistics (total records, per-agent counts, date ranges)
+- `GET /history/:agent` - Get full history for a specific agent
+
+### Example Pace Evaluation Data
+
+When an agent is burning faster than expected, the `paceEval` object is attached to each metric:
+
+```json
+{
+  "session": {
+    "percent": 60,
+    "resetsInSeconds": 9000,
+    "paceEval": {
+      "expectedPercent": 50,
+      "isBurningFast": true,
+      "etaSeconds": 6000,
+      "paceRatio": 1.2,
+      "elapsedPercent": 50,
+      "deltaPercent": 10
+    }
+  }
+}
+```
+
+This example shows: 50% of the 5-hour session has elapsed, but 60% of usage is consumed. At this pace (1.2x), you'll hit 100% in approximately 6000 seconds (1h 40m).
 
 ## Installation
 
@@ -110,7 +259,9 @@ npx agent-tank
 | GET | `/` | HTML status page |
 | GET | `/status` | JSON status for all agents |
 | GET | `/status/:agent` | JSON status for specific agent |
-| GET | `/config` | Auto-refresh configuration (JSON) |
+| GET | `/config` | Auto-refresh and history configuration (JSON) |
+| GET | `/history` | Usage history statistics (JSON) |
+| GET | `/history/:agent` | Usage history for specific agent (JSON) |
 | POST | `/refresh` | Refresh all agents |
 | POST | `/refresh/:agent` | Refresh specific agent |
 
@@ -389,11 +540,24 @@ watcher.stop();
 
 Agent Tank is designed with privacy and security as core principles. Understanding how it collects usage data is essential for users evaluating the tool's security posture.
 
-#### Local PTY-Based Architecture
+#### Local Execution Architecture
 
-The tool operates entirely on your local machine by spawning instances of LLM CLI tools within a pseudo-terminal (PTY). This approach is functionally equivalent to you opening a terminal window and typing commands yourself—Agent Tank simply automates this process.
+The tool operates entirely on your local machine using two different approaches depending on the CLI tool's capabilities:
 
-Here's what happens when Agent Tank queries your usage:
+**JSON-RPC Mode (Codex)**
+
+For the Codex CLI, Agent Tank uses a structured JSON-RPC protocol when available:
+
+1. **Starts the app-server** - Launches `codex -s read-only -a untrusted app-server`
+2. **Sends JSON-RPC requests** - Calls `account/rateLimits/read` via stdin
+3. **Receives structured data** - Parses JSON responses with precise rate limit information
+4. **Falls back to PTY** - Automatically uses PTY mode if JSON-RPC is unavailable (older CLI versions)
+
+This approach provides more reliable data parsing and is the preferred method for Codex.
+
+**PTY-Based Mode (Claude, Gemini, Codex fallback)**
+
+For other CLI tools (and as a fallback for Codex), Agent Tank spawns instances within a pseudo-terminal (PTY). This approach is functionally equivalent to you opening a terminal window and typing commands yourself:
 
 1. **Spawns a local PTY** - Creates a pseudo-terminal session on your machine
 2. **Launches the CLI tool** - Starts the authenticated CLI (e.g., `claude`, `gemini`, or `codex`)
@@ -417,11 +581,12 @@ LLM usage data is sensitive—it can reveal work patterns, subscription tiers, a
 
 #### Supported Commands
 
-| Agent | Command | Output |
-|-------|---------|--------|
-| Claude | `/usage` | Session %, Weekly % |
-| Gemini | `/stats` | Model-specific usage % |
-| Codex | `/status` | 5h limit %, Weekly % |
+| Agent | Method | Command/RPC | Output |
+|-------|--------|-------------|--------|
+| Claude | PTY | `/usage` | Session %, Weekly % |
+| Gemini | PTY | `/stats` | Model-specific usage % |
+| Codex | JSON-RPC | `account/rateLimits/read` | 5h limit %, Weekly % |
+| Codex | PTY (fallback) | `/status` | 5h limit %, Weekly % |
 
 ## Troubleshooting
 
