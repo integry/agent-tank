@@ -102,7 +102,6 @@ class CodexAgent extends BaseAgent {
     setTimeout(() => { if (shell) { logger.agent(this.name, 'Sending Enter to proceed...'); shell.write('\r'); } }, 500);
     return true;
   }
-
   handleUpdateScreen(shell, output) {
     if (!shell) return false;
     const clean = this.stripAnsi(output);
@@ -112,26 +111,17 @@ class CodexAgent extends BaseAgent {
     setTimeout(() => { if (shell) shell.write('\r'); }, 300);
     return true;
   }
-
-  parseVersionInfo(output) {
-    return parseVersionInfo(output, this.stripAnsi.bind(this));
-  }
-
+  parseVersionInfo(output) { return parseVersionInfo(output, this.stripAnsi.bind(this)); }
   isReadyForCommands(output) { return this.isReadyForStatus(output); }
   isReadyForStatus(output) {
-    return output.includes('? for shortcuts') ||
-           output.includes('To get started') ||
-           output.includes('% left') ||
-           /›\s*\S/.test(this.stripAnsi(output));
+    return output.includes('? for shortcuts') || output.includes('To get started') ||
+           output.includes('% left') || /›\s*\S/.test(this.stripAnsi(output));
   }
   sendCommands(shell, _output) { logger.agent(this.name, 'Sending /status command...'); setTimeout(() => { if (shell) shell.write('/status\r'); }, 100); }
 
   _handleAdditionalPrompts(shell, _data, output) {
     if (!shell) return;
-    if (!this._updateHandled && this.handleUpdateScreen(shell, output)) {
-      this._updateHandled = true;
-      return;
-    }
+    if (!this._updateHandled && this.handleUpdateScreen(shell, output)) { this._updateHandled = true; return; }
     const cleanOutput = this.stripAnsi(output);
     const isUpdateScreen = /u?pdate available/i.test(cleanOutput) && /[\d.]+\s*->\s*[\d.]+/.test(cleanOutput);
     if (!this._continuationHandled && !isUpdateScreen && output.includes('Press enter to continue')) {
@@ -140,22 +130,11 @@ class CodexAgent extends BaseAgent {
       shell.write('\r');
     }
   }
-
   handleInteractivePrompts(shell, data, output, state) {
     if (!shell) return false;
-
-    if (!state.trustHandled && this.handleTrustPrompt(shell, output)) {
-      state.trustHandled = true;
-      return true;
-    }
-
-    if (!state.updateHandled && this.handleUpdateScreen(shell, output)) {
-      state.updateHandled = true;
-      return true;
-    }
-
+    if (!state.trustHandled && this.handleTrustPrompt(shell, output)) { state.trustHandled = true; return true; }
+    if (!state.updateHandled && this.handleUpdateScreen(shell, output)) { state.updateHandled = true; return true; }
     this._respondToTerminalQueries(data, shell);
-
     const cleanOutput = this.stripAnsi(output);
     const isUpdateScreen = /u?pdate available/i.test(cleanOutput) && /[\d.]+\s*->\s*[\d.]+/.test(cleanOutput);
     if (!state.continuationHandled && !isUpdateScreen && output.includes('Press enter to continue')) {
@@ -163,7 +142,6 @@ class CodexAgent extends BaseAgent {
       state.continuationHandled = true;
       shell.write('\r');
     }
-
     return false;
   }
 
