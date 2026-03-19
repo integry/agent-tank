@@ -9,7 +9,6 @@ const logger = require('./logger.js');
 const { HistoryStore, DEFAULT_RETENTION_DAYS } = require('./history-store.js');
 const { extractSnapshotMetrics } = require('./snapshot-metrics.js');
 const { attachPaceEvaluation } = require('./pace-attachment.js');
-const { handleRequest } = require('./http-handler.js');
 const { KeepaliveManager } = require('./keepalive-manager.js');
 const { AutoRefreshManager } = require('./auto-refresh-manager.js');
 
@@ -287,42 +286,23 @@ class AgentTank {
     }
   }
 
-  /**
-   * Get usage history statistics.
-   *
-   * @returns {Object} History statistics
-   */
-  getHistoryStats() {
-    return this.historyStore.getStats();
-  }
+  /** Get usage history statistics. @returns {Object} */
+  getHistoryStats() { return this.historyStore.getStats(); }
 
-  /**
-   * Get usage history for an agent.
-   *
-   * @param {string} [agentName] - Optional agent name to filter
-   * @returns {Array} History records
-   */
-  getHistory(agentName = null) {
-    return this.historyStore.getHistory(agentName);
-  }
+  /** Get usage history for an agent. @param {string} [agentName] @returns {Array} */
+  getHistory(agentName = null) { return this.historyStore.getHistory(agentName); }
 
   getStatus() {
     const status = {};
     for (const [name, agent] of this.agents) {
-      status[name] = {
-        ...agent.getStatus(),
-        publicStatus: this.publicStatus[name] || null,
-      };
+      status[name] = { ...agent.getStatus(), publicStatus: this.publicStatus[name] || null };
     }
     return status;
   }
 
   getAgentStatus(name) {
     const agent = this.agents.get(name);
-    if (!agent) {
-      return null;
-    }
-    return agent.getStatus();
+    return agent ? agent.getStatus() : null;
   }
 
   authenticate(req, url) {
@@ -378,39 +358,15 @@ class AgentTank {
     return { enabled: this.keepalive.enabled, interval: this.keepalive.interval, isRunning: false, registeredAgents: [], lastKeepaliveAt: null };
   }
 
-  /**
-   * Get activity monitor status.
-   * @returns {Object} Activity monitor status
-   */
+  /** Get activity monitor status. @returns {Object} */
   getActivityMonitorStatus() {
-    if (this.autoRefreshManager) {
-      return this.autoRefreshManager.getActivityMonitorStatus();
-    }
-    return {
-      isMonitoring: false,
-      debounceInterval: this.autoRefresh.activityDebounce,
-      monitoredAgents: [],
-      agentCount: 0,
-      activityCount: 0,
-      lastActivityAt: {},
-      hasPendingActivity: false,
-      pendingAgents: [],
-      isActivityRefreshing: false,
-    };
+    if (this.autoRefreshManager) return this.autoRefreshManager.getActivityMonitorStatus();
+    return { isMonitoring: false, debounceInterval: this.autoRefresh.activityDebounce, monitoredAgents: [], agentCount: 0, activityCount: 0, lastActivityAt: {}, hasPendingActivity: false, pendingAgents: [], isActivityRefreshing: false };
   }
 
-  /**
-   * Get the auto-refresh configuration.
-   * @returns {Object} Auto-refresh configuration
-   */
+  /** Get the auto-refresh configuration. @returns {Object} */
   getAutoRefreshConfig() {
-    return {
-      mode: this.autoRefresh.mode,
-      enabled: this.autoRefresh.enabled,
-      interval: this.autoRefresh.interval,
-      activityDebounce: this.autoRefresh.activityDebounce,
-      lastRefreshedAt: this.autoRefreshManager ? this.autoRefreshManager.getLastRefreshedAt() : null,
-    };
+    return { mode: this.autoRefresh.mode, enabled: this.autoRefresh.enabled, interval: this.autoRefresh.interval, activityDebounce: this.autoRefresh.activityDebounce, lastRefreshedAt: this.autoRefreshManager ? this.autoRefreshManager.getLastRefreshedAt() : null };
   }
 }
 
