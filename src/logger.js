@@ -157,6 +157,31 @@ const logger = {
   },
 
   /**
+   * Format text with dim styling (for verbose/secondary output)
+   * @param {string} text - Text to dim
+   * @returns {string} - Dimmed text
+   */
+  dim(text) {
+    return `${ANSI.dim}${text}${ANSI.reset}`;
+  },
+
+  /**
+   * Format and dim JSON data (for large data payloads)
+   * @param {any} data - Data to format as JSON
+   * @param {boolean} [pretty=false] - Whether to pretty-print the JSON
+   * @returns {string} - Dimmed JSON string
+   */
+  json(data, pretty = false) {
+    let jsonStr;
+    try {
+      jsonStr = pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
+    } catch {
+      jsonStr = String(data);
+    }
+    return `${ANSI.dim}${jsonStr}${ANSI.reset}`;
+  },
+
+  /**
    * Get the color code for a specific agent
    * @param {string} agentName - Name of the agent
    * @returns {string} - ANSI color code

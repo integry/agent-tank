@@ -288,6 +288,76 @@ describe('Logger', () => {
     });
   });
 
+  describe('dim()', () => {
+    it('wraps text with dim ANSI codes', () => {
+      const result = logger.dim('verbose output');
+      expect(result).toContain(logger.ANSI.dim);
+      expect(result).toContain('verbose output');
+      expect(result).toContain(logger.ANSI.reset);
+    });
+
+    it('returns dimmed empty string for empty input', () => {
+      const result = logger.dim('');
+      expect(result).toBe(`${logger.ANSI.dim}${logger.ANSI.reset}`);
+    });
+
+    it('can be used inline with agent logging', () => {
+      logger.agent('claude', 'Output length:', logger.dim('500 chars'));
+      const output = consoleLogSpy.mock.calls[0][0];
+      expect(output).toContain('[claude]');
+      expect(output).toContain(logger.ANSI.dim);
+      expect(output).toContain('500 chars');
+    });
+  });
+
+  describe('json()', () => {
+    it('formats and dims JSON objects', () => {
+      const result = logger.json({ key: 'value' });
+      expect(result).toContain(logger.ANSI.dim);
+      expect(result).toContain('{"key":"value"}');
+      expect(result).toContain(logger.ANSI.reset);
+    });
+
+    it('formats arrays as JSON', () => {
+      const result = logger.json([1, 2, 3]);
+      expect(result).toContain('[1,2,3]');
+      expect(result).toContain(logger.ANSI.dim);
+    });
+
+    it('handles null values', () => {
+      const result = logger.json(null);
+      expect(result).toContain('null');
+      expect(result).toContain(logger.ANSI.dim);
+    });
+
+    it('handles nested objects', () => {
+      const result = logger.json({ a: { b: { c: 1 } } });
+      expect(result).toContain('{"a":{"b":{"c":1}}}');
+    });
+
+    it('supports pretty printing', () => {
+      const result = logger.json({ key: 'value' }, true);
+      expect(result).toContain('{\n');
+      expect(result).toContain('  "key": "value"');
+      expect(result).toContain('\n}');
+    });
+
+    it('handles circular references gracefully', () => {
+      const obj = { name: 'test' };
+      obj.self = obj;
+      // Should not throw and return string representation
+      expect(() => logger.json(obj)).not.toThrow();
+    });
+
+    it('can be used inline with agent logging', () => {
+      logger.agent('gemini', 'Parsed metadata:', logger.json({ version: '1.0' }));
+      const output = consoleLogSpy.mock.calls[0][0];
+      expect(output).toContain('[gemini]');
+      expect(output).toContain(logger.ANSI.dim);
+      expect(output).toContain('{"version":"1.0"}');
+    });
+  });
+
   describe('module exports', () => {
     it('exports info method', () => {
       expect(typeof logger.info).toBe('function');
@@ -319,6 +389,14 @@ describe('Logger', () => {
 
     it('exports getAgentColor method', () => {
       expect(typeof logger.getAgentColor).toBe('function');
+    });
+
+    it('exports dim method', () => {
+      expect(typeof logger.dim).toBe('function');
+    });
+
+    it('exports json method', () => {
+      expect(typeof logger.json).toBe('function');
     });
 
     it('exports ANSI codes object', () => {

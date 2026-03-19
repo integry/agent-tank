@@ -1,6 +1,7 @@
 const { BaseAgent } = require('./base.js');
 const { calculatePace } = require('../pace-evaluator.js');
 const { CYCLE_DURATIONS } = require('../usage-formatters.js');
+const logger = require('../logger.js');
 
 class ClaudeAgent extends BaseAgent {
   constructor() {
@@ -26,9 +27,9 @@ class ClaudeAgent extends BaseAgent {
   handleTrustPrompt(shell, output) {
     const patterns = ['Do you trust', 'trust the files', 'trust this folder', 'Trust this workspace', 'allow access'];
     if (!patterns.some(p => output.toLowerCase().includes(p.toLowerCase()))) return false;
-    console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
+    logger.agent(this.name, 'Detected trust prompt, auto-accepting...');
     shell.write('y\r');
-    setTimeout(() => { console.log(`[${this.name}] Sending Enter to proceed...`); shell.write('\r'); }, 500);
+    setTimeout(() => { logger.agent(this.name, 'Sending Enter to proceed...'); shell.write('\r'); }, 500);
     return true;
   }
 
@@ -129,7 +130,7 @@ class ClaudeAgent extends BaseAgent {
   }
 
   sendCommands(shell, _output) {
-    console.log(`[${this.name}] Sending /usage command...`);
+    logger.agent(this.name, 'Sending /usage command...');
     // Escape dismisses any previous output/UI, then type command + Enter
     setTimeout(() => shell.write('\x1b'), 50);
     setTimeout(() => shell.write('/usage'), 600);
@@ -227,7 +228,7 @@ class ClaudeAgent extends BaseAgent {
     // Debug: log session section for troubleshooting
     const sessionIdx = clean.indexOf('Current session'), weeklyIdx = clean.indexOf('Current week');
     if (sessionIdx !== -1 && weeklyIdx !== -1) {
-      console.log(`[${this.name}] Session section preview:`, clean.substring(sessionIdx, weeklyIdx).substring(0, 200));
+      logger.agent(this.name, 'Session section preview:', logger.dim(clean.substring(sessionIdx, weeklyIdx).substring(0, 200)));
     }
 
     // Parse session
@@ -299,7 +300,7 @@ class ClaudeAgent extends BaseAgent {
       };
 
       const timer = setTimeout(() => {
-        console.log(`[${this.name}] /status timeout, using partial output`);
+        logger.agent(this.name, '/status timeout, using partial output');
         finish(this._parseStatusOutput(statusOutput));
       }, 10000); // 10 second timeout for /status
 
@@ -308,12 +309,12 @@ class ClaudeAgent extends BaseAgent {
         statusOutput = this.output;
         // Check if we have complete /status output
         if (this._hasCompleteStatusOutput(statusOutput)) {
-          console.log(`[${this.name}] Complete /status output detected`);
+          logger.agent(this.name, 'Complete /status output detected');
           setTimeout(() => finish(this._parseStatusOutput(statusOutput)), 100);
         }
       };
 
-      console.log(`[${this.name}] Sending /status command for metadata...`);
+      logger.agent(this.name, 'Sending /status command for metadata...');
       this.output = '';
       // Send escape first to dismiss any UI, then /status
       setTimeout(() => this.shell.write('\x1b'), 50);
