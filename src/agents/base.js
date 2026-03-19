@@ -255,14 +255,13 @@ class BaseAgent {
 
   _respondToTerminalQueries(data, target) {
     const sh = target || this.shell; if (!sh) return;
-    if (data.includes('\x1b[6n')) sh.write('\x1b[1;1R'); if (data.includes('\x1b[c')) sh.write('\x1b[?62;22c');
-    if (data.includes('\x1b[?u')) sh.write('\x1b[?0u'); if (data.includes('\x1b]10;?')) sh.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\');
-    if (data.includes('\x1b]11;?')) sh.write('\x1b]11;rgb:0000/0000/0000\x1b\\'); if (data.includes('\x1b[>q')) sh.write('\x1bP>|xterm(1)\x1b\\');
-    if (data.includes('\x1b[>4;?m')) sh.write('\x1b[>4m');
+    if (data.includes('\x1b[6n')) sh.write('\x1b[1;1R'); if (data.includes('\x1b[c')) sh.write('\x1b[?62;22c'); if (data.includes('\x1b[?u')) sh.write('\x1b[?0u');
+    if (data.includes('\x1b]10;?')) sh.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\'); if (data.includes('\x1b]11;?')) sh.write('\x1b]11;rgb:0000/0000/0000\x1b\\');
+    if (data.includes('\x1b[>q')) sh.write('\x1bP>|xterm(1)\x1b\\'); if (data.includes('\x1b[>4;?m')) sh.write('\x1b[>4m');
   }
 
-  _handleAdditionalPrompts(_s, _d, _o) { } // Hook for subclasses
-  killProcess() {
+  _handleAdditionalPrompts(_s, _d, _o) { } // Hook for subclasses; killProcess: see below
+  killProcess() { // Terminates the persistent PTY process
     if (this.shell) {
       logger.agent(this.name, 'Killing persistent process');
       for (const d of this._disposables) { d.dispose(); }
@@ -378,8 +377,7 @@ class BaseAgent {
   getTimeout() { return 30000; }
   isReadyForCommands(_o) { return false; }
   hasCompleteOutput(_o) { return false; }
-  sendCommands(_s, _o) { }
-  parseOutput(_o) { return null; }
+  sendCommands(_s, _o) { } parseOutput(_o) { return null; }
   /* eslint-disable no-control-regex */
   static ANSI_CURSOR_RIGHT = /\x1B\[(\d+)C/g;
   static ANSI_ESCAPE_SEQ = /\x1B\[[0-9;?]*[a-zA-Z]/g;
