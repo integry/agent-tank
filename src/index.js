@@ -45,14 +45,13 @@ class AgentTank {
     const year = new Date().getFullYear();
 
     console.log('');
-    console.log(`${ANSI.brightCyan}${ANSI.bold}  ___                    _     _____             _   ${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}${ANSI.bold} / _ \\                  | |   |_   _|           | |  ${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}${ANSI.bold}/ /_\\ \\ __ _  ___ _ __ | |_    | | __ _ _ __   | | _${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}${ANSI.bold}|  _  |/ _\` |/ _ \\ '_ \\| __|   | |/ _\` | '_ \\  | |/ /${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}${ANSI.bold}| | | | (_| |  __/ | | | |_    | | (_| | | | | |   < ${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}${ANSI.bold}\\_| |_/\\__, |\\___|_| |_|\\__|   \\_/\\__,_|_| |_| |_|\\_\\${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}${ANSI.bold}        __/ |                                        ${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}${ANSI.bold}       |___/                                         ${ANSI.reset}`);
+    // ASCII art logo matching the brand: battery/tank icon + "AGENT TANK" text
+    console.log(`${ANSI.brightCyan}  ┌─────┐${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │     │${ANSI.reset}   ${ANSI.brightWhite}AGENT ${ANSI.brightCyan}${ANSI.bold}TANK${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ─── │${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ─── │${ANSI.reset}   ${ANSI.dim}Monitor your AI agent usage${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ─── │${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  ╰─────╯${ANSI.reset}`);
     console.log('');
     console.log(`${ANSI.dim}Version ${version}${ANSI.reset}`);
     console.log(`${ANSI.brightWhite}${ANSI.underline}${homepage}${ANSI.reset}`);
