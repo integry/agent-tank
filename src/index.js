@@ -47,12 +47,16 @@ class AgentTank {
     console.log('');
     // ASCII art logo matching the brand: tank/container icon with fluid level lines
     // The logo resembles a container with rounded cap and three level indicator bars
+    // ASCII art text for "AGENT TANK" using block letters
     console.log(`${ANSI.brightCyan}   ╭─────╮${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  ╭┴─────┴╮${ANSI.reset}    ${ANSI.brightWhite}AGENT ${ANSI.brightCyan}${ANSI.bold}TANK${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  │ ${ANSI.reset}${ANSI.brightCyan}━━━━━${ANSI.reset} ${ANSI.brightCyan}│${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  │ ${ANSI.reset}${ANSI.brightCyan}━━━━━${ANSI.reset} ${ANSI.brightCyan}│${ANSI.reset}    ${ANSI.dim}Monitor your AI agent usage${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  │ ${ANSI.reset}${ANSI.brightCyan}━━━━━${ANSI.reset} ${ANSI.brightCyan}│${ANSI.reset}`);
-    console.log(`${ANSI.brightCyan}  ╰───────╯${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  ╭┴─────┴╮${ANSI.reset}    ${ANSI.brightWhite} █████╗  ██████╗ ███████╗███╗   ██╗████████╗${ANSI.reset}  ${ANSI.brightCyan}${ANSI.bold}████████╗ █████╗ ███╗   ██╗██╗  ██╗${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ${ANSI.reset}${ANSI.brightCyan}━━━━━${ANSI.reset} ${ANSI.brightCyan}│${ANSI.reset}    ${ANSI.brightWhite}██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝${ANSI.reset}  ${ANSI.brightCyan}${ANSI.bold}╚══██╔══╝██╔══██╗████╗  ██║██║ ██╔╝${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ${ANSI.reset}${ANSI.brightCyan}━━━━━${ANSI.reset} ${ANSI.brightCyan}│${ANSI.reset}    ${ANSI.brightWhite}███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║${ANSI.reset}     ${ANSI.brightCyan}${ANSI.bold}██║   ███████║██╔██╗ ██║█████╔╝${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ${ANSI.reset}${ANSI.brightCyan}━━━━━${ANSI.reset} ${ANSI.brightCyan}│${ANSI.reset}    ${ANSI.brightWhite}██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║${ANSI.reset}     ${ANSI.brightCyan}${ANSI.bold}██║   ██╔══██║██║╚██╗██║██╔═██╗${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  ╰─╮   ╭─╯${ANSI.reset}    ${ANSI.brightWhite}██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║${ANSI.reset}     ${ANSI.brightCyan}${ANSI.bold}██║   ██║  ██║██║ ╚████║██║  ██╗${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}    ╰───╯${ANSI.reset}      ${ANSI.brightWhite}╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝${ANSI.reset}     ${ANSI.brightCyan}${ANSI.bold}╚═╝   ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝${ANSI.reset}`);
+    console.log('');
+    console.log(`${ANSI.dim}               Monitor your AI agent usage${ANSI.reset}`);
     console.log('');
     console.log(`${ANSI.dim}Version ${version}${ANSI.reset}`);
     console.log(`${ANSI.brightWhite}${ANSI.underline}${homepage}${ANSI.reset}`);
