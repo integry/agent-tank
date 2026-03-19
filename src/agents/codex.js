@@ -1,6 +1,4 @@
 const { BaseAgent } = require('./base.js');
-const { calculatePace } = require('../pace-evaluator.js');
-const { CYCLE_DURATIONS } = require('../usage-formatters.js');
 const logger = require('../logger.js');
 const { JsonRpcClient } = require('../json-rpc-client.js');
 const {
