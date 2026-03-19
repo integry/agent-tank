@@ -1,4 +1,6 @@
 const pty = require('node-pty');
+const logger = require('../logger.js');
+
 class BaseAgent {
   constructor(name, command, args = []) {
     this.name = name;
@@ -36,11 +38,11 @@ class BaseAgent {
 
   async refresh() {
     if (this.isRefreshing) {
-      console.log(`[${this.name}] Already refreshing, skipping...`);
+      logger.agent(this.name, 'Already refreshing, skipping...');
       return;
     }
 
-    console.log(`[${this.name}] Starting refresh...`);
+    logger.agent(this.name, 'Starting refresh...');
     this.isRefreshing = true;
     this.error = null;
 
@@ -48,11 +50,11 @@ class BaseAgent {
       // Fetch metadata once on first refresh (if agent supports it)
       if (!this._metadataFetched && this.fetchMetadata) {
         try {
-          console.log(`[${this.name}] Fetching metadata (first refresh)...`);
+          logger.agent(this.name, 'Fetching metadata (first refresh)...');
           this.metadata = await this.fetchMetadata();
-          console.log(`[${this.name}] Parsed metadata:`, JSON.stringify(this.metadata));
+          logger.agent(this.name, 'Parsed metadata:', logger.json(this.metadata));
         } catch (metaErr) {
-          console.error(`[${this.name}] Error fetching metadata:`, metaErr.message);
+          logger.error(`[${this.name}] Error fetching metadata:`, metaErr.message);
           // Continue with usage fetch even if metadata fails
         }
         this._metadataFetched = true;
@@ -64,13 +66,13 @@ class BaseAgent {
       }
 
       const output = await this.runCommand();
-      console.log(`[${this.name}] Got output, length: ${output.length} chars`);
+      logger.agent(this.name, 'Got output, length:', logger.dim(`${output.length} chars`));
 
       // Check for rate limit and session errors before parsing
       // Match actual error messages, not incidental mentions like "rate limits and credits"
       const cleanOutput = this.stripAnsi(output);
       if (/rate.?limited|rate_limit_error/i.test(cleanOutput)) {
-        console.log(`[${this.name}] Rate limited, preserving last known usage data`);
+        logger.agent(this.name, 'Rate limited, preserving last known usage data');
         this.error = 'Rate limited — using cached data';
         this.lastUpdated = new Date().toISOString();
         // Don't overwrite this.usage — keep the last known good data
@@ -81,7 +83,7 @@ class BaseAgent {
       const sessionErrorMatch = cleanOutput.match(/session.?expired|session.?error|invalid.?session|authentication.?error|auth.?failed|Unable to (?:load|fetch)|Error loading|could not (?:load|fetch)|Failed to load usage|not authenticated|login required|sign.?in required/i);
       if (sessionErrorMatch) {
         const errorMsg = sessionErrorMatch[0];
-        console.log(`[${this.name}] Session error detected: ${errorMsg}`);
+        logger.agent(this.name, 'Session error detected:', logger.dim(errorMsg));
         this.error = this.usage ? `Session error — using cached data` : `Session error: ${errorMsg}`;
         this.lastUpdated = new Date().toISOString();
         return;
@@ -91,14 +93,14 @@ class BaseAgent {
 
       // Only update usage if we got meaningful data (not all-null)
       const hasData = parsed && Object.values(parsed).some(v => v !== null && v !== undefined && (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0)));
-      if (hasData) { this.usage = parsed; this.lastUpdated = new Date().toISOString(); } else if (this.usage) { console.log(`[${this.name}] Parse returned no data, preserving last known usage`); this.error = 'Failed to parse — using cached data'; } else { this.usage = parsed; this.lastUpdated = new Date().toISOString(); }
-      console.log(`[${this.name}] Parsed usage:`, JSON.stringify(this.usage));
+      if (hasData) { this.usage = parsed; this.lastUpdated = new Date().toISOString(); } else if (this.usage) { logger.agent(this.name, 'Parse returned no data, preserving last known usage'); this.error = 'Failed to parse — using cached data'; } else { this.usage = parsed; this.lastUpdated = new Date().toISOString(); }
+      logger.agent(this.name, 'Parsed usage:', logger.json(this.usage));
     } catch (err) {
-      console.error(`[${this.name}] Error during refresh:`, err.message);
+      logger.error(`[${this.name}] Error during refresh:`, err.message);
       this.error = err.message;
     } finally {
       this.isRefreshing = false;
-      console.log(`[${this.name}] Refresh complete`);
+      logger.agent(this.name, 'Refresh complete');
     }
   }
 
@@ -120,7 +122,7 @@ class BaseAgent {
       let trustHandled = false;
       let spawnOutput = '';
 
-      console.log(`[${this.name}] Spawning persistent process: ${this.command} ${this.args.join(' ')}`);
+      logger.agent(this.name, 'Spawning persistent process:', logger.dim(`${this.command} ${this.args.join(' ')}`));
 
       try {
         const env = this.getEnv ? this.getEnv() : { ...process.env, TERM: 'xterm-256color' };
@@ -132,13 +134,13 @@ class BaseAgent {
           env,
         });
       } catch (spawnErr) {
-        console.error(`[${this.name}] Failed to spawn:`, spawnErr.message);
+        logger.error(`[${this.name}] Failed to spawn:`, spawnErr.message);
         reject(new Error(`Failed to spawn ${this.command}: ${spawnErr.message}`));
         return;
       }
 
       const timer = setTimeout(() => {
-        console.error(`[${this.name}] Spawn timeout after ${this.getTimeout()}ms`);
+        logger.error(`[${this.name}] Spawn timeout after ${this.getTimeout()}ms`);
         this.killProcess();
         reject(new Error('Timeout waiting for process to become ready'));
       }, this.getTimeout());
@@ -157,7 +159,7 @@ class BaseAgent {
 
         // Check if ready for commands
         if (this.isReadyForCommands(spawnOutput)) {
-          console.log(`[${this.name}] Process ready for commands`);
+          logger.agent(this.name, 'Process ready for commands');
           clearTimeout(timer);
           spawnDataHandler.dispose();
           this.processReady = true;
@@ -191,13 +193,13 @@ class BaseAgent {
       };
 
       const timer = setTimeout(() => {
-        console.log(`[${this.name}] Command timeout after ${this.getTimeout()}ms, output length: ${this.output.length}`);
+        logger.agent(this.name, 'Command timeout after', logger.dim(`${this.getTimeout()}ms`), ', output length:', logger.dim(`${this.output.length}`));
         if (this.output.length > 0) {
-          console.log(`[${this.name}] Partial output:`, this.stripAnsi(this.output).substring(0, 500));
+          logger.agent(this.name, 'Partial output:', logger.dim(this.stripAnsi(this.output).substring(0, 500)));
           require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, this.output);
         }
         // Kill the stuck process so it respawns fresh on the next refresh
-        console.log(`[${this.name}] Killing stuck process to force respawn`);
+        logger.agent(this.name, 'Killing stuck process to force respawn');
         const partialOutput = this.output;
         this.killProcess();
         if (partialOutput.length > 100) {
@@ -209,14 +211,14 @@ class BaseAgent {
 
       this._onDataCallback = () => {
         if (this.hasCompleteOutput(this.output)) {
-          console.log(`[${this.name}] Complete output detected`);
+          logger.agent(this.name, 'Complete output detected');
           // Small delay to capture any remaining output
           setTimeout(() => finish(this.output), 100);
         }
       };
 
       // Process is already at prompt, send commands immediately
-      console.log(`[${this.name}] Sending commands to persistent process...`);
+      logger.agent(this.name, 'Sending commands to persistent process...');
       this.sendCommands(this.shell, this.output);
     });
   }
@@ -245,7 +247,7 @@ class BaseAgent {
 
   _setupPersistentExitHandler() {
     const handler = this.shell.onExit(({ exitCode }) => {
-      console.log(`[${this.name}] Persistent process exited with code ${exitCode}`);
+      logger.agent(this.name, 'Persistent process exited with code', logger.dim(exitCode));
       this.shell = null; this.processReady = false; this._onDataCallback = null; this._disposables = [];
     });
     this._disposables.push(handler);
@@ -253,16 +255,15 @@ class BaseAgent {
 
   _respondToTerminalQueries(data, target) {
     const sh = target || this.shell; if (!sh) return;
-    if (data.includes('\x1b[6n')) sh.write('\x1b[1;1R'); if (data.includes('\x1b[c')) sh.write('\x1b[?62;22c');
-    if (data.includes('\x1b[?u')) sh.write('\x1b[?0u'); if (data.includes('\x1b]10;?')) sh.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\');
-    if (data.includes('\x1b]11;?')) sh.write('\x1b]11;rgb:0000/0000/0000\x1b\\'); if (data.includes('\x1b[>q')) sh.write('\x1bP>|xterm(1)\x1b\\');
-    if (data.includes('\x1b[>4;?m')) sh.write('\x1b[>4m');
+    if (data.includes('\x1b[6n')) sh.write('\x1b[1;1R'); if (data.includes('\x1b[c')) sh.write('\x1b[?62;22c'); if (data.includes('\x1b[?u')) sh.write('\x1b[?0u');
+    if (data.includes('\x1b]10;?')) sh.write('\x1b]10;rgb:ffff/ffff/ffff\x1b\\'); if (data.includes('\x1b]11;?')) sh.write('\x1b]11;rgb:0000/0000/0000\x1b\\');
+    if (data.includes('\x1b[>q')) sh.write('\x1bP>|xterm(1)\x1b\\'); if (data.includes('\x1b[>4;?m')) sh.write('\x1b[>4m');
   }
 
-  _handleAdditionalPrompts(_s, _d, _o) { } // Hook for subclasses
-  killProcess() {
+  _handleAdditionalPrompts(_s, _d, _o) { } // Hook for subclasses; killProcess: see below
+  killProcess() { // Terminates the persistent PTY process
     if (this.shell) {
-      console.log(`[${this.name}] Killing persistent process`);
+      logger.agent(this.name, 'Killing persistent process');
       for (const d of this._disposables) { d.dispose(); }
       this._disposables = []; this._onDataCallback = null; this.processReady = false;
       try { this.shell.kill(); } catch (_e) { /* Process may already be dead */ }
@@ -278,7 +279,7 @@ class BaseAgent {
       let commandsSent = false;
       let trustHandled = false;
 
-      console.log(`[${this.name}] Spawning: ${this.command} ${this.args.join(' ')}`);
+      logger.agent(this.name, 'Spawning:', logger.dim(`${this.command} ${this.args.join(' ')}`));
 
       let shell;
       try {
@@ -291,33 +292,75 @@ class BaseAgent {
           env,
         });
       } catch (spawnErr) {
-        console.error(`[${this.name}] Failed to spawn:`, spawnErr.message);
+        logger.error(`[${this.name}] Failed to spawn:`, spawnErr.message);
         reject(new Error(`Failed to spawn ${this.command}: ${spawnErr.message}`));
         return;
       }
 
       const timer = setTimeout(() => {
         if (!completed) {
-          completed = true; console.log(`[${this.name}] Timeout after ${timeout}ms, output length: ${output.length}`);
-          if (output.length > 0) { console.log(`[${this.name}] Partial output:`, this.stripAnsi(output).substring(0, 500)); require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, output); console.log(`[${this.name}] Full output written to /tmp/${this.name}-output.txt`); }
-          shell.kill(); output.length > 100 ? resolve(output) : reject(new Error('Timeout waiting for usage data'));
+          completed = true;
+          logger.agent(this.name, 'Timeout after', logger.dim(`${timeout}ms`), ', output length:', logger.dim(`${output.length}`));
+          if (output.length > 0) {
+            logger.agent(this.name, 'Partial output:', logger.dim(this.stripAnsi(output).substring(0, 500)));
+            require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, output);
+            logger.agent(this.name, 'Full output written to', logger.dim(`/tmp/${this.name}-output.txt`));
+          }
+          shell.kill();
+          if (output.length > 100) {
+            resolve(output);
+          } else {
+            reject(new Error('Timeout waiting for usage data'));
+          }
         }
       }, timeout);
 
       shell.onData((data) => {
         output += data;
-        if (output.length <= data.length) { console.log(`[${this.name}] First data received (${data.length} chars)`); if (data.length < 200) console.log(`[${this.name}] Initial output:`, this.stripAnsi(data).substring(0, 100)); }
-        if (!trustHandled && this.handleTrustPrompt && this.handleTrustPrompt(shell, output)) { trustHandled = true; return; }
-        this._respondToTerminalQueries(data, shell); this._handleAdditionalPrompts(shell, data, output);
-        if (!commandsSent && this.isReadyForCommands(output)) { console.log(`[${this.name}] Ready for commands, sending...`); commandsSent = true; this.sendCommands(shell, output); }
-        if (commandsSent && this.hasCompleteOutput(output)) { console.log(`[${this.name}] Complete output detected, finishing...`); setTimeout(() => { if (!completed) { completed = true; clearTimeout(timer); shell.kill(); resolve(output); } }, 300); }
+
+        // Log first data received
+        if (output.length <= data.length) {
+          logger.agent(this.name, 'First data received', logger.dim(`(${data.length} chars)`));
+          if (data.length < 200) {
+            logger.agent(this.name, 'Initial output:', logger.dim(this.stripAnsi(data).substring(0, 100)));
+          }
+        }
+
+        // Handle trust prompt if agent has this method (only once)
+        if (!trustHandled && this.handleTrustPrompt && this.handleTrustPrompt(shell, output)) {
+          trustHandled = true;
+          return;
+        }
+
+        this._respondToTerminalQueries(data, shell);
+        this._handleAdditionalPrompts(shell, data, output);
+
+        // Send commands when ready
+        if (!commandsSent && this.isReadyForCommands(output)) {
+          logger.agent(this.name, 'Ready for commands, sending...');
+          commandsSent = true;
+          this.sendCommands(shell, output);
+        }
+
+        // Check if we have enough data to extract usage
+        if (commandsSent && this.hasCompleteOutput(output)) {
+          logger.agent(this.name, 'Complete output detected, finishing...');
+          setTimeout(() => {
+            if (!completed) {
+              completed = true;
+              clearTimeout(timer);
+              shell.kill();
+              resolve(output);
+            }
+          }, 300);
+        }
       });
 
       shell.onExit(({ exitCode }) => {
         if (!completed) {
           completed = true;
           clearTimeout(timer);
-          console.log(`[${this.name}] Process exited with code ${exitCode}, output length: ${output.length}`);
+          logger.agent(this.name, 'Process exited with code', logger.dim(exitCode), ', output length:', logger.dim(`${output.length}`));
           if (output) {
             resolve(output);
           } else {
@@ -328,8 +371,11 @@ class BaseAgent {
     });
   }
 
-  getTimeout() { return 30000; } isReadyForCommands(_o) { return false; } hasCompleteOutput(_o) { return false; }
-  sendCommands(_s, _o) { } parseOutput(_o) { return null; }
+  getTimeout() { return 30000; }
+  isReadyForCommands(_o) { return false; }
+  hasCompleteOutput(_o) { return false; }
+  sendCommands(_s, _o) { }
+  parseOutput(_o) { return null; }
 
   /** Lightweight keepalive method to prevent session expiration. Subclasses can override. @returns {Promise<boolean>} True if keepalive succeeded */
   async keepalive() {

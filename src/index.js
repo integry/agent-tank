@@ -1,15 +1,19 @@
-const http = require('node:http');
+const path = require('node:path');
 const { ClaudeAgent } = require('./agents/claude.js');
 const { GeminiAgent } = require('./agents/gemini.js');
 const { CodexAgent } = require('./agents/codex.js');
 const { discoverAgents } = require('./discovery.js');
 const { fetchPublicStatus } = require('./public-status.js');
+const { createServer, displayServerBanner } = require('./server.js');
+const logger = require('./logger.js');
 const { HistoryStore, DEFAULT_RETENTION_DAYS } = require('./history-store.js');
 const { extractSnapshotMetrics } = require('./snapshot-metrics.js');
 const { attachPaceEvaluation } = require('./pace-attachment.js');
-const { handleRequest } = require('./http-handler.js');
 const { KeepaliveManager } = require('./keepalive-manager.js');
 const { AutoRefreshManager } = require('./auto-refresh-manager.js');
+
+// Load package.json for version info
+const pkg = require(path.join(__dirname, '..', 'package.json'));
 
 /**
  * Valid auto-refresh modes:
@@ -71,26 +75,72 @@ class AgentTank {
     this.keepaliveManager = null;
   }
 
+  /**
+   * Display startup banner with website URL, version, author copyright,
+   * and agent refresh logic description
+   */
+  displayStartupBanner() {
+    const ANSI = logger.ANSI;
+    const version = pkg.version || '1.0.0';
+    const homepage = pkg.homepage || 'https://github.com/integry/agent-tank';
+    const author = pkg.author || 'Rinalds Uzkalns';
+    const year = new Date().getFullYear();
+
+    console.log('');
+    // ASCII art logo matching the brand: tank/container icon with fluid level lines
+    // Using box-drawing characters with rounded corners and battery emoji for visual appeal
+    // ASCII art text for "AGENT TANK" using block letters - properly aligned
+    console.log(`${ANSI.brightCyan}    ╭───╮${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  ╭─┴───┴─╮${ANSI.reset}  ${ANSI.brightWhite}█████╗  ██████╗ ███████╗███╗   ██╗████████╗${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}████████╗ █████╗ ███╗   ██╗██╗  ██╗${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ━━━━━ │${ANSI.reset}  ${ANSI.brightWhite}██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}╚══██╔══╝██╔══██╗████╗  ██║██║ ██╔╝${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ━━━━━ │${ANSI.reset}  ${ANSI.brightWhite}███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   ${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}   ██║   ███████║██╔██╗ ██║█████╔╝ ${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ━━━━━ │${ANSI.reset}  ${ANSI.brightWhite}██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   ${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}   ██║   ██╔══██║██║╚██╗██║██╔═██╗ ${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  │ ━━━━━ │${ANSI.reset}  ${ANSI.brightWhite}██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   ${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}   ██║   ██║  ██║██║ ╚████║██║  ██╗${ANSI.reset}`);
+    console.log(`${ANSI.brightCyan}  ╰───────╯${ANSI.reset}  ${ANSI.brightWhite}╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ${ANSI.reset} ${ANSI.brightCyan}${ANSI.bold}   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝${ANSI.reset}`);
+    console.log('');
+    console.log(`${ANSI.dim}               Monitor your AI agent usage${ANSI.reset}`);
+    console.log('');
+    console.log(`${ANSI.dim}Version ${version}${ANSI.reset}`);
+    console.log(`${ANSI.brightWhite}${ANSI.underline}${homepage}${ANSI.reset}`);
+    console.log(`${ANSI.dim}© ${year} ${author}${ANSI.reset}`);
+    console.log('');
+
+    // Display agent refresh logic description
+    console.log(`${ANSI.cyan}${ANSI.bold}Agent Refresh Logic:${ANSI.reset}`);
+    if (!this.autoRefresh.enabled || this.autoRefresh.interval <= 0) {
+      console.log(`${ANSI.dim}  • Auto-refresh: disabled${ANSI.reset}`);
+    } else {
+      console.log(`${ANSI.dim}  • Auto-refresh: enabled (default interval: ${this.autoRefresh.interval}s)${ANSI.reset}`);
+      console.log(`${ANSI.dim}  • Agents are polled periodically via PTY sessions to fetch usage data${ANSI.reset}`);
+      console.log(`${ANSI.dim}  • Agents with higher minimum intervals use their own refresh timers${ANSI.reset}`);
+    }
+    console.log(`${ANSI.dim}  • Manual refresh available via POST /refresh or POST /refresh/:agent${ANSI.reset}`);
+    console.log('');
+  }
+
   async start() {
+    // Display startup banner with website URL, version, and copyright
+    this.displayStartupBanner();
+
     // Initialize agents
     let agentNames = this.requestedAgents;
 
     if (!agentNames || agentNames.length === 0) {
       if (this.autoDiscover) {
-        console.log('Auto-discovering available LLM agents...');
+        logger.info('🔍 Auto-discovering available LLM agents...');
         agentNames = await discoverAgents();
         if (agentNames.length === 0) {
-          console.log('No compatible LLM agents found.');
-          console.log('Requirements:');
-          console.log('  - Claude Code 2.0+ (for /usage command support)');
-          console.log('  - Gemini CLI 0.24.5+ (for /stats command support)');
-          console.log('  - Codex CLI');
-          console.log('\nInstall/update with:');
-          console.log('  npm install -g @anthropic-ai/claude-code@latest');
-          console.log('  npm install -g gemini@latest');
+          logger.warn('No compatible LLM agents found.');
+          logger.info('Requirements:');
+          logger.info('  - Claude Code 2.0+ (for /usage command support)');
+          logger.info('  - Gemini CLI 0.24.5+ (for /stats command support)');
+          logger.info('  - Codex CLI');
+          logger.info('\nInstall/update with:');
+          logger.info('  npm install -g @anthropic-ai/claude-code@latest');
+          logger.info('  npm install -g gemini@latest');
           throw new Error('No agents found');
         }
-        console.log(`Found agents: ${agentNames.join(', ')}`);
+        logger.success(`✅ Found agents: ${agentNames.join(', ')}`);
       } else {
         throw new Error('No agents specified and auto-discover disabled.');
       }
@@ -102,7 +152,7 @@ class AgentTank {
       if (agent) {
         agent.freshProcess = this.freshProcess;
         this.agents.set(name, agent);
-        console.log(`Created agent: ${name}${this.freshProcess ? ' (fresh process mode)' : ''}`);
+        logger.agent(name, `Created agent${this.freshProcess ? ' (fresh process mode)' : ''}`);
       }
     }
 
@@ -113,18 +163,18 @@ class AgentTank {
 
     // Pre-spawn persistent processes in parallel before sending commands
     if (!this.freshProcess) {
-      console.log('Spawning agent processes...');
+      logger.info('🚀 Spawning agent processes...');
       await Promise.all(
         Array.from(this.agents.values()).map(agent =>
           agent.spawnProcess().catch(err =>
-            console.error(`Error spawning ${agent.name}:`, err.message)
+            logger.error(`Error spawning ${agent.name}:`, err.message)
           )
         )
       );
     }
 
     // Initial fetch
-    console.log('Fetching initial usage data...');
+    logger.info('📊 Fetching initial usage data...');
     await this.refreshAll();
 
     // Start backend auto-refresh if enabled (skip in one-shot mode)
@@ -172,13 +222,13 @@ class AgentTank {
       case 'codex':
         return new CodexAgent();
       default:
-        console.warn(`Unknown agent: ${name}`);
+        logger.warn(`Unknown agent: ${name}`);
         return null;
     }
   }
 
   async refreshAll() {
-    console.log('\nRefreshing all agents...');
+    logger.info('🔄 Refreshing all agents...');
     const agentNames = Array.from(this.agents.keys());
 
     // Fetch PTY agent data and public status concurrently
@@ -187,18 +237,19 @@ class AgentTank {
       Promise.all(
         Array.from(this.agents.values()).map(agent =>
           agent.refresh().catch(err => {
-            console.error(`Error refreshing ${agent.name}:`, err.message);
+            logger.error(`Error refreshing ${agent.name}:`, err.message);
           })
         )
       ),
       // Public API status polling
       fetchPublicStatus(agentNames).catch(err => {
-        console.error('Error fetching public status:', err.message);
+        logger.error('Error fetching public status:', err.message);
         return {};
       }),
     ]);
 
     this.publicStatus = publicStatusResult;
+    this.lastRefreshedAt = new Date().toISOString();
 
     // Record usage snapshots and attach pace evaluations
     for (const [name, agent] of this.agents) {
@@ -208,7 +259,7 @@ class AgentTank {
       }
     }
 
-    console.log('All agents refresh complete\n');
+    logger.success('✅ All agents refresh complete');
   }
 
   /** Record a usage snapshot to the history store. @private */
@@ -235,42 +286,23 @@ class AgentTank {
     }
   }
 
-  /**
-   * Get usage history statistics.
-   *
-   * @returns {Object} History statistics
-   */
-  getHistoryStats() {
-    return this.historyStore.getStats();
-  }
+  /** Get usage history statistics. @returns {Object} */
+  getHistoryStats() { return this.historyStore.getStats(); }
 
-  /**
-   * Get usage history for an agent.
-   *
-   * @param {string} [agentName] - Optional agent name to filter
-   * @returns {Array} History records
-   */
-  getHistory(agentName = null) {
-    return this.historyStore.getHistory(agentName);
-  }
+  /** Get usage history for an agent. @param {string} [agentName] @returns {Array} */
+  getHistory(agentName = null) { return this.historyStore.getHistory(agentName); }
 
   getStatus() {
     const status = {};
     for (const [name, agent] of this.agents) {
-      status[name] = {
-        ...agent.getStatus(),
-        publicStatus: this.publicStatus[name] || null,
-      };
+      status[name] = { ...agent.getStatus(), publicStatus: this.publicStatus[name] || null };
     }
     return status;
   }
 
   getAgentStatus(name) {
     const agent = this.agents.get(name);
-    if (!agent) {
-      return null;
-    }
-    return agent.getStatus();
+    return agent ? agent.getStatus() : null;
   }
 
   authenticate(req, url) {
@@ -303,26 +335,9 @@ class AgentTank {
   }
 
   startServer() {
-    this.server = http.createServer(async (req, res) => {
-      try {
-        await handleRequest(req, res, this);
-      } catch (err) {
-        console.error('Server error:', err);
-        res.writeHead(500);
-        res.end(JSON.stringify({ error: 'Internal server error' }));
-      }
-    });
-
+    this.server = createServer(this);
     this.server.listen(this.port, this.host, () => {
-      if (this.auth.user && this.auth.pass) {
-        console.log(`Authentication: basic auth (user: ${this.auth.user})`);
-      }
-      if (this.auth.token) {
-        console.log('Authentication: API key');
-      }
-      console.log(`Listening on: ${this.host}:${this.port}`);
-      console.log(`  Status page: http://${this.host}:${this.port}/`);
-      console.log(`  JSON API:    http://${this.host}:${this.port}/status`);
+      displayServerBanner(this);
     });
   }
 
@@ -343,39 +358,15 @@ class AgentTank {
     return { enabled: this.keepalive.enabled, interval: this.keepalive.interval, isRunning: false, registeredAgents: [], lastKeepaliveAt: null };
   }
 
-  /**
-   * Get activity monitor status.
-   * @returns {Object} Activity monitor status
-   */
+  /** Get activity monitor status. @returns {Object} */
   getActivityMonitorStatus() {
-    if (this.autoRefreshManager) {
-      return this.autoRefreshManager.getActivityMonitorStatus();
-    }
-    return {
-      isMonitoring: false,
-      debounceInterval: this.autoRefresh.activityDebounce,
-      monitoredAgents: [],
-      agentCount: 0,
-      activityCount: 0,
-      lastActivityAt: {},
-      hasPendingActivity: false,
-      pendingAgents: [],
-      isActivityRefreshing: false,
-    };
+    if (this.autoRefreshManager) return this.autoRefreshManager.getActivityMonitorStatus();
+    return { isMonitoring: false, debounceInterval: this.autoRefresh.activityDebounce, monitoredAgents: [], agentCount: 0, activityCount: 0, lastActivityAt: {}, hasPendingActivity: false, pendingAgents: [], isActivityRefreshing: false };
   }
 
-  /**
-   * Get the auto-refresh configuration.
-   * @returns {Object} Auto-refresh configuration
-   */
+  /** Get the auto-refresh configuration. @returns {Object} */
   getAutoRefreshConfig() {
-    return {
-      mode: this.autoRefresh.mode,
-      enabled: this.autoRefresh.enabled,
-      interval: this.autoRefresh.interval,
-      activityDebounce: this.autoRefresh.activityDebounce,
-      lastRefreshedAt: this.autoRefreshManager ? this.autoRefreshManager.getLastRefreshedAt() : null,
-    };
+    return { mode: this.autoRefresh.mode, enabled: this.autoRefresh.enabled, interval: this.autoRefresh.interval, activityDebounce: this.autoRefresh.activityDebounce, lastRefreshedAt: this.autoRefreshManager ? this.autoRefreshManager.getLastRefreshedAt() : null };
   }
 }
 

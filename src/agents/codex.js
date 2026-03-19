@@ -1,4 +1,5 @@
 const { BaseAgent } = require('./base.js');
+const logger = require('../logger.js');
 const { JsonRpcClient } = require('../json-rpc-client.js');
 const {
   formatRpcResponseAsOutput,
@@ -96,68 +97,51 @@ class CodexAgent extends BaseAgent {
     if (!shell) return false;
     const patterns = ['Do you trust', 'trust the files', 'trust this folder', 'Trust this workspace', 'allow access'];
     if (!patterns.some(p => output.toLowerCase().includes(p.toLowerCase()))) return false;
-    console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
+    logger.agent(this.name, 'Detected trust prompt, auto-accepting...');
     shell.write('y\r');
-    setTimeout(() => { if (shell) { console.log(`[${this.name}] Sending Enter to proceed...`); shell.write('\r'); } }, 500);
+    setTimeout(() => { if (shell) { logger.agent(this.name, 'Sending Enter to proceed...'); shell.write('\r'); } }, 500);
     return true;
   }
-
   handleUpdateScreen(shell, output) {
     if (!shell) return false;
     const clean = this.stripAnsi(output);
     if (!(/u?pdate available/i.test(clean) && /[\d.]+\s*->\s*[\d.]+/.test(clean) && /skip/i.test(clean))) return false;
-    console.log(`[${this.name}] Detected update screen, selecting '2' to skip...`);
+    logger.agent(this.name, 'Detected update screen, selecting \'2\' to skip...');
     shell.write('2');
     setTimeout(() => { if (shell) shell.write('\r'); }, 300);
     return true;
   }
-
-  parseVersionInfo(output) {
-    return parseVersionInfo(output, this.stripAnsi.bind(this));
-  }
-
+  parseVersionInfo(output) { return parseVersionInfo(output, this.stripAnsi.bind(this)); }
   isReadyForCommands(output) { return this.isReadyForStatus(output); }
-  isReadyForStatus(output) { return output.includes('? for shortcuts') || output.includes('To get started'); }
-  sendCommands(shell, _output) { console.log(`[${this.name}] Sending /status command...`); setTimeout(() => { if (shell) shell.write('/status\r'); }, 100); }
+  isReadyForStatus(output) {
+    return output.includes('? for shortcuts') || output.includes('To get started') ||
+           output.includes('% left') || /›\s*\S/.test(this.stripAnsi(output));
+  }
+  sendCommands(shell, _output) { logger.agent(this.name, 'Sending /status command...'); setTimeout(() => { if (shell) shell.write('/status\r'); }, 100); }
 
   _handleAdditionalPrompts(shell, _data, output) {
     if (!shell) return;
-    if (!this._updateHandled && this.handleUpdateScreen(shell, output)) {
-      this._updateHandled = true;
-      return;
-    }
+    if (!this._updateHandled && this.handleUpdateScreen(shell, output)) { this._updateHandled = true; return; }
     const cleanOutput = this.stripAnsi(output);
     const isUpdateScreen = /u?pdate available/i.test(cleanOutput) && /[\d.]+\s*->\s*[\d.]+/.test(cleanOutput);
     if (!this._continuationHandled && !isUpdateScreen && output.includes('Press enter to continue')) {
-      console.log(`[${this.name}] Detected continuation prompt`);
+      logger.agent(this.name, 'Detected continuation prompt');
       this._continuationHandled = true;
       shell.write('\r');
     }
   }
-
   handleInteractivePrompts(shell, data, output, state) {
     if (!shell) return false;
-
-    if (!state.trustHandled && this.handleTrustPrompt(shell, output)) {
-      state.trustHandled = true;
-      return true;
-    }
-
-    if (!state.updateHandled && this.handleUpdateScreen(shell, output)) {
-      state.updateHandled = true;
-      return true;
-    }
-
+    if (!state.trustHandled && this.handleTrustPrompt(shell, output)) { state.trustHandled = true; return true; }
+    if (!state.updateHandled && this.handleUpdateScreen(shell, output)) { state.updateHandled = true; return true; }
     this._respondToTerminalQueries(data, shell);
-
     const cleanOutput = this.stripAnsi(output);
     const isUpdateScreen = /u?pdate available/i.test(cleanOutput) && /[\d.]+\s*->\s*[\d.]+/.test(cleanOutput);
     if (!state.continuationHandled && !isUpdateScreen && output.includes('Press enter to continue')) {
-      console.log(`[${this.name}] Detected continuation prompt`);
+      logger.agent(this.name, 'Detected continuation prompt');
       state.continuationHandled = true;
       shell.write('\r');
     }
-
     return false;
   }
 
@@ -167,7 +151,7 @@ class CodexAgent extends BaseAgent {
       let spawnOutput = '';
       const state = { trustHandled: false, continuationHandled: false, updateHandled: false };
 
-      console.log(`[${this.name}] Spawning persistent process: ${this.command} ${this.args.join(' ')}`);
+      logger.agent(this.name, 'Spawning persistent process:', logger.dim(`${this.command} ${this.args.join(' ')}`));
 
       try {
         this.shell = pty.spawn(this.command, this.args, {
@@ -178,13 +162,13 @@ class CodexAgent extends BaseAgent {
           env: { ...process.env, TERM: 'xterm-256color' },
         });
       } catch (spawnErr) {
-        console.error(`[${this.name}] Failed to spawn:`, spawnErr.message);
+        logger.error(`[${this.name}] Failed to spawn:`, spawnErr.message);
         reject(new Error(`Failed to spawn ${this.command}: ${spawnErr.message}`));
         return;
       }
 
       const timer = setTimeout(() => {
-        console.error(`[${this.name}] Spawn timeout after ${this.getTimeout()}ms`);
+        logger.error(`[${this.name}] Spawn timeout after ${this.getTimeout()}ms`);
         this.killProcess();
         reject(new Error('Timeout waiting for process to become ready'));
       }, this.getTimeout());
@@ -194,11 +178,12 @@ class CodexAgent extends BaseAgent {
         this.handleInteractivePrompts(this.shell, data, spawnOutput, state);
 
         if (this.isReadyForStatus(spawnOutput)) {
-          console.log(`[${this.name}] Process ready for commands`);
+          logger.agent(this.name, 'Process ready for commands');
+          // Capture version info from spawn output (update screen appears here)
           const versionFromSpawn = this.parseVersionInfo(spawnOutput);
           if (versionFromSpawn) {
             this._spawnVersionInfo = versionFromSpawn;
-            console.log(`[${this.name}] Version info from spawn:`, JSON.stringify(versionFromSpawn));
+            logger.agent(this.name, 'Version info from spawn:', logger.json(versionFromSpawn));
           }
           clearTimeout(timer);
           spawnDataHandler.dispose();
@@ -239,9 +224,9 @@ class CodexAgent extends BaseAgent {
       const timer = setTimeout(() => {
         if (retryTimer) clearInterval(retryTimer);
         if (settleTimer) clearTimeout(settleTimer);
-        console.log(`[${this.name}] Command timeout after ${this.getTimeout()}ms, output length: ${this.output.length}`);
+        logger.agent(this.name, 'Command timeout after', logger.dim(`${this.getTimeout()}ms`), ', output length:', logger.dim(`${this.output.length}`));
         if (this.output.length > 0) {
-          console.log(`[${this.name}] Partial output:`, this.stripAnsi(this.output).substring(0, 500));
+          logger.agent(this.name, 'Partial output:', logger.dim(this.stripAnsi(this.output).substring(0, 500)));
           require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, this.output);
         }
         if (this.output.length > 100) {
@@ -255,7 +240,7 @@ class CodexAgent extends BaseAgent {
 
       retryTimer = setInterval(() => {
         if (!this.hasCompleteOutput(this.output) && this.shell) {
-          console.log(`[${this.name}] Retrying /status...`);
+          logger.agent(this.name, 'Retrying /status...');
           this.output = '';
           this.shell.write('/status\r');
         }
@@ -264,19 +249,23 @@ class CodexAgent extends BaseAgent {
       this._onDataCallback = () => {
         if (this.hasCompleteOutput(this.output)) {
           if (!settleTimer) {
-            console.log(`[${this.name}] Complete output detected, waiting to settle...`);
+            logger.agent(this.name, 'Complete output detected, waiting to settle...');
             settleTimer = setTimeout(() => finish(this.output), 200);
           }
         }
       };
 
-      console.log(`[${this.name}] Sending /status to persistent process...`);
+      logger.agent(this.name, 'Sending /status to persistent process...');
       setTimeout(() => { if (this.shell) this.shell.write('/status\r'); }, 100);
     });
   }
 
   hasCompleteOutput(output) {
-    return output.includes('5h limit') && output.includes('Weekly limit');
+    if (output.includes('5h limit') && output.includes('Weekly limit')) return true;
+    // Detect when Codex reports limits are unavailable — no point retrying
+    const clean = this.stripAnsi(output);
+    if (/data not available|limits.*unavailable|no usage data/i.test(clean)) return true;
+    return false;
   }
 
   parseResetTime(resetStr) {

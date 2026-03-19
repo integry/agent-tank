@@ -1,4 +1,5 @@
 const { execSync } = require('node:child_process');
+const logger = require('./logger.js');
 
 async function discoverAgents() {
   const found = [];
@@ -8,15 +9,15 @@ async function discoverAgents() {
     const version = getClaudeVersion();
     if (version) {
       if (version.major < 2) {
-        console.warn(`⚠️  Claude Code version ${version.full} detected. Version 2.0+ required for /usage command.`);
-        console.warn('   Please update: npm update -g @anthropic-ai/claude-code');
+        logger.warn(`Claude Code version ${version.full} detected. Version 2.0+ required for /usage command.`);
+        logger.warn('Please update: npm update -g @anthropic-ai/claude-code');
       } else {
-        console.log(`✓ Claude Code version ${version.full} detected`);
+        logger.success(`✅ Claude Code version ${version.full} detected`);
         found.push('claude');
       }
     } else {
       // If we can't determine version, add with warning
-      console.warn('⚠️  Claude found but version unknown. Version 2.0+ required for /usage command.');
+      logger.warn('Claude found but version unknown. Version 2.0+ required for /usage command.');
       found.push('claude');
     }
   }
@@ -26,15 +27,15 @@ async function discoverAgents() {
     const version = getGeminiVersion();
     if (version) {
       if (!compareVersion(version, 0, 24, 5)) {
-        console.warn(`⚠️  Gemini CLI version ${version.full} detected. Version 0.24.5+ required for /stats command.`);
-        console.warn('   Please update: npm update -g gemini');
+        logger.warn(`Gemini CLI version ${version.full} detected. Version 0.24.5+ required for /stats command.`);
+        logger.warn('Please update: npm update -g gemini');
       } else {
-        console.log(`✓ Gemini CLI version ${version.full} detected`);
+        logger.success(`✅ Gemini CLI version ${version.full} detected`);
         found.push('gemini');
       }
     } else {
       // If we can't determine version, add with warning
-      console.warn('⚠️  Gemini found but version unknown. Version 0.24.5+ required for /stats command.');
+      logger.warn('Gemini found but version unknown. Version 0.24.5+ required for /stats command.');
       found.push('gemini');
     }
   }
@@ -43,9 +44,9 @@ async function discoverAgents() {
   if (commandExists('codex')) {
     const version = getCodexVersion();
     if (version) {
-      console.log(`✓ Codex CLI version ${version.full} detected`);
+      logger.success(`✅ Codex CLI version ${version.full} detected`);
     } else {
-      console.log('✓ Codex CLI detected (version unknown)');
+      logger.success('✅ Codex CLI detected (version unknown)');
     }
     found.push('codex');
   }
