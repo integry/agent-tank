@@ -3,6 +3,7 @@
  *
  * Calculates whether usage is out-pacing the time window.
  * Warns users if they are burning through rate limits faster than time is elapsing.
+ * Provides extrapolation of ETA until 100% usage is reached.
  */
 
 /**
@@ -86,13 +87,114 @@ function calculatePace(options) {
 }
 
 /**
- * Format a pace warning as HTML for display in the UI.
+ * Evaluate usage pace and extrapolate when user will hit 100%.
  *
- * @param {Object|null} paceData - Result from calculatePace()
+ * This function calculates the expected linear usage based on elapsed time,
+ * determines if the user is burning faster than expected, and if so,
+ * extrapolates the ETA in seconds until they hit 100%.
+ *
+ * @param {Object} options - The evaluation options
+ * @param {number} options.usagePercent - Current usage percentage (0-100)
+ * @param {number} options.resetsInSeconds - Seconds until the cycle resets
+ * @param {number} options.cycleDurationSeconds - Total duration of the cycle in seconds
+ * @param {number} [options.warningThreshold=1.2] - Pace ratio threshold to trigger warning
+ * @returns {Object|null} Pace evaluation result or null if calculation not possible
+ *   - expectedPercent: Expected usage percentage based on linear pace
+ *   - isBurningFast: Whether actual usage exceeds expected usage
+ *   - etaSeconds: Seconds until 100% usage (only if isBurningFast is true, null otherwise)
+ *   - paceRatio: Usage rate vs time rate (>1 means out-pacing)
+ *   - elapsedPercent: Percentage of time elapsed in the cycle
+ *   - deltaPercent: Difference between actual and expected usage (positive = ahead)
+ */
+function evaluatePace(options) {
+  const {
+    usagePercent,
+    resetsInSeconds,
+    cycleDurationSeconds,
+    warningThreshold = 1.2
+  } = options;
+
+  // Validate inputs
+  if (
+    typeof usagePercent !== 'number' ||
+    typeof resetsInSeconds !== 'number' ||
+    typeof cycleDurationSeconds !== 'number' ||
+    cycleDurationSeconds <= 0
+  ) {
+    return null;
+  }
+
+  // Calculate elapsed time in the cycle
+  const elapsedSeconds = cycleDurationSeconds - resetsInSeconds;
+
+  // Handle edge case: no time elapsed yet
+  if (elapsedSeconds <= 0) {
+    return {
+      expectedPercent: 0,
+      isBurningFast: usagePercent > 0,
+      etaSeconds: usagePercent > 0 ? 0 : null, // Already burning if any usage at start
+      paceRatio: usagePercent > 0 ? Infinity : 0,
+      elapsedPercent: 0,
+      deltaPercent: usagePercent
+    };
+  }
+
+  // Calculate expected usage based on linear pace
+  // If 50% of time has elapsed, expected usage should be 50%
+  const elapsedPercent = (elapsedSeconds / cycleDurationSeconds) * 100;
+  const expectedPercent = elapsedPercent;
+
+  // Calculate delta (positive = ahead of pace, negative = behind)
+  const deltaPercent = usagePercent - expectedPercent;
+
+  // Determine if burning fast (usage exceeds expected by threshold)
+  // Using threshold ratio: if usage/expected >= threshold, burning fast
+  const paceRatio = usagePercent > 0 && elapsedPercent > 0
+    ? usagePercent / elapsedPercent
+    : (usagePercent > 0 ? Infinity : 0);
+
+  const isBurningFast = paceRatio >= warningThreshold;
+
+  // Calculate ETA to 100% if burning fast
+  let etaSeconds = null;
+  if (isBurningFast && usagePercent < 100 && usagePercent > 0) {
+    // Current burn rate: usagePercent per elapsedSeconds
+    const burnRatePerSecond = usagePercent / elapsedSeconds;
+
+    // Remaining usage to reach 100%
+    const remainingPercent = 100 - usagePercent;
+
+    // Time to reach 100% at current burn rate
+    etaSeconds = Math.round(remainingPercent / burnRatePerSecond);
+  } else if (usagePercent >= 100) {
+    etaSeconds = 0; // Already at or past 100%
+  }
+
+  return {
+    expectedPercent: Math.round(expectedPercent * 100) / 100,
+    isBurningFast,
+    etaSeconds,
+    paceRatio: paceRatio === Infinity ? Infinity : Math.round(paceRatio * 100) / 100,
+    elapsedPercent: Math.round(elapsedPercent * 100) / 100,
+    deltaPercent: Math.round(deltaPercent * 100) / 100
+  };
+}
+
+/**
+ * Format a pace warning as HTML for display in the UI.
+ * Includes ETA countdown when burning fast.
+ *
+ * @param {Object|null} paceData - Result from evaluatePace() or calculatePace()
  * @returns {string} HTML string for the pace warning (empty string if no warning)
  */
 function formatPaceWarning(paceData) {
-  if (!paceData || !paceData.isWarning) {
+  if (!paceData) {
+    return '';
+  }
+
+  // Determine if we should show warning based on isWarning or isBurningFast
+  const shouldShowWarning = paceData.isWarning || paceData.isBurningFast;
+  if (!shouldShowWarning) {
     return '';
   }
 
@@ -100,13 +202,68 @@ function formatPaceWarning(paceData) {
   // Add critical class for 2x or higher pace
   const criticalClass = paceData.paceRatio >= 2 ? ' pace-critical' : '';
 
-  return `<div class="pace-warning${criticalClass}" title="${paceData.warningMessage}">
+  // Build tooltip message
+  let tooltip = paceData.warningMessage || `Using ${paceDisplay}x faster than sustainable`;
+
+  // Generate ETA section if available
+  let etaHtml = '';
+  if (paceData.etaSeconds != null && paceData.etaSeconds >= 0 && paceData.isBurningFast) {
+    const etaString = formatEtaString(paceData.etaSeconds);
+    if (etaString) {
+      etaHtml = `<span class="pace-eta">runs out in ${etaString}</span>`;
+      tooltip += ` • Runs out in ${etaString}`;
+    }
+  }
+
+  return `<div class="pace-warning${criticalClass}" title="${tooltip}">
     <span class="pace-icon">&#9888;</span>
-    <span class="pace-text">${paceDisplay}x pace</span>
+    <span class="pace-text">${paceDisplay}x pace</span>${etaHtml}
   </div>`;
+}
+
+/**
+ * Format ETA seconds into a human-readable string.
+ *
+ * @param {number|null} etaSeconds - Seconds until 100% usage
+ * @returns {string} Formatted ETA string (e.g., "2h 15m", "45m", "~30s")
+ */
+function formatEtaString(etaSeconds) {
+  if (etaSeconds == null || etaSeconds < 0) {
+    return '';
+  }
+
+  if (etaSeconds === 0) {
+    return 'now';
+  }
+
+  const days = Math.floor(etaSeconds / (24 * 60 * 60));
+  const hours = Math.floor((etaSeconds % (24 * 60 * 60)) / (60 * 60));
+  const minutes = Math.floor((etaSeconds % (60 * 60)) / 60);
+
+  const parts = [];
+
+  if (days > 0) {
+    parts.push(`${days}d`);
+  }
+  if (hours > 0) {
+    parts.push(`${hours}h`);
+  }
+  if (minutes > 0 && days === 0) {
+    // Only show minutes if no days (for readability)
+    parts.push(`${minutes}m`);
+  }
+
+  // If less than a minute, show "< 1m"
+  if (parts.length === 0) {
+    return '< 1m';
+  }
+
+  return parts.join(' ');
 }
 
 module.exports = {
   calculatePace,
-  formatPaceWarning
+  formatPaceWarning,
+  evaluatePace,
+  formatEtaString
 };

@@ -1058,6 +1058,371 @@ describe('CodexAgent', () => {
   });
 });
 
+describe('ClaudeAgent pingKeepalive', () => {
+  let agent;
+  let mockPty;
+
+  beforeEach(() => {
+    agent = new ClaudeAgent();
+    jest.useFakeTimers();
+
+    // Reset pty mock for each test
+    mockPty = require('node-pty');
+    mockPty.spawn.mockReset();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('spawns a fresh process for session refresh', async () => {
+    const mockShell = {
+      onData: jest.fn((cb) => {
+        // Simulate CLI becoming ready after spawn
+        setTimeout(() => cb('? for shortcuts'), 100);
+        setTimeout(() => cb('Current session\n10% used'), 500);
+        return { dispose: jest.fn() };
+      }),
+      onExit: jest.fn(() => ({ dispose: jest.fn() })),
+      write: jest.fn(),
+      kill: jest.fn(),
+    };
+    mockPty.spawn.mockReturnValue(mockShell);
+
+    const pingPromise = agent.pingKeepalive();
+
+    // Advance timers to trigger the onData callbacks
+    jest.advanceTimersByTime(1000);
+    await Promise.resolve();
+
+    const result = await pingPromise;
+
+    expect(mockPty.spawn).toHaveBeenCalledWith(
+      'claude',
+      [],
+      expect.objectContaining({
+        cwd: '/tmp',
+      })
+    );
+    expect(result).toBe(true);
+  });
+
+  it('returns false on spawn failure', async () => {
+    mockPty.spawn.mockImplementation(() => {
+      throw new Error('spawn failed');
+    });
+
+    const result = await agent.pingKeepalive();
+
+    expect(result).toBe(false);
+  });
+
+  it('returns false on timeout', async () => {
+    const mockShell = {
+      onData: jest.fn(() => ({ dispose: jest.fn() })),
+      onExit: jest.fn(() => ({ dispose: jest.fn() })),
+      write: jest.fn(),
+      kill: jest.fn(),
+    };
+    mockPty.spawn.mockReturnValue(mockShell);
+
+    const pingPromise = agent.pingKeepalive();
+
+    // Advance past the 10 second timeout
+    jest.advanceTimersByTime(11000);
+
+    const result = await pingPromise;
+
+    expect(result).toBe(false);
+    expect(mockShell.kill).toHaveBeenCalled();
+  });
+
+  it('sends /status command when CLI is ready', async () => {
+    const mockShell = {
+      onData: jest.fn((cb) => {
+        // Simulate CLI becoming ready
+        setTimeout(() => cb('? for shortcuts'), 100);
+        // Then simulate /status response
+        setTimeout(() => cb('session info > prompt'), 800);
+        return { dispose: jest.fn() };
+      }),
+      onExit: jest.fn(() => ({ dispose: jest.fn() })),
+      write: jest.fn(),
+      kill: jest.fn(),
+    };
+    mockPty.spawn.mockReturnValue(mockShell);
+
+    const pingPromise = agent.pingKeepalive();
+
+    // Advance timers
+    jest.advanceTimersByTime(1000);
+    await Promise.resolve();
+
+    await pingPromise;
+
+    // Should send escape and /status command
+    expect(mockShell.write).toHaveBeenCalled();
+  });
+
+  it('does not affect usage or error state', async () => {
+    agent.usage = { session: { percent: 50 } };
+    agent.error = null;
+
+    const mockShell = {
+      onData: jest.fn((cb) => {
+        setTimeout(() => cb('? for shortcuts'), 100);
+        setTimeout(() => cb('session > prompt'), 500);
+        return { dispose: jest.fn() };
+      }),
+      onExit: jest.fn(() => ({ dispose: jest.fn() })),
+      write: jest.fn(),
+      kill: jest.fn(),
+    };
+    mockPty.spawn.mockReturnValue(mockShell);
+
+    const pingPromise = agent.pingKeepalive();
+    jest.advanceTimersByTime(1000);
+    await pingPromise;
+
+    // Verify usage and error were not modified
+    expect(agent.usage).toEqual({ session: { percent: 50 } });
+    expect(agent.error).toBeNull();
+  });
+
+  it('tears down process cleanly after completion', async () => {
+    const mockShell = {
+      onData: jest.fn((cb) => {
+        setTimeout(() => cb('? for shortcuts'), 100);
+        setTimeout(() => cb('session > prompt'), 500);
+        return { dispose: jest.fn() };
+      }),
+      onExit: jest.fn(() => ({ dispose: jest.fn() })),
+      write: jest.fn(),
+      kill: jest.fn(),
+    };
+    mockPty.spawn.mockReturnValue(mockShell);
+
+    const pingPromise = agent.pingKeepalive();
+    jest.advanceTimersByTime(1000);
+    await pingPromise;
+
+    // Process should be killed after completion
+    expect(mockShell.kill).toHaveBeenCalled();
+  });
+});
+
+describe('CodexAgent pingKeepalive', () => {
+  let agent;
+  let mockPty;
+
+  beforeEach(() => {
+    agent = new CodexAgent();
+    jest.useFakeTimers();
+
+    mockPty = require('node-pty');
+    mockPty.spawn.mockReset();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('skips ping when using JSON-RPC mode', async () => {
+    agent._rpcSupported = true;
+
+    const result = await agent.pingKeepalive();
+
+    expect(result).toBe(true);
+    expect(mockPty.spawn).not.toHaveBeenCalled();
+  });
+
+  it('spawns a fresh process when not in JSON-RPC mode', async () => {
+    agent._rpcSupported = false;
+
+    const mockShell = {
+      onData: jest.fn((cb) => {
+        setTimeout(() => cb('? for shortcuts'), 100);
+        setTimeout(() => cb('5h limit\nWeekly limit'), 500);
+        return { dispose: jest.fn() };
+      }),
+      onExit: jest.fn(() => ({ dispose: jest.fn() })),
+      write: jest.fn(),
+      kill: jest.fn(),
+    };
+    mockPty.spawn.mockReturnValue(mockShell);
+
+    const pingPromise = agent.pingKeepalive();
+    jest.advanceTimersByTime(1000);
+    await Promise.resolve();
+
+    const result = await pingPromise;
+
+    expect(mockPty.spawn).toHaveBeenCalledWith(
+      'codex',
+      [],
+      expect.objectContaining({
+        cwd: '/tmp',
+      })
+    );
+    expect(result).toBe(true);
+  });
+
+  it('returns false on spawn failure', async () => {
+    agent._rpcSupported = false;
+
+    mockPty.spawn.mockImplementation(() => {
+      throw new Error('spawn failed');
+    });
+
+    const result = await agent.pingKeepalive();
+
+    expect(result).toBe(false);
+  });
+
+  it('returns false on timeout', async () => {
+    agent._rpcSupported = false;
+
+    const mockShell = {
+      onData: jest.fn(() => ({ dispose: jest.fn() })),
+      onExit: jest.fn(() => ({ dispose: jest.fn() })),
+      write: jest.fn(),
+      kill: jest.fn(),
+    };
+    mockPty.spawn.mockReturnValue(mockShell);
+
+    const pingPromise = agent.pingKeepalive();
+    jest.advanceTimersByTime(11000);
+
+    const result = await pingPromise;
+
+    expect(result).toBe(false);
+    expect(mockShell.kill).toHaveBeenCalled();
+  });
+
+  it('sends /status command when CLI is ready', async () => {
+    agent._rpcSupported = false;
+
+    const mockShell = {
+      onData: jest.fn((cb) => {
+        setTimeout(() => cb('? for shortcuts'), 100);
+        setTimeout(() => cb('5h limit\nWeekly limit'), 500);
+        return { dispose: jest.fn() };
+      }),
+      onExit: jest.fn(() => ({ dispose: jest.fn() })),
+      write: jest.fn(),
+      kill: jest.fn(),
+    };
+    mockPty.spawn.mockReturnValue(mockShell);
+
+    const pingPromise = agent.pingKeepalive();
+    jest.advanceTimersByTime(1000);
+    await Promise.resolve();
+
+    await pingPromise;
+
+    // Should have written /status command
+    expect(mockShell.write).toHaveBeenCalled();
+  });
+
+  it('does not affect usage or error state', async () => {
+    agent._rpcSupported = false;
+    agent.usage = { fiveHour: { percentLeft: 80 } };
+    agent.error = null;
+
+    const mockShell = {
+      onData: jest.fn((cb) => {
+        setTimeout(() => cb('? for shortcuts'), 100);
+        setTimeout(() => cb('5h limit\nWeekly limit'), 500);
+        return { dispose: jest.fn() };
+      }),
+      onExit: jest.fn(() => ({ dispose: jest.fn() })),
+      write: jest.fn(),
+      kill: jest.fn(),
+    };
+    mockPty.spawn.mockReturnValue(mockShell);
+
+    const pingPromise = agent.pingKeepalive();
+    jest.advanceTimersByTime(1000);
+    await pingPromise;
+
+    // Verify usage and error were not modified
+    expect(agent.usage).toEqual({ fiveHour: { percentLeft: 80 } });
+    expect(agent.error).toBeNull();
+  });
+
+  it('handles interactive prompts during ping', async () => {
+    agent._rpcSupported = false;
+
+    const mockShell = {
+      onData: jest.fn((cb) => {
+        // Simulate update screen prompt
+        setTimeout(() => cb('Update available! 1.0.0 -> 1.1.0\npress 2 to skip'), 50);
+        setTimeout(() => cb('? for shortcuts'), 200);
+        setTimeout(() => cb('5h limit\nWeekly limit'), 500);
+        return { dispose: jest.fn() };
+      }),
+      onExit: jest.fn(() => ({ dispose: jest.fn() })),
+      write: jest.fn(),
+      kill: jest.fn(),
+    };
+    mockPty.spawn.mockReturnValue(mockShell);
+
+    const pingPromise = agent.pingKeepalive();
+    jest.advanceTimersByTime(1000);
+
+    const result = await pingPromise;
+
+    expect(result).toBe(true);
+  });
+
+  it('tears down process cleanly after completion', async () => {
+    agent._rpcSupported = false;
+
+    const mockShell = {
+      onData: jest.fn((cb) => {
+        setTimeout(() => cb('? for shortcuts'), 100);
+        setTimeout(() => cb('5h limit\nWeekly limit'), 500);
+        return { dispose: jest.fn() };
+      }),
+      onExit: jest.fn(() => ({ dispose: jest.fn() })),
+      write: jest.fn(),
+      kill: jest.fn(),
+    };
+    mockPty.spawn.mockReturnValue(mockShell);
+
+    const pingPromise = agent.pingKeepalive();
+    jest.advanceTimersByTime(1000);
+    await pingPromise;
+
+    expect(mockShell.kill).toHaveBeenCalled();
+  });
+
+  it('handles unknown RPC support state (null)', async () => {
+    agent._rpcSupported = null; // Unknown state
+
+    const mockShell = {
+      onData: jest.fn((cb) => {
+        setTimeout(() => cb('? for shortcuts'), 100);
+        setTimeout(() => cb('5h limit\nWeekly limit'), 500);
+        return { dispose: jest.fn() };
+      }),
+      onExit: jest.fn(() => ({ dispose: jest.fn() })),
+      write: jest.fn(),
+      kill: jest.fn(),
+    };
+    mockPty.spawn.mockReturnValue(mockShell);
+
+    const pingPromise = agent.pingKeepalive();
+    jest.advanceTimersByTime(1000);
+
+    const result = await pingPromise;
+
+    // Should still attempt PTY ping when RPC support is unknown
+    expect(mockPty.spawn).toHaveBeenCalled();
+    expect(result).toBe(true);
+  });
+});
+
 describe('Graceful Degradation', () => {
   describe('BaseAgent', () => {
     it('stripAnsi handles null-like values safely', () => {

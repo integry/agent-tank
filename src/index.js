@@ -6,9 +6,23 @@ const { discoverAgents } = require('./discovery.js');
 const { fetchPublicStatus } = require('./public-status.js');
 const { createServer, displayServerBanner } = require('./server.js');
 const logger = require('./logger.js');
+const { HistoryStore, DEFAULT_RETENTION_DAYS } = require('./history-store.js');
+const { extractSnapshotMetrics } = require('./snapshot-metrics.js');
+const { attachPaceEvaluation } = require('./pace-attachment.js');
+const { handleRequest } = require('./http-handler.js');
+const { KeepaliveManager } = require('./keepalive-manager.js');
+const { AutoRefreshManager } = require('./auto-refresh-manager.js');
 
 // Load package.json for version info
 const pkg = require(path.join(__dirname, '..', 'package.json'));
+
+/**
+ * Valid auto-refresh modes:
+ * - 'none': No automatic refresh (manual refresh only)
+ * - 'interval': Traditional interval-based polling (refreshes at fixed intervals)
+ * - 'activity': Activity-based polling (refreshes when log activity is detected)
+ */
+const AUTO_REFRESH_MODES = ['none', 'interval', 'activity'];
 
 class AgentTank {
   constructor(options = {}) {
@@ -24,13 +38,42 @@ class AgentTank {
     this.skipServer = options.skipServer || false; // Skip HTTP server in one-shot mode
 
     // Auto-refresh configuration (backend periodic refresh)
-    this.autoRefresh = {
-      enabled: options.autoRefreshEnabled !== false, // Default: true
-      interval: options.autoRefreshInterval ?? 60,   // Default: 60 seconds, 0 = disabled
+    // Determine the mode: 'none', 'interval', or 'activity' (default: 'activity')
+    const rawMode = options.autoRefreshMode ?? 'activity';
+    const autoRefreshMode = AUTO_REFRESH_MODES.includes(rawMode) ? rawMode : 'activity';
+
+    // Handle backwards compatibility: if autoRefreshEnabled is explicitly false, use 'none' mode
+    if (options.autoRefreshEnabled === false) {
+      this.autoRefresh = {
+        mode: 'none',
+        enabled: false,
+        interval: options.autoRefreshInterval ?? 60,
+        activityDebounce: options.activityDebounce ?? 5000, // Default: 5 seconds in ms
+      };
+    } else {
+      this.autoRefresh = {
+        mode: autoRefreshMode,
+        enabled: autoRefreshMode !== 'none',
+        interval: options.autoRefreshInterval ?? 60,   // Default: 60 seconds
+        activityDebounce: options.activityDebounce ?? 5000, // Default: 5 seconds in ms
+      };
+    }
+
+    // Auto-refresh manager (initialized in start())
+    this.autoRefreshManager = null;
+
+    // History store for usage snapshots
+    this.historyRetentionDays = options.historyRetentionDays ?? DEFAULT_RETENTION_DAYS;
+    this.historyStore = new HistoryStore({
+      retentionDays: this.historyRetentionDays
+    });
+
+    // Keepalive manager for session maintenance
+    this.keepalive = {
+      enabled: options.keepaliveEnabled !== false, // Default: true
+      interval: options.keepaliveInterval ?? 300,  // Default: 5 minutes (300 seconds)
     };
-    this.autoRefreshTimer = null;
-    this.agentRefreshTimers = new Map(); // Per-agent timers for custom intervals
-    this.lastRefreshedAt = null;
+    this.keepaliveManager = null;
   }
 
   /**
@@ -138,69 +181,37 @@ class AgentTank {
     // Start backend auto-refresh if enabled (skip in one-shot mode)
     if (!this.skipServer) {
       this.startAutoRefresh();
+      this.startKeepalive();
     }
   }
 
+  /** Start the keepalive manager to maintain agent sessions. */
+  startKeepalive() {
+    this.stopKeepalive();
+    if (!this.keepalive.enabled || this.keepalive.interval <= 0) { console.log('Session keepalive: disabled'); return; }
+    if (this.freshProcess) { console.log('Session keepalive: disabled (fresh process mode)'); return; }
+    this.keepaliveManager = new KeepaliveManager({ enabled: this.keepalive.enabled, interval: this.keepalive.interval });
+    for (const [name, agent] of this.agents) { this.keepaliveManager.register(name, agent); }
+    this.keepaliveManager.start(); console.log(`Session keepalive: every ${this.keepalive.interval}s`);
+  }
+
+  /** Stop the keepalive manager. */
+  stopKeepalive() { if (this.keepaliveManager) { this.keepaliveManager.stop(); this.keepaliveManager = null; } }
+
   startAutoRefresh() {
-    // Stop any existing timers
-    this.stopAutoRefresh();
-
-    // Check if auto-refresh should be enabled
-    if (!this.autoRefresh.enabled || this.autoRefresh.interval <= 0) {
-      logger.info('⏸️  Backend auto-refresh: disabled');
-      return;
-    }
-
-    const globalInterval = this.autoRefresh.interval;
-
-    // Separate agents into those using the global interval and those needing a slower cadence
-    const globalAgents = [];
-    for (const [name, agent] of this.agents) {
-      // Effective interval: explicit override, or global clamped to agent's minimum
-      const effective = agent.refreshInterval
-        ?? (agent.minRefreshInterval ? Math.max(globalInterval, agent.minRefreshInterval) : null);
-      if (effective && effective > globalInterval) {
-        // Agent needs a longer interval — give it its own timer
-        const intervalMs = effective * 1000;
-        logger.info(`🔄 Backend auto-refresh [${name}]: every ${effective}s`);
-        const timer = setInterval(async () => {
-          logger.agent(name, '🔄 Auto-refreshing...');
-          await agent.refresh().catch(err =>
-            logger.error(`Error refreshing ${name}:`, err.message)
-          );
-          this.lastRefreshedAt = new Date().toISOString();
-        }, intervalMs);
-        this.agentRefreshTimers.set(name, timer);
-      } else {
-        globalAgents.push(name);
-      }
-    }
-
-    if (globalAgents.length > 0) {
-      logger.info(`🔄 Backend auto-refresh [${globalAgents.join(', ')}]: every ${globalInterval}s`);
-      this.autoRefreshTimer = setInterval(async () => {
-        logger.info(`🔄 Auto-refreshing ${globalAgents.join(', ')}...`);
-        const promises = globalAgents.map(name => {
-          const agent = this.agents.get(name);
-          return agent ? agent.refresh().catch(err =>
-            logger.error(`Error refreshing ${name}:`, err.message)
-          ) : Promise.resolve();
-        });
-        await Promise.all(promises);
-        this.lastRefreshedAt = new Date().toISOString();
-      }, globalInterval * 1000);
-    }
+    this.autoRefreshManager = new AutoRefreshManager({
+      config: this.autoRefresh,
+      agents: this.agents,
+      onRefreshAll: () => this.refreshAll(),
+      onRefreshAgent: (name) => this.refreshAgent(name),
+    });
+    this.autoRefreshManager.start();
   }
 
   stopAutoRefresh() {
-    if (this.autoRefreshTimer) {
-      clearInterval(this.autoRefreshTimer);
-      this.autoRefreshTimer = null;
+    if (this.autoRefreshManager) {
+      this.autoRefreshManager.stop();
     }
-    for (const timer of this.agentRefreshTimers.values()) {
-      clearInterval(timer);
-    }
-    this.agentRefreshTimers.clear();
   }
 
   createAgent(name) {
@@ -240,7 +251,26 @@ class AgentTank {
 
     this.publicStatus = publicStatusResult;
     this.lastRefreshedAt = new Date().toISOString();
+
+    // Record usage snapshots and attach pace evaluations
+    for (const [name, agent] of this.agents) {
+      if (agent.usage) {
+        this._recordSnapshot(name, agent.usage);
+        attachPaceEvaluation(name, agent.usage);
+      }
+    }
+
     logger.success('✅ All agents refresh complete');
+  }
+
+  /** Record a usage snapshot to the history store. @private */
+  _recordSnapshot(agentName, usage) {
+    try {
+      const snapshot = extractSnapshotMetrics(agentName, usage);
+      if (snapshot) this.historyStore.addSnapshot(agentName, snapshot);
+    } catch (err) {
+      console.error(`[${agentName}] Error recording snapshot:`, err.message);
+    }
   }
 
   async refreshAgent(name) {
@@ -249,6 +279,31 @@ class AgentTank {
       throw new Error(`Agent not found: ${name}`);
     }
     await agent.refresh();
+
+    // Record snapshot and attach pace evaluation for single agent refresh
+    if (agent.usage) {
+      this._recordSnapshot(name, agent.usage);
+      attachPaceEvaluation(name, agent.usage);
+    }
+  }
+
+  /**
+   * Get usage history statistics.
+   *
+   * @returns {Object} History statistics
+   */
+  getHistoryStats() {
+    return this.historyStore.getStats();
+  }
+
+  /**
+   * Get usage history for an agent.
+   *
+   * @param {string} [agentName] - Optional agent name to filter
+   * @returns {Array} History records
+   */
+  getHistory(agentName = null) {
+    return this.historyStore.getHistory(agentName);
   }
 
   getStatus() {
@@ -308,6 +363,7 @@ class AgentTank {
 
   stop() {
     this.stopAutoRefresh();
+    this.stopKeepalive();
     for (const agent of this.agents.values()) {
       agent.killProcess();
     }
@@ -315,6 +371,47 @@ class AgentTank {
       this.server.close();
     }
   }
+
+  /** Get keepalive status. @returns {Object|null} Keepalive manager status or null if not initialized */
+  getKeepaliveStatus() {
+    if (this.keepaliveManager) return this.keepaliveManager.getStatus();
+    return { enabled: this.keepalive.enabled, interval: this.keepalive.interval, isRunning: false, registeredAgents: [], lastKeepaliveAt: null };
+  }
+
+  /**
+   * Get activity monitor status.
+   * @returns {Object} Activity monitor status
+   */
+  getActivityMonitorStatus() {
+    if (this.autoRefreshManager) {
+      return this.autoRefreshManager.getActivityMonitorStatus();
+    }
+    return {
+      isMonitoring: false,
+      debounceInterval: this.autoRefresh.activityDebounce,
+      monitoredAgents: [],
+      agentCount: 0,
+      activityCount: 0,
+      lastActivityAt: {},
+      hasPendingActivity: false,
+      pendingAgents: [],
+      isActivityRefreshing: false,
+    };
+  }
+
+  /**
+   * Get the auto-refresh configuration.
+   * @returns {Object} Auto-refresh configuration
+   */
+  getAutoRefreshConfig() {
+    return {
+      mode: this.autoRefresh.mode,
+      enabled: this.autoRefresh.enabled,
+      interval: this.autoRefresh.interval,
+      activityDebounce: this.autoRefresh.activityDebounce,
+      lastRefreshedAt: this.autoRefreshManager ? this.autoRefreshManager.getLastRefreshedAt() : null,
+    };
+  }
 }
 
-module.exports = { AgentTank };
+module.exports = { AgentTank, AUTO_REFRESH_MODES };

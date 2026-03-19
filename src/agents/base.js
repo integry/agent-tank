@@ -303,12 +303,10 @@ class BaseAgent {
           logger.agent(this.name, 'Timeout after', logger.dim(`${timeout}ms`), ', output length:', logger.dim(`${output.length}`));
           if (output.length > 0) {
             logger.agent(this.name, 'Partial output:', logger.dim(this.stripAnsi(output).substring(0, 500)));
-            // Write full output for debugging
             require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, output);
             logger.agent(this.name, 'Full output written to', logger.dim(`/tmp/${this.name}-output.txt`));
           }
           shell.kill();
-          // If we have some output, try to parse it anyway
           if (output.length > 100) {
             resolve(output);
           } else {
@@ -347,7 +345,6 @@ class BaseAgent {
         // Check if we have enough data to extract usage
         if (commandsSent && this.hasCompleteOutput(output)) {
           logger.agent(this.name, 'Complete output detected, finishing...');
-          // Small delay to capture any remaining output
           setTimeout(() => {
             if (!completed) {
               completed = true;
@@ -377,24 +374,22 @@ class BaseAgent {
   getTimeout() { return 30000; }
   isReadyForCommands(_o) { return false; }
   hasCompleteOutput(_o) { return false; }
-  sendCommands(_s, _o) { } parseOutput(_o) { return null; }
-  /* eslint-disable no-control-regex */
-  static ANSI_CURSOR_RIGHT = /\x1B\[(\d+)C/g;
-  static ANSI_ESCAPE_SEQ = /\x1B\[[0-9;?]*[a-zA-Z]/g;
-  static ANSI_OSC_SEQ = /\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g;
-  static ANSI_DCS_SEQ = /\x1BP[^\x1B]*\x1B\\/g;
-  static ANSI_CHARSET = /\x1B[()#][A-Za-z0-9]/g;
-  static ANSI_TWOCHAR = /\x1B[=>DMEH78cNOZn\\|}{~]/g;
-  static ANSI_LEFTOVER = /\x1B/g;
-  /* eslint-enable no-control-regex */
-  static MULTI_SPACE = /  +/g;
-  stripAnsi(str) {
-    return str.replace(BaseAgent.ANSI_CURSOR_RIGHT, (_, n) => ' '.repeat(parseInt(n)))
-      .replace(BaseAgent.ANSI_ESCAPE_SEQ, '').replace(BaseAgent.ANSI_OSC_SEQ, '')
-      .replace(BaseAgent.ANSI_DCS_SEQ, '').replace(BaseAgent.ANSI_CHARSET, '')
-      .replace(BaseAgent.ANSI_TWOCHAR, '').replace(BaseAgent.ANSI_LEFTOVER, '')
-      .replace(/\r/g, '').replace(BaseAgent.MULTI_SPACE, ' ');
+  sendCommands(_s, _o) { }
+  parseOutput(_o) { return null; }
+
+  /** Lightweight keepalive method to prevent session expiration. Subclasses can override. @returns {Promise<boolean>} True if keepalive succeeded */
+  async keepalive() {
+    if (this.freshProcess) { console.log(`[${this.name}] Keepalive skipped (fresh process mode)`); return true; }
+    if (!this.shell || !this.processReady) { console.log(`[${this.name}] Keepalive: spawning process...`); await this.spawnProcess(); }
+    if (this.shell) { console.log(`[${this.name}] Keepalive: sending ping...`); this.shell.write('\x1b'); return true; }
+    return false;
   }
+  /* eslint-disable no-control-regex */
+  static ANSI_CURSOR_RIGHT = /\x1B\[(\d+)C/g; static ANSI_ESCAPE_SEQ = /\x1B\[[0-9;?]*[a-zA-Z]/g;
+  static ANSI_OSC_SEQ = /\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g; static ANSI_DCS_SEQ = /\x1BP[^\x1B]*\x1B\\/g;
+  static ANSI_CHARSET = /\x1B[()#][A-Za-z0-9]/g; static ANSI_TWOCHAR = /\x1B[=>DMEH78cNOZn\\|}{~]/g;
+  static ANSI_LEFTOVER = /\x1B/g; static MULTI_SPACE = /  +/g; /* eslint-enable no-control-regex */
+  stripAnsi(str) { return str.replace(BaseAgent.ANSI_CURSOR_RIGHT, (_, n) => ' '.repeat(parseInt(n))).replace(BaseAgent.ANSI_ESCAPE_SEQ, '').replace(BaseAgent.ANSI_OSC_SEQ, '').replace(BaseAgent.ANSI_DCS_SEQ, '').replace(BaseAgent.ANSI_CHARSET, '').replace(BaseAgent.ANSI_TWOCHAR, '').replace(BaseAgent.ANSI_LEFTOVER, '').replace(/\r/g, '').replace(BaseAgent.MULTI_SPACE, ' '); }
   stripBoxChars(str) { return str ? str.replace(/[│╭╮╯╰─┌┐└┘├┤┬┴┼║═╔╗╚╝╠╣╦╩╬]/g, '').trim() : str; }
 }
 module.exports = { BaseAgent };
