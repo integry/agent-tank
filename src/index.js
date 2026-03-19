@@ -5,6 +5,7 @@ const { CodexAgent } = require('./agents/codex.js');
 const { discoverAgents } = require('./discovery.js');
 const { statusPage } = require('./status-page.js');
 const { fetchPublicStatus } = require('./public-status.js');
+const logger = require('./logger.js');
 
 class AgentTank {
   constructor(options = {}) {
@@ -35,20 +36,20 @@ class AgentTank {
 
     if (!agentNames || agentNames.length === 0) {
       if (this.autoDiscover) {
-        console.log('Auto-discovering available LLM agents...');
+        logger.info('🔍 Auto-discovering available LLM agents...');
         agentNames = await discoverAgents();
         if (agentNames.length === 0) {
-          console.log('No compatible LLM agents found.');
-          console.log('Requirements:');
-          console.log('  - Claude Code 2.0+ (for /usage command support)');
-          console.log('  - Gemini CLI 0.24.5+ (for /stats command support)');
-          console.log('  - Codex CLI');
-          console.log('\nInstall/update with:');
-          console.log('  npm install -g @anthropic-ai/claude-code@latest');
-          console.log('  npm install -g gemini@latest');
+          logger.warn('No compatible LLM agents found.');
+          logger.info('Requirements:');
+          logger.info('  - Claude Code 2.0+ (for /usage command support)');
+          logger.info('  - Gemini CLI 0.24.5+ (for /stats command support)');
+          logger.info('  - Codex CLI');
+          logger.info('\nInstall/update with:');
+          logger.info('  npm install -g @anthropic-ai/claude-code@latest');
+          logger.info('  npm install -g gemini@latest');
           throw new Error('No agents found');
         }
-        console.log(`Found agents: ${agentNames.join(', ')}`);
+        logger.success(`✅ Found agents: ${agentNames.join(', ')}`);
       } else {
         throw new Error('No agents specified and auto-discover disabled.');
       }
@@ -60,7 +61,7 @@ class AgentTank {
       if (agent) {
         agent.freshProcess = this.freshProcess;
         this.agents.set(name, agent);
-        console.log(`Created agent: ${name}${this.freshProcess ? ' (fresh process mode)' : ''}`);
+        logger.agent(name, `Created agent${this.freshProcess ? ' (fresh process mode)' : ''}`);
       }
     }
 
@@ -71,18 +72,18 @@ class AgentTank {
 
     // Pre-spawn persistent processes in parallel before sending commands
     if (!this.freshProcess) {
-      console.log('Spawning agent processes...');
+      logger.info('🚀 Spawning agent processes...');
       await Promise.all(
         Array.from(this.agents.values()).map(agent =>
           agent.spawnProcess().catch(err =>
-            console.error(`Error spawning ${agent.name}:`, err.message)
+            logger.error(`Error spawning ${agent.name}:`, err.message)
           )
         )
       );
     }
 
     // Initial fetch
-    console.log('Fetching initial usage data...');
+    logger.info('📊 Fetching initial usage data...');
     await this.refreshAll();
 
     // Start backend auto-refresh if enabled (skip in one-shot mode)
@@ -97,7 +98,7 @@ class AgentTank {
 
     // Check if auto-refresh should be enabled
     if (!this.autoRefresh.enabled || this.autoRefresh.interval <= 0) {
-      console.log('Backend auto-refresh: disabled');
+      logger.info('⏸️  Backend auto-refresh: disabled');
       return;
     }
 
@@ -112,11 +113,11 @@ class AgentTank {
       if (effective && effective > globalInterval) {
         // Agent needs a longer interval — give it its own timer
         const intervalMs = effective * 1000;
-        console.log(`Backend auto-refresh [${name}]: every ${effective}s`);
+        logger.info(`🔄 Backend auto-refresh [${name}]: every ${effective}s`);
         const timer = setInterval(async () => {
-          console.log(`[Auto-refresh] Refreshing ${name}...`);
+          logger.agent(name, '🔄 Auto-refreshing...');
           await agent.refresh().catch(err =>
-            console.error(`Error refreshing ${name}:`, err.message)
+            logger.error(`Error refreshing ${name}:`, err.message)
           );
           this.lastRefreshedAt = new Date().toISOString();
         }, intervalMs);
@@ -127,13 +128,13 @@ class AgentTank {
     }
 
     if (globalAgents.length > 0) {
-      console.log(`Backend auto-refresh [${globalAgents.join(', ')}]: every ${globalInterval}s`);
+      logger.info(`🔄 Backend auto-refresh [${globalAgents.join(', ')}]: every ${globalInterval}s`);
       this.autoRefreshTimer = setInterval(async () => {
-        console.log(`[Auto-refresh] Refreshing ${globalAgents.join(', ')}...`);
+        logger.info(`🔄 Auto-refreshing ${globalAgents.join(', ')}...`);
         const promises = globalAgents.map(name => {
           const agent = this.agents.get(name);
           return agent ? agent.refresh().catch(err =>
-            console.error(`Error refreshing ${name}:`, err.message)
+            logger.error(`Error refreshing ${name}:`, err.message)
           ) : Promise.resolve();
         });
         await Promise.all(promises);
@@ -162,13 +163,13 @@ class AgentTank {
       case 'codex':
         return new CodexAgent();
       default:
-        console.warn(`Unknown agent: ${name}`);
+        logger.warn(`Unknown agent: ${name}`);
         return null;
     }
   }
 
   async refreshAll() {
-    console.log('\nRefreshing all agents...');
+    logger.info('🔄 Refreshing all agents...');
     const agentNames = Array.from(this.agents.keys());
 
     // Fetch PTY agent data and public status concurrently
@@ -177,20 +178,20 @@ class AgentTank {
       Promise.all(
         Array.from(this.agents.values()).map(agent =>
           agent.refresh().catch(err => {
-            console.error(`Error refreshing ${agent.name}:`, err.message);
+            logger.error(`Error refreshing ${agent.name}:`, err.message);
           })
         )
       ),
       // Public API status polling
       fetchPublicStatus(agentNames).catch(err => {
-        console.error('Error fetching public status:', err.message);
+        logger.error('Error fetching public status:', err.message);
         return {};
       }),
     ]);
 
     this.publicStatus = publicStatusResult;
     this.lastRefreshedAt = new Date().toISOString();
-    console.log('All agents refresh complete\n');
+    logger.success('✅ All agents refresh complete');
   }
 
   async refreshAgent(name) {
@@ -282,7 +283,7 @@ class AgentTank {
 
         if (req.method === 'GET' && path === '/status') {
           const status = this.getStatus();
-          console.log(`[HTTP] GET /status - returning status for ${Object.keys(status).length} agents`);
+          logger.server(`GET /status - returning status for ${Object.keys(status).length} agents`);
           res.setHeader('Content-Type', 'application/json');
           res.writeHead(200);
           res.end(JSON.stringify(status, null, 2));
@@ -344,22 +345,30 @@ class AgentTank {
         res.end(JSON.stringify({ error: 'Not found' }));
 
       } catch (err) {
-        console.error('Server error:', err);
+        logger.error('Server error:', err);
         res.writeHead(500);
         res.end(JSON.stringify({ error: 'Internal server error' }));
       }
     });
 
     this.server.listen(this.port, this.host, () => {
+      // Server startup banner
+      const ANSI = logger.ANSI;
+      console.log('');
+      console.log(`${ANSI.cyan}${ANSI.bold}╔════════════════════════════════════════════╗${ANSI.reset}`);
+      console.log(`${ANSI.cyan}${ANSI.bold}║${ANSI.reset}  ${ANSI.brightCyan}🚀 Agent Tank Server${ANSI.reset}                      ${ANSI.cyan}${ANSI.bold}║${ANSI.reset}`);
+      console.log(`${ANSI.cyan}${ANSI.bold}╚════════════════════════════════════════════╝${ANSI.reset}`);
+      console.log('');
       if (this.auth.user && this.auth.pass) {
-        console.log(`Authentication: basic auth (user: ${this.auth.user})`);
+        logger.info(`🔐 Authentication: basic auth (user: ${this.auth.user})`);
       }
       if (this.auth.token) {
-        console.log('Authentication: API key');
+        logger.info('🔑 Authentication: API key');
       }
-      console.log(`Listening on: ${this.host}:${this.port}`);
-      console.log(`  Status page: http://${this.host}:${this.port}/`);
-      console.log(`  JSON API:    http://${this.host}:${this.port}/status`);
+      logger.server(`Listening on: ${this.host}:${this.port}`);
+      logger.server(`📄 Status page: http://${this.host}:${this.port}/`);
+      logger.server(`📡 JSON API:    http://${this.host}:${this.port}/status`);
+      console.log('');
     });
   }
 
