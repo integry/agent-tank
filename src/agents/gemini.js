@@ -1,6 +1,7 @@
 const { BaseAgent } = require('./base.js');
 const { calculatePace } = require('../pace-evaluator.js');
 const { CYCLE_DURATIONS } = require('../usage-formatters.js');
+const logger = require('../logger.js');
 
 class GeminiAgent extends BaseAgent {
   constructor() {
@@ -28,12 +29,12 @@ class GeminiAgent extends BaseAgent {
     ];
 
     if (trustPatterns.some(pattern => output.toLowerCase().includes(pattern.toLowerCase()))) {
-      console.log(`[${this.name}] Detected trust prompt, auto-accepting...`);
+      logger.agent(this.name, 'Detected trust prompt, auto-accepting...');
       shell.write('y\r');
 
       // Wait a bit then send Enter to proceed past the trust confirmation
       setTimeout(() => {
-        console.log(`[${this.name}] Sending Enter to proceed...`);
+        logger.agent(this.name, 'Sending Enter to proceed...');
         shell.write('\r');
       }, 500);
 
@@ -81,7 +82,7 @@ class GeminiAgent extends BaseAgent {
   }
 
   sendCommands(shell, _output) {
-    console.log(`[${this.name}] Sending /stats command...`);
+    logger.agent(this.name, 'Sending /stats command...');
     // Escape clears any pending input/state, then type command + select from autocomplete
     setTimeout(() => shell.write('\x1b'), 50);
     setTimeout(() => shell.write('/stats\r'), 500);
@@ -161,7 +162,7 @@ class GeminiAgent extends BaseAgent {
       };
 
       const timer = setTimeout(() => {
-        console.log(`[${this.name}] /about timeout, using partial output`);
+        logger.agent(this.name, '/about timeout, using partial output');
         finish(this._parseAboutOutput(aboutOutput));
       }, 10000); // 10 second timeout for /about
 
@@ -170,12 +171,12 @@ class GeminiAgent extends BaseAgent {
         aboutOutput = this.output;
         // Check if we have complete /about output
         if (this._hasCompleteAboutOutput(aboutOutput)) {
-          console.log(`[${this.name}] Complete /about output detected`);
+          logger.agent(this.name, 'Complete /about output detected');
           setTimeout(() => finish(this._parseAboutOutput(aboutOutput)), 100);
         }
       };
 
-      console.log(`[${this.name}] Sending /about command for metadata...`);
+      logger.agent(this.name, 'Sending /about command for metadata...');
       this.output = '';
       // Escape clears pending state, delay for CLI to be fully interactive,
       // second Enter in case /about has an autocomplete menu in newer versions
@@ -202,9 +203,9 @@ class GeminiAgent extends BaseAgent {
     // which can false-positive match loose regexes.
     const hasAboutContent = /about\s+gemini/i.test(clean) || /CLI\s+Version/i.test(clean);
     if (!hasAboutContent) {
-      console.log(`[${this.name}] /about output missing expected header, dumping for debug`);
+      logger.agent(this.name, '/about output missing expected header, dumping for debug');
       require('fs').writeFileSync(`/tmp/${this.name}-about-output.txt`, output);
-      console.log(`[${this.name}] Stripped output preview:`, clean.substring(0, 500));
+      logger.agent(this.name, 'Stripped output preview:', logger.dim(clean.substring(0, 500)));
       return null;
     }
 
