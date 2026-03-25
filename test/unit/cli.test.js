@@ -218,6 +218,7 @@ describe('CLI', () => {
       expect(result.stdout).toContain('--auth-pass');
       expect(result.stdout).toContain('--auth-token');
       expect(result.stdout).toContain('--fresh-process');
+      expect(result.stdout).toContain('--claude-api');
       expect(result.stdout).toContain('--config');
       expect(result.stdout).toContain('--auto-discover');
       expect(result.stdout).toContain('--auto-refresh');
@@ -234,6 +235,7 @@ describe('CLI', () => {
       expect(result.stdout).toContain('AGENT_TANK_TOKEN');
       expect(result.stdout).toContain('AGENT_TANK_HOST');
       expect(result.stdout).toContain('AGENT_TANK_FRESH_PROCESS');
+      expect(result.stdout).toContain('AGENT_TANK_CLAUDE_API');
       expect(result.stdout).toContain('AGENT_TANK_AUTO_REFRESH');
       expect(result.stdout).toContain('AGENT_TANK_AUTO_REFRESH_INTERVAL');
     });
@@ -436,6 +438,32 @@ describe('CLI', () => {
       }
     });
 
+    itWithPty('AGENT_TANK_CLAUDE_API=1 enables Claude API mode', async () => {
+      try {
+        const { proc } = await startCliProcess(['--no-auto-discover'], {
+          AGENT_TANK_CLAUDE_API: '1'
+        });
+        proc.kill('SIGTERM');
+      } catch (error) {
+        if (!error.message.includes('No agents') && !isNodePtyError(error.message)) {
+          throw error;
+        }
+      }
+    });
+
+    itWithPty('AGENT_TANK_CLAUDE_API=true enables Claude API mode', async () => {
+      try {
+        const { proc } = await startCliProcess(['--no-auto-discover'], {
+          AGENT_TANK_CLAUDE_API: 'true'
+        });
+        proc.kill('SIGTERM');
+      } catch (error) {
+        if (!error.message.includes('No agents') && !isNodePtyError(error.message)) {
+          throw error;
+        }
+      }
+    });
+
     itWithPty('AGENT_TANK_FRESH_PROCESS=1 enables fresh process mode', async () => {
       try {
         const { proc } = await startCliProcess(['--no-auto-discover'], {
@@ -614,6 +642,17 @@ describe('CLI', () => {
     itWithPty('--fresh-process enables fresh process mode', async () => {
       try {
         const { proc } = await startCliProcess(['--fresh-process', '--no-auto-discover']);
+        proc.kill('SIGTERM');
+      } catch (error) {
+        if (!error.message.includes('No agents') && !isNodePtyError(error.message)) {
+          throw error;
+        }
+      }
+    });
+
+    itWithPty('--claude-api enables Claude API mode', async () => {
+      try {
+        const { proc } = await startCliProcess(['--claude-api', '--no-auto-discover']);
         proc.kill('SIGTERM');
       } catch (error) {
         if (!error.message.includes('No agents') && !isNodePtyError(error.message)) {
