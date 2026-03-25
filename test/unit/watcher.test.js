@@ -70,21 +70,8 @@ describe('AgentTank', () => {
         expect(tank.autoRefresh.activityDebounce).toBe(5000);
       });
 
-      it('initializes activityMonitor as null', () => {
-        expect(tank.activityMonitor).toBeNull();
-      });
-
-      it('initializes isActivityRefreshing as false', () => {
-        expect(tank.isActivityRefreshing).toBe(false);
-      });
-
-      it('initializes autoRefreshTimer as null', () => {
-        expect(tank.autoRefreshTimer).toBeNull();
-      });
-
-      it('initializes agentRefreshTimers as empty Map', () => {
-        expect(tank.agentRefreshTimers).toBeInstanceOf(Map);
-        expect(tank.agentRefreshTimers.size).toBe(0);
+      it('initializes autoRefreshManager as null', () => {
+        expect(tank.autoRefreshManager).toBeNull();
       });
 
       it('initializes lastRefreshedAt as null', () => {
@@ -465,21 +452,14 @@ describe('AgentTank', () => {
       expect(() => tank.stop()).not.toThrow();
     });
 
-    it('clears autoRefreshTimer if set', () => {
-      tank.autoRefreshTimer = setInterval(() => {}, 1000);
+    it('stops autoRefreshManager if running', () => {
+      tank.autoRefreshManager = {
+        stop: jest.fn()
+      };
 
       tank.stop();
 
-      expect(tank.autoRefreshTimer).toBeNull();
-    });
-
-    it('clears all agent refresh timers', () => {
-      tank.agentRefreshTimers.set('claude', setInterval(() => {}, 1000));
-      tank.agentRefreshTimers.set('gemini', setInterval(() => {}, 1000));
-
-      tank.stop();
-
-      expect(tank.agentRefreshTimers.size).toBe(0);
+      expect(tank.autoRefreshManager).toBeNull();
     });
 
     it('stops keepalive manager if running', () => {

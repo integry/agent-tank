@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const pkg = require(path.join(__dirname, '..', 'package.json'));
 
 const { agentIcons, refreshIcon, tankIcon, syncIcon, copyIcon } = require('./icons');
 const { formatUsage } = require('./usage-formatters');
@@ -106,7 +107,7 @@ ${styles}
         <span>&copy; ${new Date().getFullYear()} <a href="https://propr.dev">Rinalds Uzkalns</a></span>
       </div>
       <div class="footer-right">
-        <span class="footer-version"><a href="https://github.com/integry/agent-tank/releases">v1.0.0</a></span>
+        <span class="footer-version"><a href="https://github.com/integry/agent-tank/releases">v${pkg.version}</a></span>
         <span class="footer-separator">•</span>
         <a href="https://github.com/integry/agent-tank/blob/main/CHANGELOG.md">Changelog</a>
         <span class="footer-separator">•</span>
