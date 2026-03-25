@@ -138,6 +138,9 @@ class AutoRefreshManager {
       return;
     }
 
+    // Ignore short-lived startup churn immediately after the initial fetch/boot.
+    this.activityMonitor.suppressAll(Math.max(this.config.activityDebounce, 5000));
+
     console.log(`[ActivityMonitor] Monitoring ${startResult.monitoredDirs.length} directories`);
   }
 
@@ -164,6 +167,10 @@ class AutoRefreshManager {
    */
   async _runActivityRefreshCycle() {
     try {
+      if (this.activityMonitor) {
+        // Ignore short-lived filesystem churn caused by our own refresh commands.
+        this.activityMonitor.suppressAll(Math.max(this.config.activityDebounce, 5000));
+      }
       console.log('[Activity-refresh] Running refresh cycle...');
       await this.onRefreshAll();
       this.lastRefreshedAt = new Date().toISOString();

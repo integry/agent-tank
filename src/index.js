@@ -36,6 +36,7 @@ class AgentTank {
     this.server = null;
     this.publicStatus = {}; // Public API status from upstream providers
     this.skipServer = options.skipServer || false; // Skip HTTP server in one-shot mode
+    this.lastRefreshedAt = null;
 
     // Auto-refresh configuration (backend periodic refresh)
     // Determine the mode: 'none', 'interval', or 'activity' (default: 'activity')
@@ -211,6 +212,7 @@ class AgentTank {
   stopAutoRefresh() {
     if (this.autoRefreshManager) {
       this.autoRefreshManager.stop();
+      this.autoRefreshManager = null;
     }
   }
 

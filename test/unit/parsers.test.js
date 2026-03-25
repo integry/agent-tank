@@ -15,6 +15,7 @@ const { BaseAgent } = require('../../src/agents/base.js');
 const { ClaudeAgent } = require('../../src/agents/claude.js');
 const { GeminiAgent } = require('../../src/agents/gemini.js');
 const { CodexAgent } = require('../../src/agents/codex.js');
+const { parseResetTime, formatDuration } = require('../../src/agents/pty-output-parser.js');
 
 describe('BaseAgent', () => {
   let agent;
@@ -455,7 +456,7 @@ describe('ClaudeAgent', () => {
 
   describe('parseResetTime', () => {
     it('parses time-only format (e.g., "2:59am")', () => {
-      const result = agent.parseResetTime('2:59am (America/New_York)');
+      const result = parseResetTime('2:59am (America/New_York)');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
@@ -463,41 +464,41 @@ describe('ClaudeAgent', () => {
     });
 
     it('parses 12-hour time with PM', () => {
-      const result = agent.parseResetTime('3:30pm (America/New_York)');
+      const result = parseResetTime('3:30pm (America/New_York)');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
     });
 
     it('parses date+time format (e.g., "Jan 22, 1pm")', () => {
-      const result = agent.parseResetTime('Jan 22, 1pm (America/New_York)');
+      const result = parseResetTime('Jan 22, 1pm (America/New_York)');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
     });
 
     it('handles midnight (12am)', () => {
-      const result = agent.parseResetTime('12:00am (America/New_York)');
+      const result = parseResetTime('12:00am (America/New_York)');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
     });
 
     it('handles noon (12pm)', () => {
-      const result = agent.parseResetTime('12:00pm (America/New_York)');
+      const result = parseResetTime('12:00pm (America/New_York)');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
     });
 
     it('returns null for null input', () => {
-      const result = agent.parseResetTime(null);
+      const result = parseResetTime(null);
 
       expect(result).toBeNull();
     });
 
     it('handles invalid format gracefully', () => {
-      const result = agent.parseResetTime('invalid time string');
+      const result = parseResetTime('invalid time string');
 
       expect(result).toEqual({ text: 'invalid time string', seconds: null });
     });
@@ -505,17 +506,17 @@ describe('ClaudeAgent', () => {
 
   describe('_formatDuration', () => {
     it('formats minutes only', () => {
-      const result = agent._formatDuration(1800); // 30 minutes
+      const result = formatDuration(1800); // 30 minutes
       expect(result).toBe('30m');
     });
 
     it('formats hours and minutes', () => {
-      const result = agent._formatDuration(5400); // 1.5 hours
+      const result = formatDuration(5400); // 1.5 hours
       expect(result).toBe('1h 30m');
     });
 
     it('formats days and hours', () => {
-      const result = agent._formatDuration(90000); // 25 hours
+      const result = formatDuration(90000); // 25 hours
       expect(result).toBe('1d 1h');
     });
   });
@@ -953,7 +954,7 @@ describe('CodexAgent', () => {
 
   describe('parseResetTime', () => {
     it('parses time-only format (HH:MM)', () => {
-      const result = agent.parseResetTime('14:30');
+      const result = parseResetTime('14:30');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
@@ -961,7 +962,7 @@ describe('CodexAgent', () => {
     });
 
     it('parses date+time format (HH:MM on DD Mon)', () => {
-      const result = agent.parseResetTime('10:00 on 15 Mar');
+      const result = parseResetTime('10:00 on 15 Mar');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
@@ -969,7 +970,7 @@ describe('CodexAgent', () => {
 
     it('formats duration as days and hours for long durations', () => {
       // Parse a time that's more than 24 hours away
-      const result = agent.parseResetTime('12:00 on 10 Dec');
+      const result = parseResetTime('12:00 on 10 Dec');
 
       expect(result).not.toBeNull();
       // Duration formatting depends on the current time, just verify structure
@@ -977,20 +978,20 @@ describe('CodexAgent', () => {
     });
 
     it('formats duration as hours and minutes', () => {
-      const result = agent.parseResetTime('23:30');
+      const result = parseResetTime('23:30');
 
       expect(result).not.toBeNull();
       expect(result.text).toMatch(/^\d+[hmd]\s*\d*[hm]?$/);
     });
 
     it('returns null for null input', () => {
-      const result = agent.parseResetTime(null);
+      const result = parseResetTime(null);
 
       expect(result).toBeNull();
     });
 
     it('handles invalid format gracefully', () => {
-      const result = agent.parseResetTime('invalid time');
+      const result = parseResetTime('invalid time');
 
       expect(result).toEqual({ text: 'invalid time', seconds: null });
     });
@@ -1564,10 +1565,10 @@ describe('Graceful Degradation', () => {
     it('parseResetTime handles edge cases', () => {
       const agent = new CodexAgent();
 
-      expect(agent.parseResetTime(null)).toBeNull();
-      expect(agent.parseResetTime(undefined)).toBeNull();
+      expect(parseResetTime(null)).toBeNull();
+      expect(parseResetTime(undefined)).toBeNull();
       // Empty string returns null (no reset time to parse)
-      expect(agent.parseResetTime('')).toBeNull();
+      expect(parseResetTime('')).toBeNull();
     });
   });
 });

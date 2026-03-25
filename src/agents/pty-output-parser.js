@@ -43,8 +43,10 @@ function formatDuration(diffSeconds) {
  */
 function parseDateTimeStr(cleanStr, now, monthNames) {
   const dateTimeMatch = cleanStr.match(/(\w+)\s+(\d{1,2}),?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
-  const dateOnlyMatch = !dateTimeMatch && cleanStr.match(/(\w+)\s+(\d{1,2})$/i);
-  if (!dateTimeMatch && !dateOnlyMatch) return null;
+  // 24-hour format with date: "10:00 on 15 Mar" or "14:30 on 22 Jan"
+  const time24DateMatch = !dateTimeMatch && cleanStr.match(/^(\d{1,2}):(\d{2})\s+on\s+(\d{1,2})\s+(\w+)$/i);
+  const dateOnlyMatch = !dateTimeMatch && !time24DateMatch && cleanStr.match(/(\w+)\s+(\d{1,2})$/i);
+  if (!dateTimeMatch && !time24DateMatch && !dateOnlyMatch) return null;
 
   let resetDate;
   if (dateTimeMatch) {
@@ -52,6 +54,11 @@ function parseDateTimeStr(cleanStr, now, monthNames) {
     const monthIndex = monthNames.indexOf(month.toLowerCase().substring(0, 3));
     if (monthIndex === -1) return null;
     resetDate = new Date(now.getFullYear(), monthIndex, parseInt(day), to24Hour(hourRaw, ampm), parseInt(minutes));
+  } else if (time24DateMatch) {
+    const [, hours, minutes, day, month] = time24DateMatch;
+    const monthIndex = monthNames.indexOf(month.toLowerCase().substring(0, 3));
+    if (monthIndex === -1) return null;
+    resetDate = new Date(now.getFullYear(), monthIndex, parseInt(day), parseInt(hours), parseInt(minutes));
   } else {
     const [, month, day] = dateOnlyMatch;
     const monthIndex = monthNames.indexOf(month.toLowerCase().substring(0, 3));
@@ -76,9 +83,15 @@ function parseResetTime(resetStr) {
   let resetDate;
   // Try time-only format first: "2:59am" or "12:30pm"
   const timeOnlyMatch = cleanStr.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  // Try 24-hour time-only format: "14:30" or "23:00"
+  const time24Match = !timeOnlyMatch && cleanStr.match(/^(\d{1,2}):(\d{2})$/);
   if (timeOnlyMatch) {
     const [, hourRaw, minutes = '0', ampm] = timeOnlyMatch;
     resetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), to24Hour(hourRaw, ampm), parseInt(minutes));
+    if (resetDate <= now) resetDate.setDate(resetDate.getDate() + 1);
+  } else if (time24Match) {
+    const [, hours, minutes] = time24Match;
+    resetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(hours), parseInt(minutes));
     if (resetDate <= now) resetDate.setDate(resetDate.getDate() + 1);
   } else {
     resetDate = parseDateTimeStr(cleanStr, now, monthNames);

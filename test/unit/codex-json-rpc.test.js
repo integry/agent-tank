@@ -36,6 +36,12 @@ jest.mock('../../src/json-rpc-client.js', () => {
 
 const { CodexAgent } = require('../../src/agents/codex.js');
 const { JsonRpcClient, __mockClient } = require('../../src/json-rpc-client.js');
+const {
+  formatRpcResponseAsOutput,
+  parseRpcRateLimits,
+  parseRpcLimitEntry,
+  formatDuration,
+} = require('../../src/agents/codex-rpc-helpers.js');
 
 describe('CodexAgent JSON-RPC Integration', () => {
   let agent;
@@ -211,21 +217,21 @@ describe('CodexAgent JSON-RPC Integration', () => {
     });
   });
 
-  describe('_parseRpcRateLimits', () => {
+  describe('parseRpcRateLimits', () => {
     it('parses fiveHour and weekly limits', () => {
       const rateLimits = {
         fiveHour: { percentLeft: 75, resetsAt: '15:00', resetsInSeconds: 3600 },
         weekly: { percentLeft: 90, resetsAt: '10:00 on 22 Mar', resetsInSeconds: 604800 },
       };
 
-      const result = agent._parseRpcRateLimits(rateLimits);
+      const { usage } = parseRpcRateLimits(rateLimits);
 
-      expect(result.fiveHour.percentLeft).toBe(75);
-      expect(result.fiveHour.percentUsed).toBe(25);
-      expect(result.fiveHour.resetsIn).toBe('1h 0m');
+      expect(usage.fiveHour.percentLeft).toBe(75);
+      expect(usage.fiveHour.percentUsed).toBe(25);
+      expect(usage.fiveHour.resetsIn).toBe('1h 0m');
 
-      expect(result.weekly.percentLeft).toBe(90);
-      expect(result.weekly.percentUsed).toBe(10);
+      expect(usage.weekly.percentLeft).toBe(90);
+      expect(usage.weekly.percentUsed).toBe(10);
     });
 
     it('handles model-specific limits', () => {
@@ -241,12 +247,12 @@ describe('CodexAgent JSON-RPC Integration', () => {
         ],
       };
 
-      const result = agent._parseRpcRateLimits(rateLimits);
+      const { usage } = parseRpcRateLimits(rateLimits);
 
-      expect(result.modelLimits).toBeDefined();
-      expect(result.modelLimits).toHaveLength(1);
-      expect(result.modelLimits[0].name).toBe('GPT-5.3-Codex');
-      expect(result.modelLimits[0].fiveHour.percentLeft).toBe(70);
+      expect(usage.modelLimits).toBeDefined();
+      expect(usage.modelLimits).toHaveLength(1);
+      expect(usage.modelLimits[0].name).toBe('GPT-5.3-Codex');
+      expect(usage.modelLimits[0].fiveHour.percentLeft).toBe(70);
     });
 
     it('extracts model and account info', () => {
@@ -258,13 +264,13 @@ describe('CodexAgent JSON-RPC Integration', () => {
         sessionId: 'abc-123',
       };
 
-      const result = agent._parseRpcRateLimits(rateLimits);
+      const { usage, metadataUpdates } = parseRpcRateLimits(rateLimits);
 
-      expect(result.model).toBe('gpt-5.3-codex');
-      expect(result.account).toBe('user@example.com');
-      expect(agent.metadata.model).toBe('gpt-5.3-codex');
-      expect(agent.metadata.email).toBe('user@example.com');
-      expect(agent.metadata.sessionId).toBe('abc-123');
+      expect(usage.model).toBe('gpt-5.3-codex');
+      expect(usage.account).toBe('user@example.com');
+      expect(metadataUpdates.model).toBe('gpt-5.3-codex');
+      expect(metadataUpdates.email).toBe('user@example.com');
+      expect(metadataUpdates.sessionId).toBe('abc-123');
     });
 
     it('handles alternative field names', () => {
@@ -273,13 +279,13 @@ describe('CodexAgent JSON-RPC Integration', () => {
         weekly: { percent: 85, reset: '10:00 on 25 Mar' },
       };
 
-      const result = agent._parseRpcRateLimits(rateLimits);
+      const { usage } = parseRpcRateLimits(rateLimits);
 
-      expect(result.fiveHour.percentLeft).toBe(60);
-      expect(result.fiveHour.resetsAt).toBe('16:00');
-      expect(result.fiveHour.resetsInSeconds).toBe(7200);
+      expect(usage.fiveHour.percentLeft).toBe(60);
+      expect(usage.fiveHour.resetsAt).toBe('16:00');
+      expect(usage.fiveHour.resetsInSeconds).toBe(7200);
 
-      expect(result.weekly.percentLeft).toBe(85);
+      expect(usage.weekly.percentLeft).toBe(85);
     });
 
     it('includes pace data when resetsInSeconds is available', () => {
@@ -288,20 +294,20 @@ describe('CodexAgent JSON-RPC Integration', () => {
         weekly: { percentLeft: 80, resetsAt: '10:00 on 22 Mar', resetsInSeconds: 302400 },
       };
 
-      const result = agent._parseRpcRateLimits(rateLimits);
+      const { usage } = parseRpcRateLimits(rateLimits);
 
-      expect(result.fiveHour.pace).toBeDefined();
-      expect(typeof result.fiveHour.pace.paceRatio).toBe('number');
+      expect(usage.fiveHour.pace).toBeDefined();
+      expect(typeof usage.fiveHour.pace.paceRatio).toBe('number');
 
-      expect(result.weekly.pace).toBeDefined();
-      expect(typeof result.weekly.pace.paceRatio).toBe('number');
+      expect(usage.weekly.pace).toBeDefined();
+      expect(typeof usage.weekly.pace.paceRatio).toBe('number');
     });
   });
 
-  describe('_parseRpcLimitEntry', () => {
+  describe('parseRpcLimitEntry', () => {
     it('parses limit with percentLeft', () => {
       const limit = { percentLeft: 75, resetsAt: '15:00' };
-      const result = agent._parseRpcLimitEntry(limit, '5h limit', 'fiveHour');
+      const result = parseRpcLimitEntry(limit, '5h limit', 'fiveHour');
 
       expect(result.percentLeft).toBe(75);
       expect(result.percentUsed).toBe(25);
@@ -311,7 +317,7 @@ describe('CodexAgent JSON-RPC Integration', () => {
 
     it('parses limit with remaining field', () => {
       const limit = { remaining: 60, resetAt: '16:00' };
-      const result = agent._parseRpcLimitEntry(limit, 'Weekly limit', 'weekly');
+      const result = parseRpcLimitEntry(limit, 'Weekly limit', 'weekly');
 
       expect(result.percentLeft).toBe(60);
       expect(result.percentUsed).toBe(40);
@@ -319,14 +325,14 @@ describe('CodexAgent JSON-RPC Integration', () => {
 
     it('parses limit with percent field', () => {
       const limit = { percent: 85, reset: '17:00' };
-      const result = agent._parseRpcLimitEntry(limit, '5h limit', 'fiveHour');
+      const result = parseRpcLimitEntry(limit, '5h limit', 'fiveHour');
 
       expect(result.percentLeft).toBe(85);
     });
 
     it('calculates resetsIn from resetsInSeconds', () => {
       const limit = { percentLeft: 80, resetsAt: '14:30', resetsInSeconds: 5400 };
-      const result = agent._parseRpcLimitEntry(limit, '5h limit', 'fiveHour');
+      const result = parseRpcLimitEntry(limit, '5h limit', 'fiveHour');
 
       expect(result.resetsIn).toBe('1h 30m');
       expect(result.resetsInSeconds).toBe(5400);
@@ -334,45 +340,44 @@ describe('CodexAgent JSON-RPC Integration', () => {
 
     it('calculates resetsIn from secondsUntilReset', () => {
       const limit = { percentLeft: 80, resetsAt: '14:30', secondsUntilReset: 3600 };
-      const result = agent._parseRpcLimitEntry(limit, '5h limit', 'fiveHour');
+      const result = parseRpcLimitEntry(limit, '5h limit', 'fiveHour');
 
       expect(result.resetsIn).toBe('1h 0m');
       expect(result.resetsInSeconds).toBe(3600);
     });
   });
 
-  describe('_formatDuration', () => {
+  describe('formatDuration', () => {
     it('formats minutes only', () => {
-      expect(agent._formatDuration(1800)).toBe('30m');
+      expect(formatDuration(1800)).toBe('30m');
     });
 
     it('formats hours and minutes', () => {
-      expect(agent._formatDuration(5400)).toBe('1h 30m');
+      expect(formatDuration(5400)).toBe('1h 30m');
     });
 
     it('formats days and hours', () => {
-      expect(agent._formatDuration(90000)).toBe('1d 1h');
+      expect(formatDuration(90000)).toBe('1d 1h');
     });
 
     it('formats 0 minutes', () => {
-      expect(agent._formatDuration(30)).toBe('0m');
+      expect(formatDuration(30)).toBe('0m');
     });
   });
 
-  describe('_formatRpcResponseAsOutput', () => {
+  describe('formatRpcResponseAsOutput', () => {
     it('returns marker for structured response with fiveHour', () => {
       const rateLimits = { fiveHour: { percentLeft: 80 } };
-      const result = agent._formatRpcResponseAsOutput(rateLimits);
+      const result = formatRpcResponseAsOutput(rateLimits);
 
-      expect(result).toBe('__RPC_RESPONSE__');
-      expect(agent._rpcRateLimits).toBe(rateLimits);
+      expect(result).toEqual({ marker: '__RPC_RESPONSE__', data: rateLimits });
     });
 
     it('returns marker for structured response with weekly', () => {
       const rateLimits = { weekly: { percentLeft: 90 } };
-      const result = agent._formatRpcResponseAsOutput(rateLimits);
+      const result = formatRpcResponseAsOutput(rateLimits);
 
-      expect(result).toBe('__RPC_RESPONSE__');
+      expect(result).toEqual({ marker: '__RPC_RESPONSE__', data: rateLimits });
     });
 
     it('returns marker for nested rateLimits structure', () => {
@@ -382,19 +387,18 @@ describe('CodexAgent JSON-RPC Integration', () => {
           weekly: { percentLeft: 90 },
         },
       };
-      const result = agent._formatRpcResponseAsOutput(rateLimits);
+      const result = formatRpcResponseAsOutput(rateLimits);
 
-      expect(result).toBe('__RPC_RESPONSE__');
-      expect(agent._rpcRateLimits).toEqual(rateLimits.rateLimits);
+      expect(result).toEqual({ marker: '__RPC_RESPONSE__', data: rateLimits.rateLimits });
     });
 
     it('throws for empty response', () => {
-      expect(() => agent._formatRpcResponseAsOutput(null)).toThrow('Empty rate limits response');
+      expect(() => formatRpcResponseAsOutput(null)).toThrow('Empty rate limits response');
     });
 
     it('throws for unexpected structure', () => {
       const rateLimits = { unexpected: 'data' };
-      expect(() => agent._formatRpcResponseAsOutput(rateLimits)).toThrow('Unexpected rate limits response structure');
+      expect(() => formatRpcResponseAsOutput(rateLimits)).toThrow('Unexpected rate limits response structure');
     });
   });
 

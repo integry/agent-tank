@@ -7,13 +7,8 @@ const http = require('node:http');
 const logger = require('./logger.js');
 const { statusPage } = require('./status-page.js');
 
-/**
- * Create and configure the HTTP server
- * @param {Object} tank - AgentTank instance
- * @returns {http.Server}
- */
-function createServer(tank) {
-  return http.createServer(async (req, res) => {
+function createRequestHandler(tank) {
+  return async (req, res) => {
     const url = new URL(req.url, `http://localhost:${tank.port}`);
     const path = url.pathname;
 
@@ -111,7 +106,16 @@ function createServer(tank) {
       res.writeHead(500);
       res.end(JSON.stringify({ error: 'Internal server error' }));
     }
-  });
+  };
+}
+
+/**
+ * Create and configure the HTTP server
+ * @param {Object} tank - AgentTank instance
+ * @returns {http.Server}
+ */
+function createServer(tank) {
+  return http.createServer(createRequestHandler(tank));
 }
 
 /**
@@ -137,4 +141,4 @@ function displayServerBanner(tank) {
   console.log('');
 }
 
-module.exports = { createServer, displayServerBanner };
+module.exports = { createRequestHandler, createServer, displayServerBanner };

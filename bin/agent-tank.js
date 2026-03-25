@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable complexity */
 
 const { parseArgs } = require('node:util');
 const { AgentTank } = require('../src/index.js');
@@ -30,8 +31,15 @@ const options = {
 
 const { values } = parseArgs({ options, allowPositionals: false, allowNegative: true });
 
-if (values.help) {
-  console.log(`
+function exitWithCode(code, message, stream = process.stderr) {
+  if (message) {
+    stream.write(`${message}\n`);
+  }
+  process.exitCode = code;
+}
+
+function printHelp() {
+  process.stdout.write(`
 agent-tank - Monitor LLM CLI usage limits
 
 Usage: agent-tank [options]
@@ -110,185 +118,184 @@ HTTP Endpoints:
   POST /refresh      Trigger refresh for all agents
   POST /refresh/:agent Trigger refresh for specific agent
 `);
-  process.exit(0);
 }
 
-// Load config file if specified
-let config = {};
-if (values.config) {
-  try {
-    config = require(require('path').resolve(values.config));
-  } catch (err) {
-    console.error(`Failed to load config file: ${err.message}`);
-    process.exit(1);
+async function main() {
+  if (values.help) {
+    printHelp();
+    process.exitCode = 0;
+    return;
   }
-}
 
-// Merge CLI options with config (env vars > CLI flags > config file)
-const agents = [];
-if (values.claude || config.claude) agents.push('claude');
-if (values.gemini || config.gemini) agents.push('gemini');
-if (values.codex || config.codex) agents.push('codex');
-
-const auth = {
-  user: process.env.AGENT_TANK_USER || values['auth-user'] || config.auth?.user,
-  pass: process.env.AGENT_TANK_PASS || values['auth-pass'] || config.auth?.pass,
-  token: process.env.AGENT_TANK_TOKEN || values['auth-token'] || config.auth?.token,
-};
-
-const host = process.env.AGENT_TANK_HOST || values.host || config.host;
-
-const freshProcessEnv = process.env.AGENT_TANK_FRESH_PROCESS;
-const freshProcess = values['fresh-process'] ||
-  config.freshProcess ||
-  freshProcessEnv === '1' || freshProcessEnv === 'true';
-
-// Claude API configuration (env > CLI > config file)
-const claudeApiEnv = process.env.AGENT_TANK_CLAUDE_API;
-const claudeApi = values['claude-api'] ||
-  config.claudeApi ||
-  claudeApiEnv === '1' || claudeApiEnv === 'true';
-
-// Auto-refresh configuration (env > CLI > config file)
-const autoRefreshEnv = process.env.AGENT_TANK_AUTO_REFRESH;
-let autoRefreshEnabled = values['auto-refresh'];
-if (autoRefreshEnv !== undefined) {
-  autoRefreshEnabled = autoRefreshEnv === '1' || autoRefreshEnv === 'true';
-} else if (config.autoRefresh?.enabled !== undefined) {
-  autoRefreshEnabled = config.autoRefresh.enabled;
-}
-
-const autoRefreshIntervalEnv = process.env.AGENT_TANK_AUTO_REFRESH_INTERVAL;
-let autoRefreshInterval = parseInt(values['auto-refresh-interval'], 10);
-if (autoRefreshIntervalEnv !== undefined) {
-  autoRefreshInterval = parseInt(autoRefreshIntervalEnv, 10);
-} else if (config.autoRefresh?.interval !== undefined) {
-  autoRefreshInterval = config.autoRefresh.interval;
-}
-
-// Auto-refresh mode configuration (env > CLI > config file)
-const autoRefreshModeEnv = process.env.AGENT_TANK_AUTO_REFRESH_MODE;
-let autoRefreshMode = values['auto-refresh-mode'];
-if (autoRefreshModeEnv !== undefined) {
-  autoRefreshMode = autoRefreshModeEnv;
-} else if (config.autoRefresh?.mode !== undefined) {
-  autoRefreshMode = config.autoRefresh.mode;
-}
-
-// Activity debounce configuration (env > CLI > config file)
-const activityDebounceEnv = process.env.AGENT_TANK_ACTIVITY_DEBOUNCE;
-let activityDebounce = parseInt(values['activity-debounce'], 10);
-if (activityDebounceEnv !== undefined) {
-  activityDebounce = parseInt(activityDebounceEnv, 10);
-} else if (config.autoRefresh?.activityDebounce !== undefined) {
-  activityDebounce = config.autoRefresh.activityDebounce;
-}
-
-// History retention configuration (env > CLI > config file > default)
-const historyRetentionEnv = process.env.AGENT_TANK_HISTORY_RETENTION_DAYS;
-let historyRetentionDays = parseInt(values['history-retention-days'], 10);
-if (historyRetentionEnv !== undefined) {
-  historyRetentionDays = parseInt(historyRetentionEnv, 10);
-} else if (config.history?.retentionDays !== undefined) {
-  historyRetentionDays = config.history.retentionDays;
-}
-
-// Keepalive configuration (env > CLI > config file)
-const keepaliveEnv = process.env.AGENT_TANK_KEEPALIVE;
-let keepaliveEnabled = values['keepalive'];
-if (keepaliveEnv !== undefined) {
-  keepaliveEnabled = keepaliveEnv === '1' || keepaliveEnv === 'true';
-} else if (config.keepalive?.enabled !== undefined) {
-  keepaliveEnabled = config.keepalive.enabled;
-}
-
-const keepaliveIntervalEnv = process.env.AGENT_TANK_KEEPALIVE_INTERVAL;
-let keepaliveInterval = parseInt(values['keepalive-interval'], 10);
-if (keepaliveIntervalEnv !== undefined) {
-  keepaliveInterval = parseInt(keepaliveIntervalEnv, 10);
-} else if (config.keepalive?.interval !== undefined) {
-  keepaliveInterval = config.keepalive.interval;
-}
-
-// One-shot and JSON mode flags
-const onceMode = values.once;
-const jsonMode = values.json;
-
-// Suppress console output in JSON mode
-const originalLog = console.log;
-const originalError = console.error;
-if (jsonMode) {
-  console.log = () => {};
-  console.error = () => {};
-  console.warn = () => {};
-}
-
-const watcher = new AgentTank({
-  agents: agents.length > 0 ? agents : null, // null = auto-discover
-  autoDiscover: values['auto-discover'] && agents.length === 0,
-  port: parseInt(values.port || config.port || '3456', 10),
-  host,
-  auth,
-  freshProcess,
-  claudeApi,
-  autoRefreshEnabled: onceMode ? false : autoRefreshEnabled, // Disable auto-refresh in one-shot mode
-  autoRefreshInterval,
-  autoRefreshMode: onceMode ? 'none' : autoRefreshMode, // Disable auto-refresh in one-shot mode
-  activityDebounce,
-  keepaliveEnabled: onceMode ? false : keepaliveEnabled, // Disable keepalive in one-shot mode
-  keepaliveInterval,
-  historyRetentionDays,
-  skipServer: onceMode, // Don't start HTTP server in one-shot mode
-});
-
-// Graceful shutdown
-const shutdown = () => {
-  if (!jsonMode) {
-    originalLog('\nShutting down...');
+  // Load config file if specified
+  let config = {};
+  if (values.config) {
+    try {
+      config = require(require('path').resolve(values.config));
+    } catch (err) {
+      exitWithCode(1, `Failed to load config file: ${err.message}`);
+      return;
+    }
   }
-  watcher.stop();
-  process.exit(0);
-};
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
 
-if (onceMode) {
-  // One-shot mode: fetch data once and exit
-  watcher.start().then(() => {
-    const status = watcher.getStatus();
-    if (jsonMode) {
-      // Restore console.log for JSON output
-      console.log = originalLog;
-      console.log(JSON.stringify(status, null, 2));
-      // Suppress console.log again before stopping to avoid "Killing persistent process" messages
-      console.log = () => {};
-    } else {
-      // Output human-readable summary
-      for (const [name, agentStatus] of Object.entries(status)) {
-        originalLog(`\n=== ${name.toUpperCase()} ===`);
-        originalLog(JSON.stringify(agentStatus, null, 2));
-      }
+  // Merge CLI options with config (env vars > CLI flags > config file)
+  const agents = [];
+  if (values.claude || config.claude) agents.push('claude');
+  if (values.gemini || config.gemini) agents.push('gemini');
+  if (values.codex || config.codex) agents.push('codex');
+
+  const auth = {
+    user: process.env.AGENT_TANK_USER || values['auth-user'] || config.auth?.user,
+    pass: process.env.AGENT_TANK_PASS || values['auth-pass'] || config.auth?.pass,
+    token: process.env.AGENT_TANK_TOKEN || values['auth-token'] || config.auth?.token,
+  };
+
+  const host = process.env.AGENT_TANK_HOST || values.host || config.host;
+
+  const freshProcessEnv = process.env.AGENT_TANK_FRESH_PROCESS;
+  const freshProcess = values['fresh-process'] ||
+    config.freshProcess ||
+    freshProcessEnv === '1' || freshProcessEnv === 'true';
+
+  // Claude API configuration (env > CLI > config file)
+  const claudeApiEnv = process.env.AGENT_TANK_CLAUDE_API;
+  const claudeApi = values['claude-api'] ||
+    config.claudeApi ||
+    claudeApiEnv === '1' || claudeApiEnv === 'true';
+
+  // Auto-refresh configuration (env > CLI > config file)
+  const autoRefreshEnv = process.env.AGENT_TANK_AUTO_REFRESH;
+  let autoRefreshEnabled = values['auto-refresh'];
+  if (autoRefreshEnv !== undefined) {
+    autoRefreshEnabled = autoRefreshEnv === '1' || autoRefreshEnv === 'true';
+  } else if (config.autoRefresh?.enabled !== undefined) {
+    autoRefreshEnabled = config.autoRefresh.enabled;
+  }
+
+  const autoRefreshIntervalEnv = process.env.AGENT_TANK_AUTO_REFRESH_INTERVAL;
+  let autoRefreshInterval = parseInt(values['auto-refresh-interval'], 10);
+  if (autoRefreshIntervalEnv !== undefined) {
+    autoRefreshInterval = parseInt(autoRefreshIntervalEnv, 10);
+  } else if (config.autoRefresh?.interval !== undefined) {
+    autoRefreshInterval = config.autoRefresh.interval;
+  }
+
+  // Auto-refresh mode configuration (env > CLI > config file)
+  const autoRefreshModeEnv = process.env.AGENT_TANK_AUTO_REFRESH_MODE;
+  let autoRefreshMode = values['auto-refresh-mode'];
+  if (autoRefreshModeEnv !== undefined) {
+    autoRefreshMode = autoRefreshModeEnv;
+  } else if (config.autoRefresh?.mode !== undefined) {
+    autoRefreshMode = config.autoRefresh.mode;
+  }
+
+  // Activity debounce configuration (env > CLI > config file)
+  const activityDebounceEnv = process.env.AGENT_TANK_ACTIVITY_DEBOUNCE;
+  let activityDebounce = parseInt(values['activity-debounce'], 10);
+  if (activityDebounceEnv !== undefined) {
+    activityDebounce = parseInt(activityDebounceEnv, 10);
+  } else if (config.autoRefresh?.activityDebounce !== undefined) {
+    activityDebounce = config.autoRefresh.activityDebounce;
+  }
+
+  // History retention configuration (env > CLI > config file > default)
+  const historyRetentionEnv = process.env.AGENT_TANK_HISTORY_RETENTION_DAYS;
+  let historyRetentionDays = parseInt(values['history-retention-days'], 10);
+  if (historyRetentionEnv !== undefined) {
+    historyRetentionDays = parseInt(historyRetentionEnv, 10);
+  } else if (config.history?.retentionDays !== undefined) {
+    historyRetentionDays = config.history.retentionDays;
+  }
+
+  // Keepalive configuration (env > CLI > config file)
+  const keepaliveEnv = process.env.AGENT_TANK_KEEPALIVE;
+  let keepaliveEnabled = values['keepalive'];
+  if (keepaliveEnv !== undefined) {
+    keepaliveEnabled = keepaliveEnv === '1' || keepaliveEnv === 'true';
+  } else if (config.keepalive?.enabled !== undefined) {
+    keepaliveEnabled = config.keepalive.enabled;
+  }
+
+  const keepaliveIntervalEnv = process.env.AGENT_TANK_KEEPALIVE_INTERVAL;
+  let keepaliveInterval = parseInt(values['keepalive-interval'], 10);
+  if (keepaliveIntervalEnv !== undefined) {
+    keepaliveInterval = parseInt(keepaliveIntervalEnv, 10);
+  } else if (config.keepalive?.interval !== undefined) {
+    keepaliveInterval = config.keepalive.interval;
+  }
+
+  // One-shot and JSON mode flags
+  const onceMode = values.once;
+  const jsonMode = values.json;
+
+  // Suppress console output in JSON mode
+  const originalLog = console.log;
+  if (jsonMode) {
+    console.log = () => {};
+    console.error = () => {};
+    console.warn = () => {};
+  }
+
+  const watcher = new AgentTank({
+    agents: agents.length > 0 ? agents : null, // null = auto-discover
+    autoDiscover: values['auto-discover'] && agents.length === 0,
+    port: parseInt(values.port || config.port || '3456', 10),
+    host,
+    auth,
+    freshProcess,
+    claudeApi,
+    autoRefreshEnabled: onceMode ? false : autoRefreshEnabled, // Disable auto-refresh in one-shot mode
+    autoRefreshInterval,
+    autoRefreshMode: onceMode ? 'none' : autoRefreshMode, // Disable auto-refresh in one-shot mode
+    activityDebounce,
+    keepaliveEnabled: onceMode ? false : keepaliveEnabled, // Disable keepalive in one-shot mode
+    keepaliveInterval,
+    historyRetentionDays,
+    skipServer: onceMode, // Don't start HTTP server in one-shot mode
+  });
+
+  // Graceful shutdown
+  const shutdown = () => {
+    if (!jsonMode) {
+      originalLog('\nShutting down...');
     }
     watcher.stop();
-    process.exit(0);
-  }).catch(err => {
+    process.exitCode = 0;
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
+  try {
+    if (onceMode) {
+      await watcher.start();
+      const status = watcher.getStatus();
+      if (jsonMode) {
+        // Restore console.log for JSON output
+        console.log = originalLog;
+        console.log(JSON.stringify(status, null, 2));
+        // Suppress console.log again before stopping to avoid extra shutdown output
+        console.log = () => {};
+      } else {
+        for (const [name, agentStatus] of Object.entries(status)) {
+          originalLog(`\n=== ${name.toUpperCase()} ===`);
+          originalLog(JSON.stringify(agentStatus, null, 2));
+        }
+      }
+      watcher.stop();
+      process.exitCode = 0;
+      return;
+    }
+
+    await watcher.start();
+  } catch (err) {
     if (jsonMode) {
       console.log = originalLog;
       console.log(JSON.stringify({ error: err.message }, null, 2));
     } else {
-      originalError('Failed to start:', err.message);
+      exitWithCode(1, `Failed to start: ${err.message}`);
     }
-    process.exit(1);
-  });
-} else {
-  // Normal mode: start server and keep running
-  watcher.start().catch(err => {
-    if (jsonMode) {
-      console.log = originalLog;
-      console.log(JSON.stringify({ error: err.message }, null, 2));
-    } else {
-      originalError('Failed to start:', err.message);
-    }
-    process.exit(1);
-  });
+    process.exitCode = 1;
+  }
 }
+
+main();
