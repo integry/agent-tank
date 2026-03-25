@@ -251,6 +251,53 @@ describe('ActivityMonitor', () => {
       jest.advanceTimersByTime(5000);
       expect(callback).toHaveBeenCalled();
     });
+
+    it('ignores lock file churn', () => {
+      const callback = jest.fn();
+      monitor.onActivity = callback;
+
+      monitor._handleFileChange('claude', 'rename', 'history.jsonl.lock');
+      jest.advanceTimersByTime(5000);
+
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('ignores Claude marketplace metadata updates', () => {
+      const callback = jest.fn();
+      monitor.onActivity = callback;
+
+      monitor._handleFileChange('claude', 'change', 'plugins/known_marketplaces.json');
+      jest.advanceTimersByTime(5000);
+
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('ignores git repository churn inside watched directories', () => {
+      const callback = jest.fn();
+      monitor.onActivity = callback;
+
+      monitor._handleFileChange('claude', 'change', 'plugins/marketplaces/claude-plugins-official/.git/ORIG_HEAD');
+      jest.advanceTimersByTime(5000);
+
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('ignores suppressed agent activity', () => {
+      const callback = jest.fn();
+      monitor.onActivity = callback;
+
+      monitor.suppressAgent('claude', 10000);
+      monitor._handleFileChange('claude', 'change', 'conversation.jsonl');
+      jest.advanceTimersByTime(5000);
+
+      expect(callback).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(5000);
+      monitor._handleFileChange('claude', 'change', 'conversation.jsonl');
+      jest.advanceTimersByTime(5000);
+
+      expect(callback).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('_triggerActivity', () => {

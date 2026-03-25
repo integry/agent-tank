@@ -29,6 +29,23 @@ const DEFAULT_LOG_DIRECTORIES = {
   ],
 };
 
+function normalizeFilename(filename) {
+  return String(filename || '').replace(/\\/g, '/');
+}
+
+function isIgnoredActivityFile(filename) {
+  const normalized = normalizeFilename(filename);
+  if (!normalized) return false;
+
+  return normalized.endsWith('.lock') ||
+    normalized.includes('/.git/') ||
+    normalized.startsWith('.git/') ||
+    normalized.startsWith('plugins/marketplaces/') ||
+    normalized.includes('/plugins/marketplaces/') ||
+    normalized === 'plugins/known_marketplaces.json' ||
+    normalized.endsWith('/plugins/known_marketplaces.json');
+}
+
 class ActivityMonitor {
   /**
    * Create an ActivityMonitor instance.
@@ -48,6 +65,7 @@ class ActivityMonitor {
     this.watchers = new Map(); // Map<agentName, FSWatcher[]>
     this.debounceTimers = new Map(); // Map<agentName, timeoutId>
     this.lastActivityAt = new Map(); // Map<agentName, ISO timestamp>
+    this.suppressedUntil = new Map(); // Map<agentName, unix timestamp in ms>
     this.isMonitoring = false;
     this.activityCount = 0; // Total activity events detected
   }
@@ -149,6 +167,10 @@ class ActivityMonitor {
    * @private
    */
   _handleFileChange(agent, eventType, filename) {
+    if (isIgnoredActivityFile(filename) || this._isSuppressed(agent)) {
+      return;
+    }
+
     // Clear existing debounce timer for this agent
     if (this.debounceTimers.has(agent)) {
       clearTimeout(this.debounceTimers.get(agent));
@@ -161,6 +183,30 @@ class ActivityMonitor {
     }, this.debounceInterval);
 
     this.debounceTimers.set(agent, timer);
+  }
+
+  _isSuppressed(agent) {
+    const suppressedUntil = this.suppressedUntil.get(agent);
+    if (!suppressedUntil) {
+      return false;
+    }
+
+    if (Date.now() >= suppressedUntil) {
+      this.suppressedUntil.delete(agent);
+      return false;
+    }
+
+    return true;
+  }
+
+  suppressAgent(agent, durationMs) {
+    this.suppressedUntil.set(agent, Date.now() + durationMs);
+  }
+
+  suppressAll(durationMs) {
+    for (const agent of this.agents) {
+      this.suppressAgent(agent, durationMs);
+    }
   }
 
   /**
