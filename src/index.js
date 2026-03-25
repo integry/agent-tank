@@ -30,6 +30,7 @@ class AgentTank {
     this.autoDiscover = options.autoDiscover !== false;
     this.requestedAgents = options.agents || null;
     this.freshProcess = options.freshProcess || false;
+    this.claudeApi = options.claudeApi || false; // Use direct Anthropic API for Claude
     this.auth = options.auth || {};
     this.agents = new Map();
     this.server = null;
@@ -216,7 +217,7 @@ class AgentTank {
   createAgent(name) {
     switch (name) {
       case 'claude':
-        return new ClaudeAgent();
+        return new ClaudeAgent({ useApi: this.claudeApi });
       case 'gemini':
         return new GeminiAgent();
       case 'codex':

@@ -3,13 +3,177 @@ const { calculatePace } = require('../pace-evaluator.js');
 const { CYCLE_DURATIONS } = require('../usage-formatters.js');
 const logger = require('../logger.js');
 const { pingKeepalive } = require('./keepalive-helper.js');
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+const https = require('https');
+
+// API response sentinel for parseOutput to detect
+const API_RESPONSE_SENTINEL = '__API_RESPONSE__';
 
 class ClaudeAgent extends BaseAgent {
-  constructor() {
+  constructor(options = {}) {
     super('claude', 'claude');
     this._statusSent = false;
-    // Claude's /usage API is rate limited — minimum 5 minutes between refreshes
-    this.minRefreshInterval = 300;
+    this.useApi = options.useApi || false;
+    this._apiResponse = null; // Stores the API response when using direct API
+    // PTY default: 600s (10 minutes), API mode: 60s (1 minute)
+    this.minRefreshInterval = this.useApi ? 60 : 600;
+  }
+
+  /**
+   * Resolve OAuth token from various sources:
+   * 1. CLAUDE_CODE_OAUTH_TOKEN environment variable
+   * 2. ~/.claude/.credentials.json file
+   * 3. macOS Keychain (via security command)
+   * 4. Linux secret-tool
+   * @returns {string|null} The OAuth token or null if not found
+   */
+  _getAuthToken() {
+    // 1. Check environment variable first
+    if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+      logger.agent(this.name, 'Using OAuth token from CLAUDE_CODE_OAUTH_TOKEN env var');
+      return process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    }
+
+    // 2. Check credentials file
+    const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+    const credentialsPath = path.join(homeDir, '.claude', '.credentials.json');
+    try {
+      if (fs.existsSync(credentialsPath)) {
+        const credentials = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+        if (credentials.claudeAiOauth?.accessToken) {
+          logger.agent(this.name, 'Using OAuth token from credentials file');
+          return credentials.claudeAiOauth.accessToken;
+        }
+      }
+    } catch (err) {
+      logger.agent(this.name, 'Error reading credentials file:', err.message);
+    }
+
+    // 3. Try macOS Keychain
+    if (process.platform === 'darwin') {
+      try {
+        const result = execSync(
+          'security find-generic-password -s "claude-code" -w 2>/dev/null',
+          { encoding: 'utf8', timeout: 5000 }
+        ).trim();
+        if (result) {
+          // The keychain stores the full credentials JSON
+          const parsed = JSON.parse(result);
+          if (parsed.claudeAiOauth?.accessToken) {
+            logger.agent(this.name, 'Using OAuth token from macOS Keychain');
+            return parsed.claudeAiOauth.accessToken;
+          }
+        }
+      } catch (_err) {
+        // Keychain entry not found or error parsing - continue to next method
+      }
+    }
+
+    // 4. Try Linux secret-tool
+    if (process.platform === 'linux') {
+      try {
+        const result = execSync(
+          'secret-tool lookup service claude-code 2>/dev/null',
+          { encoding: 'utf8', timeout: 5000 }
+        ).trim();
+        if (result) {
+          const parsed = JSON.parse(result);
+          if (parsed.claudeAiOauth?.accessToken) {
+            logger.agent(this.name, 'Using OAuth token from Linux secret-tool');
+            return parsed.claudeAiOauth.accessToken;
+          }
+        }
+      } catch (_err) {
+        // secret-tool not available or entry not found - continue
+      }
+    }
+
+    logger.agent(this.name, 'No OAuth token found in any credential source');
+    return null;
+  }
+
+  /**
+   * Fetch usage data directly from the Anthropic OAuth usage API
+   * @param {number} timeout - Request timeout in milliseconds
+   * @returns {Promise<Object|null>} The API response or null on failure
+   */
+  async _runWithApi(timeout = 10000) {
+    const token = this._getAuthToken();
+    if (!token) {
+      logger.agent(this.name, 'No OAuth token available for API fetch');
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      const url = 'https://api.anthropic.com/api/oauth/usage';
+
+      const req = https.request(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'agent-tank/1.0',
+        },
+        timeout,
+      }, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            try {
+              const parsed = JSON.parse(data);
+              logger.agent(this.name, 'API response received successfully');
+              resolve(parsed);
+            } catch (err) {
+              logger.agent(this.name, 'Failed to parse API response:', err.message);
+              resolve(null);
+            }
+          } else if (res.statusCode === 401) {
+            logger.agent(this.name, 'API authentication failed (401) - token may be expired');
+            resolve(null);
+          } else {
+            logger.agent(this.name, `API request failed with status ${res.statusCode}`);
+            resolve(null);
+          }
+        });
+      });
+
+      req.on('error', (err) => {
+        logger.agent(this.name, 'API request error:', err.message);
+        resolve(null);
+      });
+
+      req.on('timeout', () => {
+        logger.agent(this.name, 'API request timed out');
+        req.destroy();
+        resolve(null);
+      });
+
+      req.end();
+    });
+  }
+
+  /**
+   * Override runCommand to attempt API fetch first when useApi is enabled
+   * Falls back to PTY if API fails
+   */
+  async runCommand() {
+    if (this.useApi) {
+      logger.agent(this.name, 'Attempting direct API fetch...');
+      const apiResponse = await this._runWithApi();
+      if (apiResponse) {
+        this._apiResponse = apiResponse;
+        return API_RESPONSE_SENTINEL;
+      }
+      logger.agent(this.name, 'API fetch failed, falling back to PTY');
+      // Reset minRefreshInterval to PTY default for fallback
+      this.minRefreshInterval = 600;
+    }
+
+    // Fall back to PTY command execution
+    return super.runCommand();
   }
 
   getTimeout() { return 30000; }
@@ -222,7 +386,130 @@ class ClaudeAgent extends BaseAgent {
     return sectionData;
   }
 
+  /**
+   * Parse the direct API response into the unified usage schema
+   * @param {Object} apiResponse - The raw API response from Anthropic
+   * @returns {Object} The parsed usage object matching the PTY format
+   */
+  _parseApiResponse(apiResponse) {
+    const usage = { session: null, weeklyAll: null, weeklySonnet: null };
+
+    if (!apiResponse) return usage;
+
+    const now = new Date();
+
+    // Helper to calculate reset time info from an ISO timestamp
+    const parseResetTimestamp = (isoTimestamp) => {
+      if (!isoTimestamp) return { resetsAt: null, resetsIn: null, resetsInSeconds: null };
+      const resetDate = new Date(isoTimestamp);
+      const diffMs = resetDate - now;
+      if (diffMs <= 0) return { resetsAt: isoTimestamp, resetsIn: 'soon', resetsInSeconds: 0 };
+      const diffSeconds = Math.floor(diffMs / 1000);
+      return {
+        resetsAt: isoTimestamp,
+        resetsIn: this._formatDuration(diffSeconds),
+        resetsInSeconds: diffSeconds,
+      };
+    };
+
+    // Parse session limit (if present)
+    if (apiResponse.sessionLimit) {
+      const sl = apiResponse.sessionLimit;
+      const percent = sl.percentUsed ?? (sl.used && sl.limit ? Math.round((sl.used / sl.limit) * 100) : null);
+      if (percent !== null) {
+        const resetInfo = parseResetTimestamp(sl.resetsAt);
+        usage.session = {
+          label: 'Current session',
+          percent,
+          ...resetInfo,
+        };
+        this._addPaceData(usage.session, 'session');
+      }
+    }
+
+    // Parse weekly all models limit (if present)
+    if (apiResponse.weeklyAllModels || apiResponse.weeklyLimit) {
+      const wl = apiResponse.weeklyAllModels || apiResponse.weeklyLimit;
+      const percent = wl.percentUsed ?? (wl.used && wl.limit ? Math.round((wl.used / wl.limit) * 100) : null);
+      if (percent !== null) {
+        const resetInfo = parseResetTimestamp(wl.resetsAt);
+        usage.weeklyAll = {
+          label: 'Current week (all models)',
+          percent,
+          ...resetInfo,
+        };
+        this._addPaceData(usage.weeklyAll, 'weekly');
+      }
+    }
+
+    // Parse weekly Sonnet only limit (if present)
+    if (apiResponse.weeklySonnet || apiResponse.weeklySonnetOnly) {
+      const ws = apiResponse.weeklySonnet || apiResponse.weeklySonnetOnly;
+      const percent = ws.percentUsed ?? (ws.used && ws.limit ? Math.round((ws.used / ws.limit) * 100) : null);
+      if (percent !== null) {
+        const resetInfo = parseResetTimestamp(ws.resetsAt);
+        usage.weeklySonnet = {
+          label: 'Current week (Sonnet only)',
+          percent,
+          ...resetInfo,
+        };
+        this._addPaceData(usage.weeklySonnet, 'weekly');
+      }
+    }
+
+    // Parse extra usage (if present)
+    if (apiResponse.extraUsage) {
+      const eu = apiResponse.extraUsage;
+      const percent = eu.percentUsed ?? (eu.spent && eu.budget ? Math.round((eu.spent / eu.budget) * 100) : null);
+      const resetInfo = parseResetTimestamp(eu.resetsAt);
+      usage.extraUsage = {
+        label: 'Extra usage',
+        percent,
+        spent: eu.spent ?? null,
+        budget: eu.budget ?? null,
+        ...resetInfo,
+      };
+      this._addPaceData(usage.extraUsage, 'weekly');
+    }
+
+    // Handle alternative API response structures
+    // The API might return data in a different format - handle common variations
+    if (apiResponse.usage) {
+      // Nested usage object format
+      return this._parseApiResponse(apiResponse.usage);
+    }
+
+    // Handle flat percentage fields
+    if (!usage.session && apiResponse.sessionPercent !== undefined) {
+      usage.session = {
+        label: 'Current session',
+        percent: apiResponse.sessionPercent,
+        ...parseResetTimestamp(apiResponse.sessionResetsAt),
+      };
+      this._addPaceData(usage.session, 'session');
+    }
+
+    if (!usage.weeklyAll && apiResponse.weeklyPercent !== undefined) {
+      usage.weeklyAll = {
+        label: 'Current week (all models)',
+        percent: apiResponse.weeklyPercent,
+        ...parseResetTimestamp(apiResponse.weeklyResetsAt),
+      };
+      this._addPaceData(usage.weeklyAll, 'weekly');
+    }
+
+    return usage;
+  }
+
   parseOutput(output) {
+    // Check if this is an API response (sentinel marker)
+    if (output === API_RESPONSE_SENTINEL && this._apiResponse) {
+      logger.agent(this.name, 'Parsing API response');
+      const usage = this._parseApiResponse(this._apiResponse);
+      this._apiResponse = null; // Clear after parsing
+      return usage;
+    }
+
     const clean = this.stripAnsi(output);
     const usage = { session: null, weeklyAll: null, weeklySonnet: null };
 
