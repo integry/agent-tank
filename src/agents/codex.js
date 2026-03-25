@@ -1,4 +1,3 @@
-/* eslint-disable max-lines */
 const { BaseAgent } = require('./base.js');
 const logger = require('../logger.js');
 const { JsonRpcClient } = require('../json-rpc-client.js');
