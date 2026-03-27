@@ -3,10 +3,10 @@ const logger = require('../logger.js');
 const { pingKeepalive } = require('./keepalive-helper.js');
 const { parseApiResponse } = require('./api-response-parser.js');
 const { parsePtyOutput } = require('./pty-output-parser.js');
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
 const https = require('https');
+const {
+  readCredentials, isTokenExpired, refreshOAuthToken, persistRefreshedTokens,
+} = require('./oauth-helper.js');
 
 // API response sentinel for parseOutput to detect
 const API_RESPONSE_SENTINEL = '__API_RESPONSE__';
@@ -27,89 +27,31 @@ class ClaudeAgent extends BaseAgent {
    * 2. ~/.claude/.credentials.json file
    * 3. macOS Keychain (via security command)
    * 4. Linux secret-tool
-   * @returns {string|null} The OAuth token or null if not found
+   * @returns {Promise<string|null>} The OAuth token or null
    */
-  _getAuthToken() {
-    // 1. Check environment variable first
-    if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-      logger.agent(this.name, 'Using OAuth token from CLAUDE_CODE_OAUTH_TOKEN env var');
-      return process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  async _getAuthToken() {
+    const creds = readCredentials();
+    if (!creds) {
+      logger.agent(this.name, 'No OAuth token found in any credential source');
+      return null;
     }
+    logger.agent(this.name, `Using OAuth token from ${creds.source}`);
+    if (!isTokenExpired(creds.expiresAt)) return creds.accessToken;
 
-    // 2. Check credentials file
-    const homeDir = process.env.HOME || process.env.USERPROFILE || '';
-    const credentialsPath = path.join(homeDir, '.claude', '.credentials.json');
-    try {
-      if (fs.existsSync(credentialsPath)) {
-        const credentials = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
-        if (credentials.claudeAiOauth?.accessToken) {
-          logger.agent(this.name, 'Using OAuth token from credentials file');
-          return credentials.claudeAiOauth.accessToken;
-        }
-      }
-    } catch (err) {
-      logger.agent(this.name, 'Error reading credentials file:', err.message);
-    }
-
-    // 3. Try macOS Keychain
-    if (process.platform === 'darwin') {
-      try {
-        const result = execSync(
-          'security find-generic-password -s "claude-code" -w 2>/dev/null',
-          { encoding: 'utf8', timeout: 5000 }
-        ).trim();
-        if (result) {
-          // The keychain stores the full credentials JSON
-          const parsed = JSON.parse(result);
-          if (parsed.claudeAiOauth?.accessToken) {
-            logger.agent(this.name, 'Using OAuth token from macOS Keychain');
-            return parsed.claudeAiOauth.accessToken;
-          }
-        }
-      } catch (_err) {
-        // Keychain entry not found or error parsing - continue to next method
-      }
-    }
-
-    // 4. Try Linux secret-tool
-    if (process.platform === 'linux') {
-      try {
-        const result = execSync(
-          'secret-tool lookup service claude-code 2>/dev/null',
-          { encoding: 'utf8', timeout: 5000 }
-        ).trim();
-        if (result) {
-          const parsed = JSON.parse(result);
-          if (parsed.claudeAiOauth?.accessToken) {
-            logger.agent(this.name, 'Using OAuth token from Linux secret-tool');
-            return parsed.claudeAiOauth.accessToken;
-          }
-        }
-      } catch (_err) {
-        // secret-tool not available or entry not found - continue
-      }
-    }
-
-    logger.agent(this.name, 'No OAuth token found in any credential source');
-    return null;
+    // Token is expired — try to refresh
+    logger.agent(this.name, 'Access token expired, attempting refresh...');
+    return this._refreshAndGetToken();
   }
 
   /**
-   * Fetch usage data directly from the Anthropic OAuth usage API
+   * Make an HTTP GET request to the usage API with the given token.
+   * @param {string} token - OAuth access token
    * @param {number} timeout - Request timeout in milliseconds
-   * @returns {Promise<Object|null>} The API response or null on failure
+   * @returns {Promise<{ statusCode: number, body: string }>}
    */
-  async _runWithApi(timeout = 10000) {
-    const token = this._getAuthToken();
-    if (!token) {
-      logger.agent(this.name, 'No OAuth token available for API fetch');
-      return null;
-    }
-
+  _fetchUsageApi(token, timeout) {
     return new Promise((resolve) => {
-      const url = 'https://api.anthropic.com/api/oauth/usage';
-
-      const req = https.request(url, {
+      const req = https.request('https://api.anthropic.com/api/oauth/usage', {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -120,39 +62,98 @@ class ClaudeAgent extends BaseAgent {
       }, (res) => {
         let data = '';
         res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          if (res.statusCode === 200) {
-            try {
-              const parsed = JSON.parse(data);
-              logger.agent(this.name, 'API response received successfully');
-              resolve(parsed);
-            } catch (err) {
-              logger.agent(this.name, 'Failed to parse API response:', err.message);
-              resolve(null);
-            }
-          } else if (res.statusCode === 401) {
-            logger.agent(this.name, 'API authentication failed (401) - token may be expired');
-            resolve(null);
-          } else {
-            logger.agent(this.name, `API request failed with status ${res.statusCode}`);
-            resolve(null);
-          }
-        });
+        res.on('end', () => resolve({ statusCode: res.statusCode, body: data }));
       });
-
-      req.on('error', (err) => {
-        logger.agent(this.name, 'API request error:', err.message);
-        resolve(null);
-      });
-
-      req.on('timeout', () => {
-        logger.agent(this.name, 'API request timed out');
-        req.destroy();
-        resolve(null);
-      });
-
+      req.on('error', (err) => resolve({ statusCode: 0, body: err.message }));
+      req.on('timeout', () => { req.destroy(); resolve({ statusCode: 0, body: 'timeout' }); });
       req.end();
     });
+  }
+
+  /**
+   * Fetch usage data directly from the Anthropic OAuth usage API.
+   * On 401, attempts a token refresh and retries once.
+   * @param {number} timeout - Request timeout in milliseconds
+   * @returns {Promise<Object|null>} The API response or null on failure
+   */
+  async _runWithApi(timeout = 10000) {
+    const token = await this._getAuthToken();
+    if (!token) {
+      logger.agent(this.name, 'No OAuth token available for API fetch');
+      return null;
+    }
+
+    const result = await this._fetchUsageApi(token, timeout);
+
+    if (result.statusCode === 200) {
+      return this._parseUsageResponse(result.body);
+    }
+
+    // On 401, try refreshing the token and retry once
+    if (result.statusCode === 401) {
+      logger.agent(this.name, 'API returned 401, attempting token refresh...');
+      const refreshedToken = await this._refreshAndGetToken();
+      if (refreshedToken) {
+        const retry = await this._fetchUsageApi(refreshedToken, timeout);
+        if (retry.statusCode === 200) {
+          return this._parseUsageResponse(retry.body);
+        }
+        logger.agent(this.name, `API retry failed (${retry.statusCode})`);
+      }
+      return null;
+    }
+
+    if (result.statusCode === 0) {
+      logger.agent(this.name, 'API request error:', result.body);
+    } else {
+      logger.agent(this.name, `API request failed with status ${result.statusCode}`);
+    }
+    return null;
+  }
+
+  /**
+   * Parse the usage API JSON response.
+   * @param {string} body - Raw response body
+   * @returns {Object|null}
+   */
+  _parseUsageResponse(body) {
+    try {
+      const parsed = JSON.parse(body);
+      logger.agent(this.name, 'API response received successfully');
+      return parsed;
+    } catch (err) {
+      logger.agent(this.name, 'Failed to parse API response:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Force-refresh the OAuth token (regardless of expiresAt) and return the new access token.
+   * @returns {Promise<string|null>}
+   */
+  async _refreshAndGetToken() {
+    const creds = readCredentials();
+    if (!creds?.refreshToken) {
+      logger.agent(this.name, 'No refresh token available');
+      return null;
+    }
+
+    const refreshed = await refreshOAuthToken(creds.refreshToken);
+    if (!refreshed) {
+      logger.agent(this.name, 'Token refresh failed');
+      return null;
+    }
+
+    logger.agent(this.name, 'OAuth token refreshed successfully');
+    if (creds.source === 'credentials_file') {
+      try {
+        persistRefreshedTokens(refreshed);
+        logger.agent(this.name, 'Refreshed tokens persisted to credentials file');
+      } catch (err) {
+        logger.agent(this.name, 'Failed to persist refreshed tokens:', err.message);
+      }
+    }
+    return refreshed.accessToken;
   }
 
   /**
