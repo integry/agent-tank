@@ -1856,20 +1856,20 @@ describe('ClaudeAgent API Mode', () => {
       process.env = originalEnv;
     });
 
-    it('returns token from CLAUDE_CODE_OAUTH_TOKEN env var', () => {
+    it('returns token from CLAUDE_CODE_OAUTH_TOKEN env var', async () => {
       process.env.CLAUDE_CODE_OAUTH_TOKEN = 'test-token-from-env';
 
-      const token = agent._getAuthToken();
+      const token = await agent._getAuthToken();
 
       expect(token).toBe('test-token-from-env');
     });
 
-    it('returns null when no credentials are available', () => {
+    it('returns null when no credentials are available', async () => {
       delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
       delete process.env.HOME;
       delete process.env.USERPROFILE;
 
-      const token = agent._getAuthToken();
+      const token = await agent._getAuthToken();
 
       expect(token).toBeNull();
     });

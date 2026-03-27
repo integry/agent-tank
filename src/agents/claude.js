@@ -3,10 +3,10 @@ const logger = require('../logger.js');
 const { pingKeepalive } = require('./keepalive-helper.js');
 const { parseApiResponse } = require('./api-response-parser.js');
 const { parsePtyOutput } = require('./pty-output-parser.js');
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
 const https = require('https');
+const {
+  readCredentials, isTokenExpired, refreshOAuthToken, persistRefreshedTokens,
+} = require('./oauth-helper.js');
 
 // API response sentinel for parseOutput to detect
 const API_RESPONSE_SENTINEL = '__API_RESPONSE__';
@@ -29,69 +29,50 @@ class ClaudeAgent extends BaseAgent {
    * 4. Linux secret-tool
    * @returns {string|null} The OAuth token or null if not found
    */
-  _getAuthToken() {
-    // 1. Check environment variable first
-    if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-      logger.agent(this.name, 'Using OAuth token from CLAUDE_CODE_OAUTH_TOKEN env var');
-      return process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  /**
+   * Get a valid OAuth access token, refreshing if expired.
+   * @returns {Promise<string|null>}
+   */
+  async _getAuthToken() {
+    const creds = readCredentials();
+    if (!creds) {
+      logger.agent(this.name, 'No OAuth token found in any credential source');
+      return null;
     }
 
-    // 2. Check credentials file
-    const homeDir = process.env.HOME || process.env.USERPROFILE || '';
-    const credentialsPath = path.join(homeDir, '.claude', '.credentials.json');
-    try {
-      if (fs.existsSync(credentialsPath)) {
-        const credentials = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
-        if (credentials.claudeAiOauth?.accessToken) {
-          logger.agent(this.name, 'Using OAuth token from credentials file');
-          return credentials.claudeAiOauth.accessToken;
-        }
-      }
-    } catch (err) {
-      logger.agent(this.name, 'Error reading credentials file:', err.message);
+    logger.agent(this.name, `Using OAuth token from ${creds.source}`);
+
+    // If token is not expired, use it directly
+    if (!isTokenExpired(creds.expiresAt)) {
+      return creds.accessToken;
     }
 
-    // 3. Try macOS Keychain
-    if (process.platform === 'darwin') {
+    // Token is expired — try to refresh
+    logger.agent(this.name, 'Access token expired, attempting refresh...');
+    if (!creds.refreshToken) {
+      logger.agent(this.name, 'No refresh token available, cannot refresh');
+      return null;
+    }
+
+    const refreshed = await refreshOAuthToken(creds.refreshToken);
+    if (!refreshed) {
+      logger.agent(this.name, 'Token refresh failed');
+      return null;
+    }
+
+    logger.agent(this.name, 'OAuth token refreshed successfully');
+
+    // Persist refreshed tokens if they came from the credentials file
+    if (creds.source === 'credentials_file') {
       try {
-        const result = execSync(
-          'security find-generic-password -s "claude-code" -w 2>/dev/null',
-          { encoding: 'utf8', timeout: 5000 }
-        ).trim();
-        if (result) {
-          // The keychain stores the full credentials JSON
-          const parsed = JSON.parse(result);
-          if (parsed.claudeAiOauth?.accessToken) {
-            logger.agent(this.name, 'Using OAuth token from macOS Keychain');
-            return parsed.claudeAiOauth.accessToken;
-          }
-        }
-      } catch (_err) {
-        // Keychain entry not found or error parsing - continue to next method
+        persistRefreshedTokens(refreshed);
+        logger.agent(this.name, 'Refreshed tokens persisted to credentials file');
+      } catch (err) {
+        logger.agent(this.name, 'Failed to persist refreshed tokens:', err.message);
       }
     }
 
-    // 4. Try Linux secret-tool
-    if (process.platform === 'linux') {
-      try {
-        const result = execSync(
-          'secret-tool lookup service claude-code 2>/dev/null',
-          { encoding: 'utf8', timeout: 5000 }
-        ).trim();
-        if (result) {
-          const parsed = JSON.parse(result);
-          if (parsed.claudeAiOauth?.accessToken) {
-            logger.agent(this.name, 'Using OAuth token from Linux secret-tool');
-            return parsed.claudeAiOauth.accessToken;
-          }
-        }
-      } catch (_err) {
-        // secret-tool not available or entry not found - continue
-      }
-    }
-
-    logger.agent(this.name, 'No OAuth token found in any credential source');
-    return null;
+    return refreshed.accessToken;
   }
 
   /**
@@ -100,7 +81,7 @@ class ClaudeAgent extends BaseAgent {
    * @returns {Promise<Object|null>} The API response or null on failure
    */
   async _runWithApi(timeout = 10000) {
-    const token = this._getAuthToken();
+    const token = await this._getAuthToken();
     if (!token) {
       logger.agent(this.name, 'No OAuth token available for API fetch');
       return null;
@@ -131,7 +112,7 @@ class ClaudeAgent extends BaseAgent {
               resolve(null);
             }
           } else if (res.statusCode === 401) {
-            logger.agent(this.name, 'API authentication failed (401) - token may be expired');
+            logger.agent(this.name, 'API authentication failed (401) - token rejected by server');
             resolve(null);
           } else {
             logger.agent(this.name, `API request failed with status ${res.statusCode}`);
