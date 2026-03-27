@@ -1879,9 +1879,9 @@ describe('ClaudeAgent API Mode', () => {
       expect(result.weeklySonnet.percent).toBe(15);
 
       expect(result.extraUsage).not.toBeNull();
-      expect(result.extraUsage.percent).toBeCloseTo(54.87, 0);
-      expect(result.extraUsage.spent).toBeCloseTo(23.32, 1);
-      expect(result.extraUsage.budget).toBeCloseTo(42.50, 1);
+      expect(result.extraUsage.percent).toBe(55);
+      expect(result.extraUsage.spent).toBe(23.32);
+      expect(result.extraUsage.budget).toBe(42.50);
     });
 
     it('handles OAuth response with null sonnet and no extra usage', () => {

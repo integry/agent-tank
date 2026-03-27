@@ -184,27 +184,29 @@ function normalizeOAuthResponse(raw) {
   const norm = {};
   if (raw.five_hour) {
     norm.sessionLimit = {
-      percentUsed: raw.five_hour.utilization,
+      percentUsed: Math.round(raw.five_hour.utilization),
       resetsAt: raw.five_hour.resets_at,
     };
   }
   if (raw.seven_day) {
     norm.weeklyAllModels = {
-      percentUsed: raw.seven_day.utilization,
+      percentUsed: Math.round(raw.seven_day.utilization),
       resetsAt: raw.seven_day.resets_at,
     };
   }
   if (raw.seven_day_sonnet) {
     norm.weeklySonnet = {
-      percentUsed: raw.seven_day_sonnet.utilization,
+      percentUsed: Math.round(raw.seven_day_sonnet.utilization),
       resetsAt: raw.seven_day_sonnet.resets_at,
     };
   }
   if (raw.extra_usage?.is_enabled) {
     norm.extraUsage = {
-      percentUsed: raw.extra_usage.utilization,
-      spent: raw.extra_usage.used_credits ? raw.extra_usage.used_credits / 100 : null,
-      budget: raw.extra_usage.monthly_limit ? raw.extra_usage.monthly_limit / 100 : null,
+      percentUsed: Math.round(raw.extra_usage.utilization),
+      spent: raw.extra_usage.used_credits != null
+        ? Math.round(raw.extra_usage.used_credits) / 100 : null,
+      budget: raw.extra_usage.monthly_limit != null
+        ? Math.round(raw.extra_usage.monthly_limit) / 100 : null,
       resetsAt: raw.seven_day?.resets_at || null,
     };
   }
