@@ -4,7 +4,8 @@ const { execSync } = require('child_process');
 const https = require('https');
 
 const OAUTH_TOKEN_ENDPOINT = 'https://platform.claude.com/v1/oauth/token';
-const OAUTH_CLIENT_ID = 'https://claude.ai/oauth/claude-code-client-metadata';
+const OAUTH_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
+const OAUTH_DEFAULT_SCOPES = 'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload';
 // Refresh 5 minutes before actual expiry to avoid race conditions
 const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
@@ -130,11 +131,12 @@ function isTokenExpired(expiresAt) {
  */
 function refreshOAuthToken(refreshToken) {
   return new Promise((resolve) => {
-    const body = new URLSearchParams({
+    const body = JSON.stringify({
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
       client_id: OAUTH_CLIENT_ID,
-    }).toString();
+      scope: OAUTH_DEFAULT_SCOPES,
+    });
 
     const url = new URL(OAUTH_TOKEN_ENDPOINT);
     const req = https.request({
@@ -142,7 +144,7 @@ function refreshOAuthToken(refreshToken) {
       path: url.pathname,
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(body),
       },
       timeout: 10000,

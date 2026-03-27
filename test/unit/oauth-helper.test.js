@@ -215,11 +215,11 @@ describe('oauth-helper', () => {
       mockResponse.emit('end');
       await promise;
 
-      const body = mockRequest.write.mock.calls[0][0];
-      const params = new URLSearchParams(body);
-      expect(params.get('grant_type')).toBe('refresh_token');
-      expect(params.get('refresh_token')).toBe('my-refresh-token');
-      expect(params.get('client_id')).toBe('https://claude.ai/oauth/claude-code-client-metadata');
+      const body = JSON.parse(mockRequest.write.mock.calls[0][0]);
+      expect(body.grant_type).toBe('refresh_token');
+      expect(body.refresh_token).toBe('my-refresh-token');
+      expect(body.client_id).toBe('9d1c250a-e61b-44d9-88ed-5944d1962f5e');
+      expect(body.scope).toContain('user:inference');
     });
   });
 
