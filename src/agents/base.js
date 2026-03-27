@@ -145,20 +145,22 @@ class BaseAgent {
         reject(new Error('Timeout waiting for process to become ready'));
       }, this.getTimeout());
 
+      let trustCooldownUntil = 0;
       const spawnDataHandler = this.shell.onData((data) => {
         spawnOutput += data;
 
         // Handle trust prompt during spawn (only once)
         if (!trustHandled && this.handleTrustPrompt && this.handleTrustPrompt(this.shell, spawnOutput)) {
           trustHandled = true;
+          spawnOutput = '';
+          trustCooldownUntil = Date.now() + 4000; // Wait for post-trust restart
           return;
         }
 
-        // Respond to terminal capability queries
         this._respondToTerminalQueries(data);
 
-        // Check if ready for commands
-        if (this.isReadyForCommands(spawnOutput)) {
+        // Check if ready for commands (skip during post-trust cooldown)
+        if (Date.now() >= trustCooldownUntil && this.isReadyForCommands(spawnOutput)) {
           logger.agent(this.name, 'Process ready for commands');
           clearTimeout(timer);
           spawnDataHandler.dispose();
@@ -315,10 +317,10 @@ class BaseAgent {
         }
       }, timeout);
 
+      let trustCooldownUntil = 0;
       shell.onData((data) => {
         output += data;
 
-        // Log first data received
         if (output.length <= data.length) {
           logger.agent(this.name, 'First data received', logger.dim(`(${data.length} chars)`));
           if (data.length < 200) {
@@ -326,17 +328,17 @@ class BaseAgent {
           }
         }
 
-        // Handle trust prompt if agent has this method (only once)
         if (!trustHandled && this.handleTrustPrompt && this.handleTrustPrompt(shell, output)) {
           trustHandled = true;
+          output = '';
+          trustCooldownUntil = Date.now() + 4000;
           return;
         }
 
         this._respondToTerminalQueries(data, shell);
         this._handleAdditionalPrompts(shell, data, output);
 
-        // Send commands when ready
-        if (!commandsSent && this.isReadyForCommands(output)) {
+        if (Date.now() >= trustCooldownUntil && !commandsSent && this.isReadyForCommands(output)) {
           logger.agent(this.name, 'Ready for commands, sending...');
           commandsSent = true;
           this.sendCommands(shell, output);

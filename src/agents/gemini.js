@@ -14,8 +14,12 @@ class GeminiAgent extends BaseAgent {
   }
 
   isReadyForCommands(output) {
-    // Gemini shows "Type your message" when ready
-    return output.includes('Type your message') || output.includes('gemini>') || output.includes('> ');
+    // v0.24: "Type your message" prompt
+    // v0.35+: "Ready" in terminal title + visible prompt area (no "Type your message")
+    // Also check for terminal title sequence containing "Ready"
+    return output.includes('Type your message')
+      || output.includes('gemini>')
+      || /Ready\s*\(/.test(output);
   }
 
   handleTrustPrompt(shell, output) {
@@ -25,18 +29,22 @@ class GeminiAgent extends BaseAgent {
       'trust the files',
       'trust this folder',
       'Trust this workspace',
-      'allow access'
+      'allow access',
+      'grant access',
+      'grant full access',
     ];
 
     if (trustPatterns.some(pattern => output.toLowerCase().includes(pattern.toLowerCase()))) {
       logger.agent(this.name, 'Detected trust prompt, auto-accepting...');
-      shell.write('y\r');
+      // v0.35+: numbered menu with "1. Trust folder" pre-selected — Enter accepts it
+      shell.write('1\r');
 
-      // Wait a bit then send Enter to proceed past the trust confirmation
+      // v0.35+ does an internal restart after trust — send Escape after a delay
+      // to dismiss any transitional UI before the process becomes ready again
       setTimeout(() => {
-        logger.agent(this.name, 'Sending Enter to proceed...');
-        shell.write('\r');
-      }, 500);
+        logger.agent(this.name, 'Post-trust: sending Escape to clear restart UI...');
+        shell.write('\x1b');
+      }, 3000);
 
       return true;
     }
@@ -46,11 +54,11 @@ class GeminiAgent extends BaseAgent {
   hasCompleteOutput(output) {
     // Gemini shows "Usage limits" after the model usage table (v0.24.x)
     if (output.includes('Usage limits span all sessions')) return true;
-    // Fallback for newer versions: look for model names + percentages + reset times
     const clean = this.stripAnsi(output);
     const hasModel = /gemini-[\w.-]+/i.test(clean);
     const hasPercent = /\d+(?:\.\d+)?%/i.test(clean);
-    const hasResets = /resets?\s+in/i.test(clean);
+    // v0.24: "Resets in 3h 26m", v0.35+: "(23h 21m)" after time
+    const hasResets = /resets?\s+in/i.test(clean) || /\(\d+[hmd]\s+\d+[hmd]?\)/i.test(clean);
     return hasModel && hasPercent && hasResets;
   }
 
@@ -83,10 +91,12 @@ class GeminiAgent extends BaseAgent {
 
   sendCommands(shell, _output) {
     logger.agent(this.name, 'Sending /stats command...');
-    // Escape clears any pending input/state, then type command + select from autocomplete
+    // v0.35+: typing /stats triggers autocomplete dropdown.
+    // Escape dismisses autocomplete, then Enter submits the command.
     setTimeout(() => shell.write('\x1b'), 50);
-    setTimeout(() => shell.write('/stats\r'), 500);
-    setTimeout(() => shell.write('\r'), 1000);
+    setTimeout(() => shell.write('/stats'), 500);
+    setTimeout(() => shell.write('\x1b'), 1000);
+    setTimeout(() => shell.write('\r'), 1500);
   }
 
   // Calculate pace data for a model entry (Gemini uses 24h sessions)
@@ -108,17 +118,21 @@ class GeminiAgent extends BaseAgent {
     const lines = clean.split('\n');
 
     for (const line of lines) {
-      // Match model name followed by percentage and reset time
-      const match = line.match(/(gemini-[\w.-]+)\s+[-\s]*(\d+(?:\.\d+)?)\s*%\s*\(Resets in\s*([^)]+)\)/i);
+      // v0.24: "gemini-2.5-flash   90.2% (Resets in 3h 26m)" — percentage is REMAINING
+      const matchOld = line.match(/(gemini-[\w.-]+)\s+[-\s]*(\d+(?:\.\d+)?)\s*%\s*\(Resets in\s*([^)]+)\)/i);
+      // v0.35+: "gemini-2.5-flash   -   ▬▬▬   6%  10:46 PM (23h 21m)" — percentage is USED
+      const matchNew = !matchOld && line.match(/(gemini-[\w.-]+)\s+.*?(\d+(?:\.\d+)?)\s*%.*?\((\d+[hmd]\s*\d*[hmd]?)\)/i);
+      const match = matchOld || matchNew;
       if (match) {
         const model = match[1];
-        const usageLeft = parseFloat(match[2]);
+        const rawPercent = parseFloat(match[2]);
         const resetsIn = match[3].trim();
-        const percentUsed = parseFloat((100 - usageLeft).toFixed(1));
+        const percentUsed = matchOld ? parseFloat((100 - rawPercent).toFixed(1)) : rawPercent;
         const resetsInSeconds = this.parseDurationToSeconds(resetsIn);
 
         // Avoid duplicates
         if (!usage.models.find(m => m.model === model)) {
+          const usageLeft = matchOld ? rawPercent : parseFloat((100 - rawPercent).toFixed(1));
           const modelEntry = { model, usageLeft, resetsIn, percentUsed, resetsInSeconds };
           this._addPaceData(modelEntry, resetsInSeconds);
           usage.models.push(modelEntry);
