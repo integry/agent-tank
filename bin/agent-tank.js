@@ -8,6 +8,7 @@ const options = {
   claude: { type: 'boolean', default: false },
   gemini: { type: 'boolean', default: false },
   codex: { type: 'boolean', default: false },
+  'claude-api': { type: 'boolean', default: false },
   port: { type: 'string', default: '3456' },
   host: { type: 'string' },
   'auth-user': { type: 'string' },
@@ -47,6 +48,7 @@ Options:
   --claude              Enable Claude monitoring
   --gemini              Enable Gemini monitoring
   --codex               Enable Codex monitoring
+  --claude-api          Use direct Anthropic API for Claude usage (faster, 60s refresh)
   --port <port>         HTTP server port (default: 3456)
   --host <host>         Bind address (default: 127.0.0.1)
   --auth-user <user>    HTTP Basic Auth username
@@ -78,6 +80,7 @@ Environment variables:
   AGENT_TANK_TOKEN      API key (overrides --auth-token)
   AGENT_TANK_HOST       Bind address (overrides --host)
   AGENT_TANK_FRESH_PROCESS  Use fresh process per refresh ("1" or "true")
+  AGENT_TANK_CLAUDE_API Use direct Anthropic API for Claude usage ("1" or "true")
   AGENT_TANK_AUTO_REFRESH   Enable/disable background auto-refresh ("1" or "true" / "0" or "false")
   AGENT_TANK_AUTO_REFRESH_MODE      Refresh mode: none, interval, activity
   AGENT_TANK_AUTO_REFRESH_INTERVAL  Auto-refresh interval in seconds
@@ -153,6 +156,12 @@ async function main() {
   const freshProcess = values['fresh-process'] ||
     config.freshProcess ||
     freshProcessEnv === '1' || freshProcessEnv === 'true';
+
+  // Claude API configuration (env > CLI > config file)
+  const claudeApiEnv = process.env.AGENT_TANK_CLAUDE_API;
+  const claudeApi = values['claude-api'] ||
+    config.claudeApi ||
+    claudeApiEnv === '1' || claudeApiEnv === 'true';
 
   // Auto-refresh configuration (env > CLI > config file)
   const autoRefreshEnv = process.env.AGENT_TANK_AUTO_REFRESH;
@@ -234,6 +243,7 @@ async function main() {
     host,
     auth,
     freshProcess,
+    claudeApi,
     autoRefreshEnabled: onceMode ? false : autoRefreshEnabled, // Disable auto-refresh in one-shot mode
     autoRefreshInterval,
     autoRefreshMode: onceMode ? 'none' : autoRefreshMode, // Disable auto-refresh in one-shot mode

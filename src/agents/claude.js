@@ -1,15 +1,181 @@
 const { BaseAgent } = require('./base.js');
-const { calculatePace } = require('../pace-evaluator.js');
-const { CYCLE_DURATIONS } = require('../usage-formatters.js');
 const logger = require('../logger.js');
 const { pingKeepalive } = require('./keepalive-helper.js');
+const { parseApiResponse } = require('./api-response-parser.js');
+const { parsePtyOutput } = require('./pty-output-parser.js');
+const https = require('https');
+const {
+  readCredentials, isTokenExpired, refreshOAuthToken, persistRefreshedTokens,
+} = require('./oauth-helper.js');
+
+// API response sentinel for parseOutput to detect
+const API_RESPONSE_SENTINEL = '__API_RESPONSE__';
 
 class ClaudeAgent extends BaseAgent {
-  constructor() {
+  constructor(options = {}) {
     super('claude', 'claude');
     this._statusSent = false;
-    // Claude's /usage API is rate limited — minimum 5 minutes between refreshes
-    this.minRefreshInterval = 300;
+    this.useApi = options.useApi || false;
+    this._apiResponse = null; // Stores the API response when using direct API
+    // PTY default: 600s (10 minutes), API mode: 60s (1 minute)
+    this.minRefreshInterval = this.useApi ? 60 : 600;
+  }
+
+  /**
+   * Resolve OAuth token from various sources:
+   * 1. CLAUDE_CODE_OAUTH_TOKEN environment variable
+   * 2. ~/.claude/.credentials.json file
+   * 3. macOS Keychain (via security command)
+   * 4. Linux secret-tool
+   * @returns {Promise<string|null>} The OAuth token or null
+   */
+  async _getAuthToken() {
+    const creds = readCredentials();
+    if (!creds) {
+      logger.agent(this.name, 'No OAuth token found in any credential source');
+      return null;
+    }
+    logger.agent(this.name, `Using OAuth token from ${creds.source}`);
+    if (!isTokenExpired(creds.expiresAt)) return creds.accessToken;
+
+    // Token is expired — try to refresh
+    logger.agent(this.name, 'Access token expired, attempting refresh...');
+    return this._refreshAndGetToken();
+  }
+
+  /**
+   * Make an HTTP GET request to the usage API with the given token.
+   * @param {string} token - OAuth access token
+   * @param {number} timeout - Request timeout in milliseconds
+   * @returns {Promise<{ statusCode: number, body: string }>}
+   */
+  _fetchUsageApi(token, timeout) {
+    return new Promise((resolve) => {
+      const req = https.request('https://api.anthropic.com/api/oauth/usage', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'anthropic-beta': 'oauth-2025-04-20',
+          'Content-Type': 'application/json',
+          'User-Agent': 'agent-tank/1.0',
+        },
+        timeout,
+      }, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => resolve({ statusCode: res.statusCode, body: data }));
+      });
+      req.on('error', (err) => resolve({ statusCode: 0, body: err.message }));
+      req.on('timeout', () => { req.destroy(); resolve({ statusCode: 0, body: 'timeout' }); });
+      req.end();
+    });
+  }
+
+  /**
+   * Fetch usage data directly from the Anthropic OAuth usage API.
+   * On 401, attempts a token refresh and retries once.
+   * @param {number} timeout - Request timeout in milliseconds
+   * @returns {Promise<Object|null>} The API response or null on failure
+   */
+  async _runWithApi(timeout = 10000) {
+    const token = await this._getAuthToken();
+    if (!token) {
+      logger.agent(this.name, 'No OAuth token available for API fetch');
+      return null;
+    }
+
+    const result = await this._fetchUsageApi(token, timeout);
+
+    if (result.statusCode === 200) {
+      return this._parseUsageResponse(result.body);
+    }
+
+    // On 401, try refreshing the token and retry once
+    if (result.statusCode === 401) {
+      logger.agent(this.name, 'API returned 401, attempting token refresh...');
+      const refreshedToken = await this._refreshAndGetToken();
+      if (refreshedToken) {
+        const retry = await this._fetchUsageApi(refreshedToken, timeout);
+        if (retry.statusCode === 200) {
+          return this._parseUsageResponse(retry.body);
+        }
+        logger.agent(this.name, `API retry failed (${retry.statusCode})`);
+      }
+      return null;
+    }
+
+    if (result.statusCode === 0) {
+      logger.agent(this.name, 'API request error:', result.body);
+    } else {
+      logger.agent(this.name, `API request failed with status ${result.statusCode}`);
+    }
+    return null;
+  }
+
+  /**
+   * Parse the usage API JSON response.
+   * @param {string} body - Raw response body
+   * @returns {Object|null}
+   */
+  _parseUsageResponse(body) {
+    try {
+      const parsed = JSON.parse(body);
+      logger.agent(this.name, 'API response received successfully');
+      return parsed;
+    } catch (err) {
+      logger.agent(this.name, 'Failed to parse API response:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Force-refresh the OAuth token (regardless of expiresAt) and return the new access token.
+   * @returns {Promise<string|null>}
+   */
+  async _refreshAndGetToken() {
+    const creds = readCredentials();
+    if (!creds?.refreshToken) {
+      logger.agent(this.name, 'No refresh token available');
+      return null;
+    }
+
+    const refreshed = await refreshOAuthToken(creds.refreshToken);
+    if (!refreshed) {
+      logger.agent(this.name, 'Token refresh failed');
+      return null;
+    }
+
+    logger.agent(this.name, 'OAuth token refreshed successfully');
+    if (creds.source === 'credentials_file') {
+      try {
+        persistRefreshedTokens(refreshed);
+        logger.agent(this.name, 'Refreshed tokens persisted to credentials file');
+      } catch (err) {
+        logger.agent(this.name, 'Failed to persist refreshed tokens:', err.message);
+      }
+    }
+    return refreshed.accessToken;
+  }
+
+  /**
+   * Override runCommand to attempt API fetch first when useApi is enabled
+   * Falls back to PTY if API fails
+   */
+  async runCommand() {
+    if (this.useApi) {
+      logger.agent(this.name, 'Attempting direct API fetch...');
+      const apiResponse = await this._runWithApi();
+      if (apiResponse) {
+        this._apiResponse = apiResponse;
+        return API_RESPONSE_SENTINEL;
+      }
+      logger.agent(this.name, 'API fetch failed, falling back to PTY');
+      // Reset minRefreshInterval to PTY default for fallback
+      this.minRefreshInterval = 600;
+    }
+
+    // Fall back to PTY command execution
+    return super.runCommand();
   }
 
   getTimeout() { return 30000; }
@@ -69,67 +235,6 @@ class ClaudeAgent extends BaseAgent {
     return hasTimezone;
   }
 
-  // Convert 12-hour time to 24-hour
-  _to24Hour(hourRaw, ampm) {
-    let hour = parseInt(hourRaw);
-    if (ampm.toLowerCase() === 'pm' && hour !== 12) hour += 12;
-    if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0;
-    return hour;
-  }
-
-  // Format duration from seconds to readable text
-  _formatDuration(diffSeconds) {
-    const mins = Math.floor(diffSeconds / 60), hours = Math.floor(mins / 60), m = mins % 60;
-    return hours > 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : hours > 0 ? `${hours}h ${m}m` : `${m}m`;
-  }
-
-  // Parse date with time: "Jan 22, 1pm" or date-only: "Apr 1"
-  _parseDateTimeStr(cleanStr, now, monthNames) {
-    const dateTimeMatch = cleanStr.match(/(\w+)\s+(\d{1,2}),?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
-    const dateOnlyMatch = !dateTimeMatch && cleanStr.match(/(\w+)\s+(\d{1,2})$/i);
-    if (!dateTimeMatch && !dateOnlyMatch) return null;
-
-    let resetDate;
-    if (dateTimeMatch) {
-      const [, month, day, hourRaw, minutes = '0', ampm] = dateTimeMatch;
-      const monthIndex = monthNames.indexOf(month.toLowerCase().substring(0, 3));
-      if (monthIndex === -1) return null;
-      resetDate = new Date(now.getFullYear(), monthIndex, parseInt(day), this._to24Hour(hourRaw, ampm), parseInt(minutes));
-    } else {
-      const [, month, day] = dateOnlyMatch;
-      const monthIndex = monthNames.indexOf(month.toLowerCase().substring(0, 3));
-      if (monthIndex === -1) return null;
-      resetDate = new Date(now.getFullYear(), monthIndex, parseInt(day));
-    }
-    if (resetDate < now) resetDate.setFullYear(resetDate.getFullYear() + 1);
-    return resetDate;
-  }
-
-  // Convert reset timestamp to duration object with string and seconds
-  parseResetTime(resetStr) {
-    if (!resetStr) return null;
-    const now = new Date();
-    const cleanStr = resetStr.replace(/\s*\([^)]+\)\s*$/, '').trim();
-    const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-
-    let resetDate;
-    // Try time-only format first: "2:59am" or "12:30pm"
-    const timeOnlyMatch = cleanStr.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
-    if (timeOnlyMatch) {
-      const [, hourRaw, minutes = '0', ampm] = timeOnlyMatch;
-      resetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), this._to24Hour(hourRaw, ampm), parseInt(minutes));
-      if (resetDate <= now) resetDate.setDate(resetDate.getDate() + 1);
-    } else {
-      resetDate = this._parseDateTimeStr(cleanStr, now, monthNames);
-      if (!resetDate) return { text: resetStr, seconds: null };
-    }
-
-    const diffMs = resetDate - now;
-    if (diffMs <= 0) return { text: 'soon', seconds: 0 };
-    const diffSeconds = Math.floor(diffMs / 1000);
-    return { text: this._formatDuration(diffSeconds), seconds: diffSeconds };
-  }
-
   sendCommands(shell, _output) {
     logger.agent(this.name, 'Sending /usage command...');
     // Escape dismisses any previous output/UI, then type command + Enter
@@ -145,134 +250,36 @@ class ClaudeAgent extends BaseAgent {
     return result;
   }
 
-  // Extract section between two regex patterns from text
-  _extractSection(text, start, end) {
-    const regex = end ? new RegExp(`${start}([\\s\\S]*?)(?=${end}|$)`, 'i') : new RegExp(`${start}([\\s\\S]*)$`, 'i');
-    return text.match(regex)?.[1] || null;
-  }
-
-  // Extract reset time string from a section (handles PTY corruption)
-  _extractResetTime(section) {
-    // Look for date+time pattern FIRST (more specific)
-    const dateTimeMatch = section.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s*\d{1,2}(?::\d{2})?\s*(am|pm))\s*\(([^)]+)\)/i);
-    if (dateTimeMatch) return `${dateTimeMatch[1]} (${dateTimeMatch[3]})`;
-    // Try clean time-only pattern
-    const timeOnlyMatch = section.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*\(([^)]+)\)/i);
-    if (timeOnlyMatch) return `${timeOnlyMatch[1]} (${timeOnlyMatch[2]})`;
-    // Handle PTY-corrupted time: "1 m" or "2 59 m" (missing a/p)
-    const corruptedMatch = section.match(/(\d{1,2})(?:\s*:?\s*(\d{2}))?\s+m\s*\(([^)]+)\)/i);
-    if (corruptedMatch) {
-      const [, hour, minutes, tz] = corruptedMatch;
-      const mins = minutes ? `:${minutes}` : '';
-      const am = `${hour}${mins}am (${tz})`, pm = `${hour}${mins}pm (${tz})`;
-      const amSec = this.parseResetTime(am)?.seconds ?? Infinity;
-      const pmSec = this.parseResetTime(pm)?.seconds ?? Infinity;
-      return amSec <= pmSec ? am : pm;
-    }
-    return null;
-  }
-
-  // Parse a usage section for percent and reset time
-  _parseUsageSection(section) {
-    if (!section) return null;
-    const percentMatch = section.match(/(\d+)\s*%\s*used/i);
-    if (!percentMatch) return null;
-    const resetsAt = this._extractResetTime(section), resetData = resetsAt ? this.parseResetTime(resetsAt) : null;
-    return { percent: parseFloat(percentMatch[1]), resetsAt, resetsIn: resetData?.text || null, resetsInSeconds: resetData?.seconds || null };
-  }
-
-  // Parse extra usage section with budget info
-  _parseExtraUsage(extraSection) {
-    const percentMatch = extraSection.match(/(\d+)\s*%\s*used/i);
-    const spentMatch = extraSection.match(/\$([0-9.]+)\s*\/\s*\$([0-9.]+)\s*spent/i);
-    if (!percentMatch && !spentMatch) return null;
-    const dateMatch = extraSection.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s*(?:\d{1,2}(?::\d{2})?\s*(?:am|pm))?)\s*\(([^)]+)\)/i);
-    const resetsAt = dateMatch ? `${dateMatch[1].trim()} (${dateMatch[2]})` : null;
-    const resetData = resetsAt ? this.parseResetTime(resetsAt) : null;
-    return {
-      label: 'Extra usage', percent: percentMatch ? parseFloat(percentMatch[1]) : null,
-      spent: spentMatch ? parseFloat(spentMatch[1]) : null,
-      budget: spentMatch ? parseFloat(spentMatch[2]) : null,
-      resetsAt, resetsIn: resetData?.text || null, resetsInSeconds: resetData?.seconds || null,
-    };
-  }
-
-  // Parse legacy weekly format (single "Current week" without model qualifiers)
-  _parseLegacyWeekly(clean) {
-    const weeklyMatch = clean.match(/Current\s+week[\s\S]*?(\d+)\s*%\s*used[\s\S]*?Resets\s+([\s\S]*?)(?=esc\s+to\s+cancel|current\s+week|$)/i);
-    if (weeklyMatch) {
-      const resetSection = weeklyMatch[2];
-      const tzMatch = resetSection.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*\([^)]+\)|\d{1,2}(?::\d{2})?\s*(?:am|pm)\s*\([^)]+\))/i);
-      const resetsAt = tzMatch ? tzMatch[1].trim() : resetSection.trim().split(/\s{2,}/)[0];
-      const resetData = this.parseResetTime(resetsAt);
-      return { percent: parseFloat(weeklyMatch[1]), label: 'Current week', resetsAt, resetsIn: resetData?.text || null, resetsInSeconds: resetData?.seconds || null };
-    }
-    const percentMatch = clean.match(/Current\s+week[^%]*?(\d+)\s*%\s*used/i);
-    if (percentMatch) return { percent: parseFloat(percentMatch[1]), label: 'Current week', resetsAt: null, resetsIn: null, resetsInSeconds: null };
-    return null;
-  }
-
-  // Calculate pace data for a usage section
-  _addPaceData(sectionData, cycleType) {
-    if (!sectionData || sectionData.resetsInSeconds == null) return sectionData;
-    const cycleDuration = CYCLE_DURATIONS[cycleType];
-    if (!cycleDuration) return sectionData;
-    const paceData = calculatePace({ usagePercent: sectionData.percent ?? 0, resetsInSeconds: sectionData.resetsInSeconds, cycleDurationSeconds: cycleDuration });
-    if (paceData) sectionData.pace = paceData;
-    return sectionData;
+  /**
+   * Parse the direct API response into the unified usage schema
+   * Delegates to the external api-response-parser module
+   * @param {Object} apiResponse - The raw API response from Anthropic
+   * @returns {Object} The parsed usage object matching the PTY format
+   */
+  _parseApiResponse(apiResponse) {
+    return parseApiResponse(apiResponse);
   }
 
   parseOutput(output) {
+    // Check if this is an API response (sentinel marker)
+    if (output === API_RESPONSE_SENTINEL && this._apiResponse) {
+      logger.agent(this.name, 'Parsing API response');
+      const usage = this._parseApiResponse(this._apiResponse);
+      this._apiResponse = null; // Clear after parsing
+      return usage;
+    }
+
     const clean = this.stripAnsi(output);
-    const usage = { session: null, weeklyAll: null, weeklySonnet: null };
 
     // Debug: log session section for troubleshooting
-    const sessionIdx = clean.indexOf('Current session'), weeklyIdx = clean.indexOf('Current week');
+    const sessionIdx = clean.indexOf('Current session');
+    const weeklyIdx = clean.indexOf('Current week');
     if (sessionIdx !== -1 && weeklyIdx !== -1) {
       logger.agent(this.name, 'Session section preview:', logger.dim(clean.substring(sessionIdx, weeklyIdx).substring(0, 200)));
     }
 
-    // Parse session
-    const sessionData = this._parseUsageSection(this._extractSection(clean, 'Current\\s+session', 'Current\\s+week'));
-    if (sessionData) {
-      usage.session = { label: 'Current session', ...sessionData };
-      this._addPaceData(usage.session, 'session');
-    }
-
-    // Parse weekly (all models)
-    const weeklyAllData = this._parseUsageSection(this._extractSection(clean, 'Current\\s+week\\s*\\(?\\s*all\\s+models\\s*\\)?', 'Current\\s+week\\s*\\(?\\s*Sonnet'));
-    if (weeklyAllData) {
-      usage.weeklyAll = { label: 'Current week (all models)', ...weeklyAllData };
-      this._addPaceData(usage.weeklyAll, 'weekly');
-    }
-
-    // Parse weekly (Sonnet only)
-    const weeklySonnetData = this._parseUsageSection(this._extractSection(clean, 'Current\\s+week\\s*\\(?\\s*Sonnet\\s+only\\s*\\)?', 'Extra\\s+usage|esc\\s+to\\s+cancel|Current\\s+week\\s*\\('));
-    if (weeklySonnetData) {
-      usage.weeklySonnet = { label: 'Current week (Sonnet only)', ...weeklySonnetData };
-      this._addPaceData(usage.weeklySonnet, 'weekly');
-    }
-
-    // Parse extra usage section
-    const extraSection = this._extractSection(clean, 'Extra\\s+usage', 'esc\\s+to\\s+cancel');
-    if (extraSection) {
-      const extraData = this._parseExtraUsage(extraSection);
-      if (extraData) {
-        usage.extraUsage = extraData;
-        this._addPaceData(usage.extraUsage, 'weekly');
-      }
-    }
-
-    // Legacy format fallback
-    if (!usage.weeklyAll && !usage.weeklySonnet) {
-      const legacyWeekly = this._parseLegacyWeekly(clean);
-      if (legacyWeekly) {
-        usage.weekly = legacyWeekly;
-        this._addPaceData(usage.weekly, 'weekly');
-      }
-    }
-
-    return usage;
+    // Delegate to PTY output parser module
+    return parsePtyOutput(clean);
   }
 
   // Fetch metadata by sending /status command once on first refresh

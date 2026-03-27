@@ -41,6 +41,10 @@ describe('AgentTank', () => {
         expect(tank.freshProcess).toBe(false);
       });
 
+      it('disables claudeApi by default', () => {
+        expect(tank.claudeApi).toBe(false);
+      });
+
       it('initializes auth as empty object', () => {
         expect(tank.auth).toEqual({});
       });
@@ -120,6 +124,11 @@ describe('AgentTank', () => {
       it('enables freshProcess when set to true', () => {
         const tank = new AgentTank({ freshProcess: true });
         expect(tank.freshProcess).toBe(true);
+      });
+
+      it('enables claudeApi when set to true', () => {
+        const tank = new AgentTank({ claudeApi: true });
+        expect(tank.claudeApi).toBe(true);
       });
 
       it('accepts auth configuration with user and pass', () => {
@@ -257,6 +266,17 @@ describe('AgentTank', () => {
     it('returns null for unknown agent', () => {
       const agent = tank.createAgent('unknown');
       expect(agent).toBeNull();
+    });
+
+    it('passes claudeApi as useApi to ClaudeAgent', () => {
+      const apiTank = new AgentTank({ claudeApi: true });
+      const agent = apiTank.createAgent('claude');
+      expect(agent.useApi).toBe(true);
+    });
+
+    it('defaults useApi to false when claudeApi is not set', () => {
+      const agent = tank.createAgent('claude');
+      expect(agent.useApi).toBe(false);
     });
   });
 

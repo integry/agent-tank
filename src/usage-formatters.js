@@ -161,7 +161,7 @@ function formatClaudeUsage(usage) {
     html += '<div class="model-container">';
     html += usageItem('Extra', percent, '% used', { isZero, agentName: 'claude', resetsIn });
     if (spentLabel) {
-      html += `<div class="reset-info"><span class="reset-label">${spentLabel}</span></div>`;
+      html += `<div class="usage-item reset-info"><span class="usage-label">↳ Budget</span><span class="usage-value">${spentLabel}</span></div>`;
     }
     html += resetInfoItem(extra.resetsIn, extra.resetsAt, 'weekly', { isZero, paceData });
     html += '</div>';

@@ -15,6 +15,7 @@ const { BaseAgent } = require('../../src/agents/base.js');
 const { ClaudeAgent } = require('../../src/agents/claude.js');
 const { GeminiAgent } = require('../../src/agents/gemini.js');
 const { CodexAgent } = require('../../src/agents/codex.js');
+const { parseResetTime, formatDuration } = require('../../src/agents/pty-output-parser.js');
 
 describe('BaseAgent', () => {
   let agent;
@@ -455,7 +456,7 @@ describe('ClaudeAgent', () => {
 
   describe('parseResetTime', () => {
     it('parses time-only format (e.g., "2:59am")', () => {
-      const result = agent.parseResetTime('2:59am (America/New_York)');
+      const result = parseResetTime('2:59am (America/New_York)');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
@@ -463,41 +464,41 @@ describe('ClaudeAgent', () => {
     });
 
     it('parses 12-hour time with PM', () => {
-      const result = agent.parseResetTime('3:30pm (America/New_York)');
+      const result = parseResetTime('3:30pm (America/New_York)');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
     });
 
     it('parses date+time format (e.g., "Jan 22, 1pm")', () => {
-      const result = agent.parseResetTime('Jan 22, 1pm (America/New_York)');
+      const result = parseResetTime('Jan 22, 1pm (America/New_York)');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
     });
 
     it('handles midnight (12am)', () => {
-      const result = agent.parseResetTime('12:00am (America/New_York)');
+      const result = parseResetTime('12:00am (America/New_York)');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
     });
 
     it('handles noon (12pm)', () => {
-      const result = agent.parseResetTime('12:00pm (America/New_York)');
+      const result = parseResetTime('12:00pm (America/New_York)');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
     });
 
     it('returns null for null input', () => {
-      const result = agent.parseResetTime(null);
+      const result = parseResetTime(null);
 
       expect(result).toBeNull();
     });
 
     it('handles invalid format gracefully', () => {
-      const result = agent.parseResetTime('invalid time string');
+      const result = parseResetTime('invalid time string');
 
       expect(result).toEqual({ text: 'invalid time string', seconds: null });
     });
@@ -505,17 +506,17 @@ describe('ClaudeAgent', () => {
 
   describe('_formatDuration', () => {
     it('formats minutes only', () => {
-      const result = agent._formatDuration(1800); // 30 minutes
+      const result = formatDuration(1800); // 30 minutes
       expect(result).toBe('30m');
     });
 
     it('formats hours and minutes', () => {
-      const result = agent._formatDuration(5400); // 1.5 hours
+      const result = formatDuration(5400); // 1.5 hours
       expect(result).toBe('1h 30m');
     });
 
     it('formats days and hours', () => {
-      const result = agent._formatDuration(90000); // 25 hours
+      const result = formatDuration(90000); // 25 hours
       expect(result).toBe('1d 1h');
     });
   });
@@ -953,7 +954,7 @@ describe('CodexAgent', () => {
 
   describe('parseResetTime', () => {
     it('parses time-only format (HH:MM)', () => {
-      const result = agent.parseResetTime('14:30');
+      const result = parseResetTime('14:30');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
@@ -961,7 +962,7 @@ describe('CodexAgent', () => {
     });
 
     it('parses date+time format (HH:MM on DD Mon)', () => {
-      const result = agent.parseResetTime('10:00 on 15 Mar');
+      const result = parseResetTime('10:00 on 15 Mar');
 
       expect(result).not.toBeNull();
       expect(result.text).toBeDefined();
@@ -969,7 +970,7 @@ describe('CodexAgent', () => {
 
     it('formats duration as days and hours for long durations', () => {
       // Parse a time that's more than 24 hours away
-      const result = agent.parseResetTime('12:00 on 10 Dec');
+      const result = parseResetTime('12:00 on 10 Dec');
 
       expect(result).not.toBeNull();
       // Duration formatting depends on the current time, just verify structure
@@ -977,20 +978,20 @@ describe('CodexAgent', () => {
     });
 
     it('formats duration as hours and minutes', () => {
-      const result = agent.parseResetTime('23:30');
+      const result = parseResetTime('23:30');
 
       expect(result).not.toBeNull();
       expect(result.text).toMatch(/^\d+[hmd]\s*\d*[hm]?$/);
     });
 
     it('returns null for null input', () => {
-      const result = agent.parseResetTime(null);
+      const result = parseResetTime(null);
 
       expect(result).toBeNull();
     });
 
     it('handles invalid format gracefully', () => {
-      const result = agent.parseResetTime('invalid time');
+      const result = parseResetTime('invalid time');
 
       expect(result).toEqual({ text: 'invalid time', seconds: null });
     });
@@ -1564,10 +1565,410 @@ describe('Graceful Degradation', () => {
     it('parseResetTime handles edge cases', () => {
       const agent = new CodexAgent();
 
-      expect(agent.parseResetTime(null)).toBeNull();
-      expect(agent.parseResetTime(undefined)).toBeNull();
+      expect(parseResetTime(null)).toBeNull();
+      expect(parseResetTime(undefined)).toBeNull();
       // Empty string returns null (no reset time to parse)
-      expect(agent.parseResetTime('')).toBeNull();
+      expect(parseResetTime('')).toBeNull();
+    });
+  });
+});
+
+describe('ClaudeAgent API Mode', () => {
+  let agent;
+
+  beforeEach(() => {
+    agent = new ClaudeAgent({ useApi: true });
+  });
+
+  describe('constructor with useApi option', () => {
+    it('sets useApi to true when option is provided', () => {
+      expect(agent.useApi).toBe(true);
+    });
+
+    it('sets minRefreshInterval to 60s for API mode', () => {
+      expect(agent.minRefreshInterval).toBe(60);
+    });
+
+    it('defaults useApi to false when not provided', () => {
+      const defaultAgent = new ClaudeAgent();
+      expect(defaultAgent.useApi).toBe(false);
+    });
+
+    it('sets minRefreshInterval to 600s for PTY mode', () => {
+      const defaultAgent = new ClaudeAgent();
+      expect(defaultAgent.minRefreshInterval).toBe(600);
+    });
+  });
+
+  describe('_parseApiResponse', () => {
+    it('returns empty usage object for null response', () => {
+      const result = agent._parseApiResponse(null);
+
+      expect(result.session).toBeNull();
+      expect(result.weeklyAll).toBeNull();
+      expect(result.weeklySonnet).toBeNull();
+    });
+
+    it('returns empty usage object for undefined response', () => {
+      const result = agent._parseApiResponse(undefined);
+
+      expect(result.session).toBeNull();
+      expect(result.weeklyAll).toBeNull();
+      expect(result.weeklySonnet).toBeNull();
+    });
+
+    it('parses session limit from API response', () => {
+      const apiResponse = {
+        sessionLimit: {
+          percentUsed: 45,
+          resetsAt: new Date(Date.now() + 3600000).toISOString(), // 1 hour from now
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.session).not.toBeNull();
+      expect(result.session.percent).toBe(45);
+      expect(result.session.label).toBe('Current session');
+      expect(result.session.resetsInSeconds).toBeGreaterThan(0);
+    });
+
+    it('parses weekly all models limit from API response', () => {
+      const apiResponse = {
+        weeklyAllModels: {
+          percentUsed: 60,
+          resetsAt: new Date(Date.now() + 86400000).toISOString(), // 1 day from now
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.weeklyAll).not.toBeNull();
+      expect(result.weeklyAll.percent).toBe(60);
+      expect(result.weeklyAll.label).toBe('Current week (all models)');
+    });
+
+    it('parses weekly Sonnet only limit from API response', () => {
+      const apiResponse = {
+        weeklySonnet: {
+          percentUsed: 30,
+          resetsAt: new Date(Date.now() + 172800000).toISOString(), // 2 days from now
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.weeklySonnet).not.toBeNull();
+      expect(result.weeklySonnet.percent).toBe(30);
+      expect(result.weeklySonnet.label).toBe('Current week (Sonnet only)');
+    });
+
+    it('parses extra usage from API response', () => {
+      const apiResponse = {
+        extraUsage: {
+          percentUsed: 50,
+          spent: 25.00,
+          budget: 50.00,
+          resetsAt: new Date(Date.now() + 604800000).toISOString(), // 7 days from now
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.extraUsage).toBeDefined();
+      expect(result.extraUsage.percent).toBe(50);
+      expect(result.extraUsage.spent).toBe(25.00);
+      expect(result.extraUsage.budget).toBe(50.00);
+      expect(result.extraUsage.label).toBe('Extra usage');
+    });
+
+    it('calculates percentage from used/limit when percentUsed not provided', () => {
+      const apiResponse = {
+        sessionLimit: {
+          used: 50,
+          limit: 100,
+          resetsAt: new Date(Date.now() + 3600000).toISOString(),
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.session).not.toBeNull();
+      expect(result.session.percent).toBe(50);
+    });
+
+    it('handles nested usage object format', () => {
+      const apiResponse = {
+        usage: {
+          sessionLimit: {
+            percentUsed: 25,
+            resetsAt: new Date(Date.now() + 7200000).toISOString(),
+          },
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.session).not.toBeNull();
+      expect(result.session.percent).toBe(25);
+    });
+
+    it('handles flat percentage fields', () => {
+      const apiResponse = {
+        sessionPercent: 75,
+        sessionResetsAt: new Date(Date.now() + 3600000).toISOString(),
+        weeklyPercent: 40,
+        weeklyResetsAt: new Date(Date.now() + 86400000).toISOString(),
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.session).not.toBeNull();
+      expect(result.session.percent).toBe(75);
+      expect(result.weeklyAll).not.toBeNull();
+      expect(result.weeklyAll.percent).toBe(40);
+    });
+
+    it('includes pace data in session when resetsInSeconds is available', () => {
+      const apiResponse = {
+        sessionLimit: {
+          percentUsed: 50,
+          resetsAt: new Date(Date.now() + 9000000).toISOString(), // 2.5 hours
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.session).not.toBeNull();
+      expect(result.session.pace).toBeDefined();
+      expect(typeof result.session.pace.paceRatio).toBe('number');
+      expect(typeof result.session.pace.elapsedPercent).toBe('number');
+      expect(typeof result.session.pace.isWarning).toBe('boolean');
+    });
+
+    it('includes pace data in weekly limits when resetsInSeconds is available', () => {
+      const apiResponse = {
+        weeklyAllModels: {
+          percentUsed: 60,
+          resetsAt: new Date(Date.now() + 259200000).toISOString(), // 3 days
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.weeklyAll).not.toBeNull();
+      expect(result.weeklyAll.pace).toBeDefined();
+      expect(typeof result.weeklyAll.pace.paceRatio).toBe('number');
+    });
+
+    it('handles past reset times gracefully', () => {
+      const apiResponse = {
+        sessionLimit: {
+          percentUsed: 100,
+          resetsAt: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.session).not.toBeNull();
+      expect(result.session.percent).toBe(100);
+      expect(result.session.resetsIn).toBe('soon');
+      expect(result.session.resetsInSeconds).toBe(0);
+    });
+
+    it('parses complete API response with all sections', () => {
+      const apiResponse = {
+        sessionLimit: {
+          percentUsed: 45,
+          resetsAt: new Date(Date.now() + 3600000).toISOString(),
+        },
+        weeklyAllModels: {
+          percentUsed: 60,
+          resetsAt: new Date(Date.now() + 259200000).toISOString(),
+        },
+        weeklySonnet: {
+          percentUsed: 30,
+          resetsAt: new Date(Date.now() + 259200000).toISOString(),
+        },
+        extraUsage: {
+          percentUsed: 20,
+          spent: 10.00,
+          budget: 50.00,
+          resetsAt: new Date(Date.now() + 604800000).toISOString(),
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.session).not.toBeNull();
+      expect(result.session.percent).toBe(45);
+
+      expect(result.weeklyAll).not.toBeNull();
+      expect(result.weeklyAll.percent).toBe(60);
+
+      expect(result.weeklySonnet).not.toBeNull();
+      expect(result.weeklySonnet.percent).toBe(30);
+
+      expect(result.extraUsage).toBeDefined();
+      expect(result.extraUsage.percent).toBe(20);
+      expect(result.extraUsage.spent).toBe(10.00);
+      expect(result.extraUsage.budget).toBe(50.00);
+    });
+
+    it('handles weeklyLimit as alias for weeklyAllModels', () => {
+      const apiResponse = {
+        weeklyLimit: {
+          percentUsed: 55,
+          resetsAt: new Date(Date.now() + 86400000).toISOString(),
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.weeklyAll).not.toBeNull();
+      expect(result.weeklyAll.percent).toBe(55);
+    });
+
+    it('handles weeklySonnetOnly as alias for weeklySonnet', () => {
+      const apiResponse = {
+        weeklySonnetOnly: {
+          percentUsed: 25,
+          resetsAt: new Date(Date.now() + 172800000).toISOString(),
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.weeklySonnet).not.toBeNull();
+      expect(result.weeklySonnet.percent).toBe(25);
+    });
+
+    it('normalizes OAuth API response format (five_hour/seven_day)', () => {
+      const apiResponse = {
+        five_hour: {
+          utilization: 88.0,
+          resets_at: new Date(Date.now() + 3600000).toISOString(),
+        },
+        seven_day: {
+          utilization: 9.0,
+          resets_at: new Date(Date.now() + 604800000).toISOString(),
+        },
+        seven_day_sonnet: {
+          utilization: 15.0,
+          resets_at: new Date(Date.now() + 172800000).toISOString(),
+        },
+        extra_usage: {
+          is_enabled: true,
+          monthly_limit: 4250,
+          used_credits: 2332.0,
+          utilization: 54.87,
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.session).not.toBeNull();
+      expect(result.session.percent).toBe(88);
+      expect(result.session.resetsInSeconds).toBeGreaterThan(0);
+
+      expect(result.weeklyAll).not.toBeNull();
+      expect(result.weeklyAll.percent).toBe(9);
+
+      expect(result.weeklySonnet).not.toBeNull();
+      expect(result.weeklySonnet.percent).toBe(15);
+
+      expect(result.extraUsage).not.toBeNull();
+      expect(result.extraUsage.percent).toBe(55);
+      expect(result.extraUsage.spent).toBe(23.32);
+      expect(result.extraUsage.budget).toBe(42.50);
+    });
+
+    it('handles OAuth response with null sonnet and no extra usage', () => {
+      const apiResponse = {
+        five_hour: { utilization: 50.0, resets_at: new Date(Date.now() + 3600000).toISOString() },
+        seven_day: { utilization: 20.0, resets_at: new Date(Date.now() + 604800000).toISOString() },
+        seven_day_sonnet: null,
+        extra_usage: { is_enabled: false },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.session.percent).toBe(50);
+      expect(result.weeklyAll.percent).toBe(20);
+      expect(result.weeklySonnet).toBeNull();
+      expect(result.extraUsage).toBeUndefined();
+    });
+  });
+
+  describe('_getAuthToken', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      process.env = { ...originalEnv };
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    it('returns token from CLAUDE_CODE_OAUTH_TOKEN env var', async () => {
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = 'test-token-from-env';
+
+      const token = await agent._getAuthToken();
+
+      expect(token).toBe('test-token-from-env');
+    });
+
+    it('returns null when no credentials are available', async () => {
+      delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      delete process.env.HOME;
+      delete process.env.USERPROFILE;
+
+      const token = await agent._getAuthToken();
+
+      expect(token).toBeNull();
+    });
+  });
+
+  describe('parseOutput with API sentinel', () => {
+    it('detects API response sentinel and parses stored API response', () => {
+      const apiResponse = {
+        sessionLimit: {
+          percentUsed: 35,
+          resetsAt: new Date(Date.now() + 3600000).toISOString(),
+        },
+      };
+
+      agent._apiResponse = apiResponse;
+      const result = agent.parseOutput('__API_RESPONSE__');
+
+      expect(result.session).not.toBeNull();
+      expect(result.session.percent).toBe(35);
+      // _apiResponse should be cleared after parsing
+      expect(agent._apiResponse).toBeNull();
+    });
+
+    it('falls back to PTY parsing for non-sentinel output', () => {
+      const ptyOutput = `
+        Current session
+        50% used
+        Resets 3:00pm (America/New_York)
+
+        Current week (all models)
+        30% used
+        Resets Jan 15, 2pm (America/New_York)
+
+        Current week (Sonnet only)
+        20% used
+        Resets Jan 15, 2pm (America/New_York)
+      `;
+
+      const result = agent.parseOutput(ptyOutput);
+
+      expect(result.session).not.toBeNull();
+      expect(result.session.percent).toBe(50);
+      expect(result.weeklyAll.percent).toBe(30);
     });
   });
 });
