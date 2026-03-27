@@ -49,6 +49,7 @@ Options:
   --auth-pass <pass>    HTTP Basic Auth password
   --auth-token <token>  API key for Bearer token auth
   --fresh-process       Spawn a new process per refresh (default: false)
+  --claude-api          Use direct Anthropic API for Claude usage (faster, 60s refresh)
   --config, -c          Path to config file (JSON)
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
@@ -74,6 +75,7 @@ Environment variables override CLI flags and config file settings:
 | `AGENT_TANK_TOKEN` | API key (overrides `--auth-token`) |
 | `AGENT_TANK_HOST` | Bind address (overrides `--host`) |
 | `AGENT_TANK_FRESH_PROCESS` | Use fresh process per refresh (`1` or `true`) |
+| `AGENT_TANK_CLAUDE_API` | Use direct Anthropic API for Claude usage (`1` or `true`) |
 | `AGENT_TANK_AUTO_REFRESH` | Enable/disable background auto-refresh (`1`/`true` or `0`/`false`) |
 | `AGENT_TANK_AUTO_REFRESH_MODE` | Refresh mode: `none`, `interval`, or `activity` (default: `activity`) |
 | `AGENT_TANK_AUTO_REFRESH_INTERVAL` | Auto-refresh interval in seconds |
@@ -100,6 +102,36 @@ You can use a JSON configuration file:
 
 ```bash
 agent-tank -c config.json
+```
+
+## Claude API Mode
+
+By default, Claude usage data is fetched by spawning a PTY session and running the `/usage` command. With `--claude-api`, Agent Tank fetches usage directly from the Anthropic OAuth API instead, which is faster and allows a 60-second refresh interval (vs 10 minutes for PTY).
+
+```bash
+agent-tank --claude --claude-api
+```
+
+### How It Works
+
+- Uses the OAuth token from `~/.claude/.credentials.json` (the same credentials Claude Code uses)
+- Calls the `api.anthropic.com/api/oauth/usage` endpoint with the `anthropic-beta: oauth-2025-04-20` header
+- Automatically refreshes expired tokens using the OAuth refresh token flow
+- Falls back to PTY mode if the API call fails
+
+### Configuration
+
+```json
+{
+  "claude": true,
+  "claudeApi": true
+}
+```
+
+Or via environment variable:
+
+```bash
+AGENT_TANK_CLAUDE_API=1 agent-tank --claude
 ```
 
 ## Activity-Based Polling
