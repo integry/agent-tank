@@ -1843,6 +1843,62 @@ describe('ClaudeAgent API Mode', () => {
       expect(result.weeklySonnet).not.toBeNull();
       expect(result.weeklySonnet.percent).toBe(25);
     });
+
+    it('normalizes OAuth API response format (five_hour/seven_day)', () => {
+      const apiResponse = {
+        five_hour: {
+          utilization: 88.0,
+          resets_at: new Date(Date.now() + 3600000).toISOString(),
+        },
+        seven_day: {
+          utilization: 9.0,
+          resets_at: new Date(Date.now() + 604800000).toISOString(),
+        },
+        seven_day_sonnet: {
+          utilization: 15.0,
+          resets_at: new Date(Date.now() + 172800000).toISOString(),
+        },
+        extra_usage: {
+          is_enabled: true,
+          monthly_limit: 4250,
+          used_credits: 2332.0,
+          utilization: 54.87,
+        },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.session).not.toBeNull();
+      expect(result.session.percent).toBe(88);
+      expect(result.session.resetsInSeconds).toBeGreaterThan(0);
+
+      expect(result.weeklyAll).not.toBeNull();
+      expect(result.weeklyAll.percent).toBe(9);
+
+      expect(result.weeklySonnet).not.toBeNull();
+      expect(result.weeklySonnet.percent).toBe(15);
+
+      expect(result.extraUsage).not.toBeNull();
+      expect(result.extraUsage.percent).toBeCloseTo(54.87, 0);
+      expect(result.extraUsage.spent).toBeCloseTo(23.32, 1);
+      expect(result.extraUsage.budget).toBeCloseTo(42.50, 1);
+    });
+
+    it('handles OAuth response with null sonnet and no extra usage', () => {
+      const apiResponse = {
+        five_hour: { utilization: 50.0, resets_at: new Date(Date.now() + 3600000).toISOString() },
+        seven_day: { utilization: 20.0, resets_at: new Date(Date.now() + 604800000).toISOString() },
+        seven_day_sonnet: null,
+        extra_usage: { is_enabled: false },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.session.percent).toBe(50);
+      expect(result.weeklyAll.percent).toBe(20);
+      expect(result.weeklySonnet).toBeNull();
+      expect(result.extraUsage).toBeUndefined();
+    });
   });
 
   describe('_getAuthToken', () => {

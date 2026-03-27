@@ -55,6 +55,7 @@ class ClaudeAgent extends BaseAgent {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
+          'anthropic-beta': 'oauth-2025-04-20',
           'Content-Type': 'application/json',
           'User-Agent': 'agent-tank/1.0',
         },

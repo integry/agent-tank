@@ -173,6 +173,45 @@ function parseFlatPercentageFields(apiResponse, usage, now) {
 }
 
 /**
+ * Normalize the OAuth usage API response to the parser's expected schema.
+ * The API returns: five_hour, seven_day, seven_day_sonnet, extra_usage
+ * The parser expects: sessionLimit, weeklyAllModels, weeklySonnet, extraUsage
+ * @param {Object} raw - Raw API response
+ * @returns {Object} Normalized response
+ */
+function normalizeOAuthResponse(raw) {
+  if (!raw.five_hour && !raw.seven_day) return raw; // already normalized or unknown
+  const norm = {};
+  if (raw.five_hour) {
+    norm.sessionLimit = {
+      percentUsed: raw.five_hour.utilization,
+      resetsAt: raw.five_hour.resets_at,
+    };
+  }
+  if (raw.seven_day) {
+    norm.weeklyAllModels = {
+      percentUsed: raw.seven_day.utilization,
+      resetsAt: raw.seven_day.resets_at,
+    };
+  }
+  if (raw.seven_day_sonnet) {
+    norm.weeklySonnet = {
+      percentUsed: raw.seven_day_sonnet.utilization,
+      resetsAt: raw.seven_day_sonnet.resets_at,
+    };
+  }
+  if (raw.extra_usage?.is_enabled) {
+    norm.extraUsage = {
+      percentUsed: raw.extra_usage.utilization,
+      spent: raw.extra_usage.used_credits ? raw.extra_usage.used_credits / 100 : null,
+      budget: raw.extra_usage.monthly_limit ? raw.extra_usage.monthly_limit / 100 : null,
+      resetsAt: raw.seven_day?.resets_at || null,
+    };
+  }
+  return norm;
+}
+
+/**
  * Parse the direct API response into the unified usage schema
  * @param {Object} apiResponse - The raw API response from Anthropic
  * @returns {Object} The parsed usage object matching the PTY format
@@ -187,20 +226,23 @@ function parseApiResponse(apiResponse) {
     return parseApiResponse(apiResponse.usage);
   }
 
+  // Normalize OAuth API response format to parser schema
+  const normalized = normalizeOAuthResponse(apiResponse);
+
   const now = new Date();
 
   // Parse each section
-  usage.session = parseSessionLimit(apiResponse, now);
-  usage.weeklyAll = parseWeeklyAllModels(apiResponse, now);
-  usage.weeklySonnet = parseWeeklySonnet(apiResponse, now);
+  usage.session = parseSessionLimit(normalized, now);
+  usage.weeklyAll = parseWeeklyAllModels(normalized, now);
+  usage.weeklySonnet = parseWeeklySonnet(normalized, now);
 
-  const extraUsage = parseExtraUsage(apiResponse, now);
+  const extraUsage = parseExtraUsage(normalized, now);
   if (extraUsage) {
     usage.extraUsage = extraUsage;
   }
 
   // Handle flat percentage fields as fallback
-  return parseFlatPercentageFields(apiResponse, usage, now);
+  return parseFlatPercentageFields(normalized, usage, now);
 }
 
 module.exports = {
