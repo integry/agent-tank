@@ -149,17 +149,16 @@ class BaseAgent {
       const spawnDataHandler = this.shell.onData((data) => {
         spawnOutput += data;
 
-        // Handle trust prompt during spawn (only once)
+        // Handle trust/update prompts during spawn (only once each)
         if (!trustHandled && this.handleTrustPrompt && this.handleTrustPrompt(this.shell, spawnOutput)) {
           trustHandled = true;
           spawnOutput = '';
-          trustCooldownUntil = Date.now() + 4000; // Wait for post-trust restart
+          trustCooldownUntil = Date.now() + 4000;
           return;
         }
-
+        this._handleAdditionalPrompts(this.shell, data, spawnOutput);
         this._respondToTerminalQueries(data);
 
-        // Check if ready for commands (skip during post-trust cooldown)
         if (Date.now() >= trustCooldownUntil && this.isReadyForCommands(spawnOutput)) {
           logger.agent(this.name, 'Process ready for commands');
           clearTimeout(timer);

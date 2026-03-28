@@ -78,18 +78,9 @@ class CodexAgent extends BaseAgent {
     }
   }
 
-  /**
-   * Run using traditional PTY mode
-   */
   async _runWithPty() {
-    if (this.freshProcess) {
-      return this._runCommandFresh();
-    }
-
-    if (!this.shell || !this.processReady) {
-      await this.spawnProcess();
-    }
-
+    if (this.freshProcess) return this._runCommandFresh();
+    if (!this.shell || !this.processReady) await this.spawnProcess();
     return this.sendCommandAndWait();
   }
 
@@ -105,10 +96,14 @@ class CodexAgent extends BaseAgent {
   handleUpdateScreen(shell, output) {
     if (!shell) return false;
     const clean = this.stripAnsi(output);
-    if (!(/u?pdate available/i.test(clean) && /[\d.]+\s*->\s*[\d.]+/.test(clean) && /skip/i.test(clean))) return false;
-    logger.agent(this.name, 'Detected update screen, selecting \'2\' to skip...');
+    if (!(/u?pdate available/i.test(clean) && /[\d.]+\s*->\s*[\d.]+/.test(clean))) return false;
+    logger.agent(this.name, 'Detected update screen, skipping...');
+    // v0.115+: may show numbered menu (1. Update, 2. Skip) or just info box
+    // Send "2" to select Skip, Enter to confirm, then Escape + Enter to clear any leftover
     shell.write('2');
     setTimeout(() => { if (shell) shell.write('\r'); }, 300);
+    setTimeout(() => { if (shell) shell.write('\x1b'); }, 1000);
+    setTimeout(() => { if (shell) shell.write('\r'); }, 1500);
     return true;
   }
   parseVersionInfo(output) { return parseVersionInfo(output, this.stripAnsi.bind(this)); }
@@ -173,13 +168,17 @@ class CodexAgent extends BaseAgent {
         reject(new Error('Timeout waiting for process to become ready'));
       }, this.getTimeout());
 
+      let postPromptOutput = '';
       const spawnDataHandler = this.shell.onData((data) => {
         spawnOutput += data;
-        this.handleInteractivePrompts(this.shell, data, spawnOutput, state);
-
-        if (this.isReadyForStatus(spawnOutput)) {
+        if (this.handleInteractivePrompts(this.shell, data, spawnOutput, state)) {
+          postPromptOutput = '';
+          return;
+        }
+        postPromptOutput += data;
+        const checkOutput = (state.updateHandled || state.trustHandled) ? postPromptOutput : spawnOutput;
+        if (this.isReadyForStatus(checkOutput)) {
           logger.agent(this.name, 'Process ready for commands');
-          // Capture version info from spawn output (update screen appears here)
           const versionFromSpawn = this.parseVersionInfo(spawnOutput);
           if (versionFromSpawn) {
             this._spawnVersionInfo = versionFromSpawn;
@@ -242,9 +241,10 @@ class CodexAgent extends BaseAgent {
         if (!this.hasCompleteOutput(this.output) && this.shell) {
           logger.agent(this.name, 'Retrying /status...');
           this.output = '';
-          this.shell.write('/status\r');
+          this.shell.write('/status');
+          setTimeout(() => { if (this.shell) this.shell.write('\r'); }, 200);
         }
-      }, 500);
+      }, 5000);
 
       this._onDataCallback = () => {
         if (this.hasCompleteOutput(this.output)) {
@@ -262,9 +262,6 @@ class CodexAgent extends BaseAgent {
 
   hasCompleteOutput(output) {
     if (output.includes('5h limit') && output.includes('Weekly limit')) return true;
-    // Detect when Codex reports limits are unavailable — no point retrying
-    const clean = this.stripAnsi(output);
-    if (/data not available|limits.*unavailable|no usage data/i.test(clean)) return true;
     return false;
   }
 
