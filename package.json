@@ -58,6 +58,7 @@
   "files": [
     "bin/",
     "src/",
+    "media/",
     "LICENSE",
     "README.md"
   ]
