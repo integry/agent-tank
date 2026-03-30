@@ -1,6 +1,6 @@
 # Agent Tank
 
-![Agent Tank Web UI preview](./media/www-preview.png)
+![Agent Tank Web UI preview](https://raw.githubusercontent.com/integry/agent-tank/main/media/www-preview.png)
 
 Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via a simple HTTP API.
 
