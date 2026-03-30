@@ -4,7 +4,7 @@
   "description": "Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via HTTP API",
   "main": "src/index.js",
   "bin": {
-    "agent-tank": "./bin/agent-tank.js"
+    "agent-tank": "bin/agent-tank.js"
   },
   "scripts": {
     "start": "node bin/agent-tank.js",
