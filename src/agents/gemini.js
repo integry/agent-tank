@@ -10,16 +10,45 @@ class GeminiAgent extends BaseAgent {
   }
 
   getTimeout() {
-    return 25000; // 25 seconds
+    return 35000; // 35 seconds - Gemini can take 10+ seconds to start
+  }
+
+  getEnv() {
+    // Use xterm-256color for proper terminal support
+    // Gemini CLI needs good terminal emulation for its TUI
+    return {
+      ...process.env,
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+    };
   }
 
   isReadyForCommands(output) {
+    // Don't consider ready if authentication is in progress
+    if (this._isAuthenticating(output)) {
+      return false;
+    }
     // v0.24: "Type your message" prompt
     // v0.35+: "Ready" in terminal title + visible prompt area (no "Type your message")
     // Also check for terminal title sequence containing "Ready"
     return output.includes('Type your message')
       || output.includes('gemini>')
       || /Ready\s*\(/.test(output);
+  }
+
+  _isAuthenticating(output) {
+    // Detect OAuth/authentication screens where Escape would cancel the flow
+    const clean = this.stripAnsi(output);
+
+    // If we see the ready prompt, auth is complete (even if auth text still in buffer)
+    if (clean.includes('Type your message') || clean.includes('? for shortcuts')) {
+      return false;
+    }
+
+    // Only consider authenticating if we see auth-specific text
+    return /waiting for authentication/i.test(clean)
+      || /press esc.*to cancel/i.test(clean)
+      || /authenticating\.\.\./i.test(clean);
   }
 
   handleTrustPrompt(shell, output) {
@@ -42,6 +71,7 @@ class GeminiAgent extends BaseAgent {
       // v0.35+ does an internal restart after trust — send Escape after a delay
       // to dismiss any transitional UI before the process becomes ready again
       setTimeout(() => {
+        if (!shell) return;
         logger.agent(this.name, 'Post-trust: sending Escape to clear restart UI...');
         shell.write('\x1b');
       }, 3000);
@@ -89,10 +119,16 @@ class GeminiAgent extends BaseAgent {
     return totalSeconds > 0 ? totalSeconds : null;
   }
 
-  sendCommands(shell, _output) {
+  sendCommands(shell, output) {
+    // Check if authentication is still in progress - don't send commands that could interfere
+    if (this._isAuthenticating(output)) {
+      logger.agent(this.name, 'Authentication in progress, cannot send /stats command');
+      // Don't retry - let the timeout handle it. Sending Escape would cancel auth.
+      return;
+    }
     logger.agent(this.name, 'Sending /stats command...');
     // v0.35+: typing /stats triggers autocomplete dropdown.
-    // Escape dismisses autocomplete, then Enter submits the command.
+    // Escape clears any pending state, then send command, Escape again to dismiss autocomplete
     setTimeout(() => shell.write('\x1b'), 50);
     setTimeout(() => shell.write('/stats'), 500);
     setTimeout(() => shell.write('\x1b'), 1000);
@@ -181,8 +217,16 @@ class GeminiAgent extends BaseAgent {
       }, 10000); // 10 second timeout for /about
 
       this._commandInFlight = true;
+      let trustHandled = false;
       this._onDataCallback = () => {
         aboutOutput = this.output;
+        // Handle trust prompts that appear during command execution
+        if (!trustHandled && this.handleTrustPrompt(this.shell, aboutOutput)) {
+          trustHandled = true;
+          aboutOutput = '';
+          this.output = '';
+          return;
+        }
         // Check if we have complete /about output
         if (this._hasCompleteAboutOutput(aboutOutput)) {
           logger.agent(this.name, 'Complete /about output detected');
@@ -192,11 +236,34 @@ class GeminiAgent extends BaseAgent {
 
       logger.agent(this.name, 'Sending /about command for metadata...');
       this.output = '';
-      // Escape clears pending state, delay for CLI to be fully interactive,
-      // second Enter in case /about has an autocomplete menu in newer versions
-      setTimeout(() => this.shell.write('\x1b'), 100);
-      setTimeout(() => this.shell.write('/about\r'), 2000);
-      setTimeout(() => this.shell.write('\r'), 2500);
+
+      // Wait for authentication to complete before sending commands
+      // Auth can start after spawn if token refresh is needed
+      // Gemini can take 10+ seconds to fully start up
+      let authWaitCount = 0;
+      const maxAuthWait = 15; // Max 15 seconds waiting for auth
+
+      const waitForAuth = () => {
+        if (this._isAuthenticating(this.output)) {
+          authWaitCount++;
+          if (authWaitCount >= maxAuthWait) {
+            logger.agent(this.name, 'Authentication timeout - Gemini may be stuck in auth flow');
+            // Don't send commands that would interfere with stuck auth
+            // Let the overall timeout handle this
+            return;
+          }
+          logger.agent(this.name, 'Authentication in progress, waiting...');
+          setTimeout(waitForAuth, 1000);
+          return;
+        }
+        // Auth complete (or not happening), send commands
+        // Guard against shell being nullified if process exits during setTimeout delays
+        // Don't send Escape first - it can cancel auth flows that started between checks
+        setTimeout(() => this.shell?.write('/about\r'), 500);
+        setTimeout(() => this.shell?.write('\r'), 1000);
+      };
+
+      setTimeout(waitForAuth, 100);
     });
   }
 
