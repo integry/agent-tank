@@ -3,6 +3,7 @@
 
 const { parseArgs } = require('node:util');
 const { AgentTank } = require('../src/index.js');
+const { installShutdownHandlers } = require('../src/shutdown-handler.js');
 
 const options = {
   claude: { type: 'boolean', default: false },
@@ -256,17 +257,18 @@ async function main() {
 
   // Graceful shutdown
   let shuttingDown = false;
+  let cleanupShutdownHandlers = () => {};
   const shutdown = (signal) => {
     if (shuttingDown) return;
     shuttingDown = true;
+    cleanupShutdownHandlers();
     if (!jsonMode) {
       originalLog(`\nShutting down${signal ? ` (${signal})` : ''}...`);
     }
     watcher.stop();
     process.exit(0);
   };
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  cleanupShutdownHandlers = installShutdownHandlers({ shutdown });
 
   try {
     if (onceMode) {
@@ -284,6 +286,7 @@ async function main() {
           originalLog(JSON.stringify(agentStatus, null, 2));
         }
       }
+      cleanupShutdownHandlers();
       watcher.stop();
       process.exitCode = 0;
       return;
@@ -291,6 +294,7 @@ async function main() {
 
     await watcher.start();
   } catch (err) {
+    cleanupShutdownHandlers();
     if (jsonMode) {
       console.log = originalLog;
       console.log(JSON.stringify({ error: err.message }, null, 2));
