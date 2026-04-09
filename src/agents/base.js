@@ -1,4 +1,5 @@
 const pty = require('node-pty');
+const process = require('node:process');
 const logger = require('../logger.js');
 
 class BaseAgent {
@@ -299,9 +300,16 @@ class BaseAgent {
   killProcess() { // Terminates the persistent PTY process
     if (this.shell) {
       logger.agent(this.name, 'Killing persistent process');
+      const shell = this.shell;
       for (const d of this._disposables) { d.dispose(); }
       this._disposables = []; this._onDataCallback = null; this.processReady = false;
-      try { this.shell.kill(); } catch (_e) { /* Process may already be dead */ }
+      try {
+        // PTY-backed CLIs may spawn descendants; kill the whole process group when available.
+        if (typeof shell.pid === 'number' && shell.pid > 0) {
+          try { process.kill(-shell.pid, 'SIGTERM'); } catch (_e) { /* Group may not exist */ }
+        }
+        shell.kill();
+      } catch (_e) { /* Process may already be dead */ }
       this.shell = null;
     }
   }

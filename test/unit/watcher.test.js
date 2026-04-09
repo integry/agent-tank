@@ -355,6 +355,7 @@ describe('AgentTank', () => {
         metadata: null,
         lastUpdated: null,
         error: null,
+        auth: null,
         isRefreshing: false,
         publicStatus: null
       });
@@ -410,6 +411,7 @@ describe('AgentTank', () => {
         metadata: null,
         lastUpdated: null,
         error: null,
+        auth: null,
         isRefreshing: false
       });
     });
@@ -491,6 +493,18 @@ describe('AgentTank', () => {
       tank.stop();
 
       expect(tank.keepaliveManager).toBeNull();
+    });
+
+    it('kills agent processes during shutdown', () => {
+      const agentA = { killProcess: jest.fn() };
+      const agentB = { killProcess: jest.fn() };
+      tank.agents.set('claude', agentA);
+      tank.agents.set('gemini', agentB);
+
+      tank.stop();
+
+      expect(agentA.killProcess).toHaveBeenCalled();
+      expect(agentB.killProcess).toHaveBeenCalled();
     });
   });
 

@@ -255,15 +255,18 @@ async function main() {
   });
 
   // Graceful shutdown
-  const shutdown = () => {
+  let shuttingDown = false;
+  const shutdown = (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     if (!jsonMode) {
-      originalLog('\nShutting down...');
+      originalLog(`\nShutting down${signal ? ` (${signal})` : ''}...`);
     }
     watcher.stop();
-    process.exitCode = 0;
+    process.exit(0);
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
 
   try {
     if (onceMode) {
