@@ -11,6 +11,7 @@ class BaseAgent {
     this._metadataFetched = false;
     this.lastUpdated = null;
     this.error = null;
+    this.auth = null;
     this.isRefreshing = false;
     this.refreshInterval = null;    // Per-agent override (seconds), null = use global
     this.minRefreshInterval = null; // Per-agent minimum (seconds), null = no minimum
@@ -32,6 +33,7 @@ class BaseAgent {
       metadata: this.metadata,
       lastUpdated: this.lastUpdated,
       error: this.error,
+      auth: this.auth,
       isRefreshing: this.isRefreshing,
     };
   }
@@ -45,6 +47,7 @@ class BaseAgent {
     logger.agent(this.name, 'Starting refresh...');
     this.isRefreshing = true;
     this.error = null;
+    this.auth = null;
 
     try {
       // Fetch metadata once on first refresh (if agent supports it)
@@ -71,6 +74,15 @@ class BaseAgent {
       // Check for rate limit and session errors before parsing
       // Match actual error messages, not incidental mentions like "rate limits and credits"
       const cleanOutput = this.stripAnsi(output);
+      const authState = this.detectAuthenticationState ? this.detectAuthenticationState(cleanOutput) : null;
+      if (authState) {
+        logger.agent(this.name, 'Authentication issue detected:', logger.json(authState));
+        this.auth = authState;
+        this.error = this.usage ? `${authState.message} — using cached data` : authState.message;
+        this.lastUpdated = new Date().toISOString();
+        return;
+      }
+
       if (/rate.?limited|rate_limit_error/i.test(cleanOutput)) {
         logger.agent(this.name, 'Rate limited, preserving last known usage data');
         this.error = 'Rate limited — using cached data';
@@ -159,6 +171,20 @@ class BaseAgent {
         this._handleAdditionalPrompts(this.shell, data, spawnOutput);
         this._respondToTerminalQueries(data);
 
+        const authState = this.detectAuthenticationState ? this.detectAuthenticationState(spawnOutput) : null;
+        if (authState) {
+          logger.agent(this.name, 'Authentication issue detected during spawn');
+          clearTimeout(timer);
+          spawnDataHandler.dispose();
+          spawnExitHandler.dispose();
+          this.processReady = true;
+          this.output = spawnOutput;
+          this._setupPersistentDataHandler();
+          this._setupPersistentExitHandler();
+          resolve();
+          return;
+        }
+
         if (Date.now() >= trustCooldownUntil && this.isReadyForCommands(spawnOutput)) {
           logger.agent(this.name, 'Process ready for commands');
           clearTimeout(timer);
@@ -183,6 +209,14 @@ class BaseAgent {
 
   async sendCommandAndWait() {
     return new Promise((resolve, reject) => {
+      const existingOutput = this.output;
+      const existingAuthState = this.detectAuthenticationState ? this.detectAuthenticationState(existingOutput) : null;
+      if (existingAuthState) {
+        logger.agent(this.name, 'Using existing authentication output without sending commands');
+        resolve(existingOutput);
+        return;
+      }
+
       this.output = '';
       this._commandInFlight = true;
 

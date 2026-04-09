@@ -51,6 +51,37 @@ class GeminiAgent extends BaseAgent {
       || /authenticating\.\.\./i.test(clean);
   }
 
+  detectAuthenticationState(output) {
+    const clean = this.stripAnsi(output);
+    if (!clean) return null;
+
+    const hasAuthMenu = /how would you like to authenticate for this project\?/i.test(clean)
+      || /get started/i.test(clean);
+    const hasAuthFailure = /failed to sign in\.\s*message:\s*([^\n]+)/i.test(clean)
+      || /please run gemini cli in an interactive terminal to authenticate/i.test(clean)
+      || /authentication consent could not be obtained/i.test(clean);
+
+    if (!hasAuthMenu && !hasAuthFailure) {
+      return null;
+    }
+
+    const failureMatch = clean.match(/failed to sign in\.\s*message:\s*([^\n]+)/i);
+    const detail = failureMatch
+      ? `Failed to sign in: ${failureMatch[1].trim()}`
+      : 'Gemini CLI is waiting for authentication.';
+    const action = /NO_BROWSER=true/i.test(clean)
+      ? 'Run Gemini CLI in an interactive terminal to authenticate, or use NO_BROWSER=true for manual authentication.'
+      : 'Run Gemini CLI in an interactive terminal to authenticate.';
+
+    return {
+      authenticated: false,
+      status: 'unauthenticated',
+      message: 'Authentication required',
+      detail,
+      action,
+    };
+  }
+
   handleTrustPrompt(shell, output) {
     // Check for trust prompt with various wordings
     const trustPatterns = [
@@ -85,6 +116,7 @@ class GeminiAgent extends BaseAgent {
     // Gemini shows "Usage limits" after the model usage table (v0.24.x)
     if (output.includes('Usage limits span all sessions')) return true;
     const clean = this.stripAnsi(output);
+    if (this.detectAuthenticationState(clean)) return true;
     const hasModel = /gemini-[\w.-]+/i.test(clean);
     const hasPercent = /\d+(?:\.\d+)?%/i.test(clean);
     // v0.24: "Resets in 3h 26m", v0.35+: "(23h 21m)" after time
@@ -121,8 +153,8 @@ class GeminiAgent extends BaseAgent {
 
   sendCommands(shell, output) {
     // Check if authentication is still in progress - don't send commands that could interfere
-    if (this._isAuthenticating(output)) {
-      logger.agent(this.name, 'Authentication in progress, cannot send /stats command');
+    if (this._isAuthenticating(output) || this.detectAuthenticationState(output)) {
+      logger.agent(this.name, 'Authentication required or in progress, cannot send /stats command');
       // Don't retry - let the timeout handle it. Sending Escape would cancel auth.
       return;
     }
@@ -197,6 +229,10 @@ class GeminiAgent extends BaseAgent {
       await this.spawnProcess();
     }
 
+    if (this.detectAuthenticationState(this.output)) {
+      return null;
+    }
+
     return new Promise((resolve, _reject) => {
       let aboutOutput = '';
       let completed = false;
@@ -244,6 +280,11 @@ class GeminiAgent extends BaseAgent {
       const maxAuthWait = 15; // Max 15 seconds waiting for auth
 
       const waitForAuth = () => {
+        if (this.detectAuthenticationState(this.output)) {
+          logger.agent(this.name, 'Authentication required, skipping /about metadata fetch');
+          finish(null);
+          return;
+        }
         if (this._isAuthenticating(this.output)) {
           authWaitCount++;
           if (authWaitCount >= maxAuthWait) {

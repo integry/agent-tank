@@ -1525,6 +1525,21 @@ describe('Graceful Degradation', () => {
   });
 
   describe('GeminiAgent', () => {
+    const geminiAuthOutput = `
+      Gemini CLI v0.35.2
+
+      ? Get started
+
+      How would you like to authenticate for this project?
+
+      1. Sign in with Google
+      2. Use Gemini API Key
+      3. Vertex AI
+
+      Failed to sign in. Message: Authentication consent could not be obtained.
+      Please run Gemini CLI in an interactive terminal to authenticate, or use NO_BROWSER=true for manual authentication.
+    `;
+
     it('returns empty models array for malformed output', () => {
       const agent = new GeminiAgent();
       const result = agent.parseOutput('random garbage data');
@@ -1537,6 +1552,42 @@ describe('Graceful Degradation', () => {
 
       expect(agent.parseDurationToSeconds('not a duration')).toBeNull();
       expect(agent.parseDurationToSeconds(undefined)).toBeNull();
+    });
+
+    it('detects unauthenticated Gemini setup screens', () => {
+      const agent = new GeminiAgent();
+
+      expect(agent.detectAuthenticationState(geminiAuthOutput)).toEqual({
+        authenticated: false,
+        status: 'unauthenticated',
+        message: 'Authentication required',
+        detail: 'Failed to sign in: Authentication consent could not be obtained.',
+        action: 'Run Gemini CLI in an interactive terminal to authenticate, or use NO_BROWSER=true for manual authentication.',
+      });
+    });
+
+    it('treats unauthenticated Gemini setup screens as complete output', () => {
+      const agent = new GeminiAgent();
+
+      expect(agent.hasCompleteOutput(geminiAuthOutput)).toBe(true);
+    });
+
+    it('stores Gemini authentication state during refresh', async () => {
+      const agent = new GeminiAgent();
+      agent._metadataFetched = true;
+      agent.runCommand = jest.fn().mockResolvedValue(geminiAuthOutput);
+
+      await agent.refresh();
+
+      expect(agent.auth).toEqual({
+        authenticated: false,
+        status: 'unauthenticated',
+        message: 'Authentication required',
+        detail: 'Failed to sign in: Authentication consent could not be obtained.',
+        action: 'Run Gemini CLI in an interactive terminal to authenticate, or use NO_BROWSER=true for manual authentication.',
+      });
+      expect(agent.error).toBe('Authentication required');
+      expect(agent.lastUpdated).not.toBeNull();
     });
 
     describe('shell null safety', () => {

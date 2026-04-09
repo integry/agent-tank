@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-04-09
+
+### Fixed
+
+- Prevent Gemini agent crashes when the CLI process exits during authentication flows
+- Avoid sending `Escape` while Gemini OAuth authentication is in progress, which could cancel login
+- Improve Gemini trust prompt handling during command execution and slow startup scenarios
+- Detect Gemini CLI unauthenticated/setup screens and report them clearly instead of surfacing a generic timeout
+
+### Added
+
+- Regression tests covering Gemini shell null-safety during delayed callbacks
+- Gemini authentication-required status in the API response and a concise login instruction in the UI
+
 ## [0.9.0] - 2024-01-20
 
 ### Added

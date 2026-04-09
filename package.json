@@ -1,6 +1,6 @@
 {
   "name": "agent-tank",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via HTTP API",
   "main": "src/index.js",
   "bin": {

@@ -9,6 +9,15 @@ const { getStatusBadgeClass, getStatusText } = require('./public-status');
 
 const styles = fs.readFileSync(path.join(__dirname, 'status-page.css'), 'utf8');
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function statusPage(status) {
   const agents = Object.entries(status);
 
@@ -36,7 +45,7 @@ function statusPage(status) {
     const publicStatus = data.publicStatus;
     const badgeClass = publicStatus ? getStatusBadgeClass(publicStatus.status) : 'status-badge-grey';
     const badgeText = publicStatus ? getStatusText(publicStatus.status) : 'Unknown';
-    const badgeTitle = publicStatus?.description || 'Unable to fetch status';
+    const badgeTitle = escapeHtml(publicStatus?.description || 'Unable to fetch status');
     const statusBadgeHtml = `<span class="status-badge ${badgeClass}" title="${badgeTitle}">${badgeText}</span>`;
 
     // Version update notice - check usage.version (Codex) or metadata.updateAvailable (Gemini)
@@ -45,10 +54,15 @@ function statusPage(status) {
       ? `<div class="version-update-notice">Update available: v${version.current} → v${version.latest}</div>`
       : '';
 
+    const authHtml = data.auth
+      ? `<div class="auth-notice">${escapeHtml(data.auth.action || 'Please log in via the CLI.')}</div>`
+      : '';
+    const errorHtml = data.error && !data.auth ? `<span class="error-msg">${escapeHtml(data.error)}</span>` : '';
+
     // Only show card-footer if there's an error or update notice
-    const hasFooterContent = data.error || updateHtml;
+    const hasFooterContent = errorHtml || authHtml || updateHtml;
     const footerHtml = hasFooterContent
-      ? `<div class="card-footer">${data.error ? `<span class="error-msg">${data.error}</span>` : ''}${updateHtml}</div>`
+      ? `<div class="card-footer">${errorHtml}${authHtml}${updateHtml}</div>`
       : '';
 
     return `

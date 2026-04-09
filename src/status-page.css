@@ -516,6 +516,21 @@ body.light-mode .progress-bar {
   font-size: 13px;
 }
 
+.auth-notice {
+  font-size: 13px;
+  color: #f6ad55;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: rgba(246, 173, 85, 0.08);
+  border: 1px solid rgba(246, 173, 85, 0.2);
+  border-radius: 4px;
+}
+
+.auth-detail {
+  margin-top: 4px;
+  color: var(--text-secondary);
+}
+
 /* Version update notice below agent cards */
 .version-update-notice {
   font-family: var(--font-mono);
@@ -530,6 +545,12 @@ body.light-mode .progress-bar {
 body.light-mode .version-update-notice {
   color: #b7791f;
   background: rgba(236, 201, 75, 0.1);
+  border-color: rgba(183, 121, 31, 0.2);
+}
+
+body.light-mode .auth-notice {
+  color: #b7791f;
+  background: rgba(246, 173, 85, 0.12);
   border-color: rgba(183, 121, 31, 0.2);
 }
 
