@@ -156,6 +156,9 @@ class CodexAgent extends BaseAgent {
           cwd: '/tmp',
           env: { ...process.env, TERM: 'xterm-256color' },
         });
+        if (typeof this.shell.pid === 'number') {
+          logger.agent(this.name, 'Persistent process pid:', logger.dim(String(this.shell.pid)));
+        }
       } catch (spawnErr) {
         logger.error(`[${this.name}] Failed to spawn:`, spawnErr.message);
         reject(new Error(`Failed to spawn ${this.command}: ${spawnErr.message}`));

@@ -23,6 +23,24 @@ const pkg = require(path.join(__dirname, '..', 'package.json'));
  */
 const AUTO_REFRESH_MODES = ['none', 'interval', 'activity'];
 
+function describeAgentShutdown(agent) {
+  const parts = [];
+
+  if (agent.shell && typeof agent.shell.pid === 'number') {
+    parts.push(`pty pid ${agent.shell.pid}`);
+  }
+
+  if (agent._rpcClient) {
+    parts.push('json-rpc client');
+  }
+
+  if (parts.length === 0) {
+    parts.push('no active child process');
+  }
+
+  return parts.join(', ');
+}
+
 class AgentTank {
   constructor(options = {}) {
     this.port = options.port || 3456;
@@ -37,6 +55,7 @@ class AgentTank {
     this.publicStatus = {}; // Public API status from upstream providers
     this.skipServer = options.skipServer || false; // Skip HTTP server in one-shot mode
     this.lastRefreshedAt = null;
+    this.stopping = false;
 
     // Auto-refresh configuration (backend periodic refresh)
     // Determine the mode: 'none', 'interval', or 'activity' (default: 'activity')
@@ -121,6 +140,10 @@ class AgentTank {
   }
 
   async start() {
+    if (this.stopping) {
+      return;
+    }
+
     // Display startup banner with website URL, version, and copyright
     this.displayStartupBanner();
 
@@ -169,10 +192,16 @@ class AgentTank {
       await Promise.all(
         Array.from(this.agents.values()).map(agent =>
           agent.spawnProcess().catch(err =>
-            logger.error(`Error spawning ${agent.name}:`, err.message)
+            this.stopping || err.message === 'Agent stopping'
+              ? null
+              : logger.error(`Error spawning ${agent.name}:`, err.message)
           )
         )
       );
+    }
+
+    if (this.stopping) {
+      return;
     }
 
     // Initial fetch
@@ -180,7 +209,7 @@ class AgentTank {
     await this.refreshAll();
 
     // Start backend auto-refresh if enabled (skip in one-shot mode)
-    if (!this.skipServer) {
+    if (!this.skipServer && !this.stopping) {
       this.startAutoRefresh();
       this.startKeepalive();
     }
@@ -231,6 +260,10 @@ class AgentTank {
   }
 
   async refreshAll() {
+    if (this.stopping) {
+      return;
+    }
+
     logger.info('🔄 Refreshing all agents...');
     const agentNames = Array.from(this.agents.keys());
 
@@ -240,7 +273,9 @@ class AgentTank {
       Promise.all(
         Array.from(this.agents.values()).map(agent =>
           agent.refresh().catch(err => {
-            logger.error(`Error refreshing ${agent.name}:`, err.message);
+            if (!this.stopping && err.message !== 'Agent stopping') {
+              logger.error(`Error refreshing ${agent.name}:`, err.message);
+            }
           })
         )
       ),
@@ -276,6 +311,10 @@ class AgentTank {
   }
 
   async refreshAgent(name) {
+    if (this.stopping) {
+      return;
+    }
+
     const agent = this.agents.get(name);
     if (!agent) {
       throw new Error(`Agent not found: ${name}`);
@@ -345,12 +384,19 @@ class AgentTank {
   }
 
   stop() {
+    this.stopping = true;
+    console.log('[Shutdown] Stopping Agent Tank...');
     this.stopAutoRefresh();
     this.stopKeepalive();
-    for (const agent of this.agents.values()) {
+    for (const [name, agent] of this.agents) {
+      console.log(`[Shutdown] ${name}: ${describeAgentShutdown(agent)}`);
+      if (typeof agent.requestStop === 'function') {
+        agent.requestStop();
+      }
       agent.killProcess();
     }
     if (this.server) {
+      console.log('[Shutdown] Closing HTTP server');
       this.server.close();
     }
   }

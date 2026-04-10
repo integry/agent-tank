@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2026-04-11
+
+### Added
+
+- Add `--version` to the `agent-tank` CLI for quick version checks
+- Log PTY and JSON-RPC subprocess PIDs when agent processes start
+
+### Fixed
+
+- Make `Ctrl+C` exits immediate again by avoiding reliance on a JS `SIGINT` handler
+- Prevent shutdown races from respawning agent processes after teardown begins
+- Guard PTY refresh, metadata fetch, and keepalive paths against restart during shutdown
+
 ## [0.9.2] - 2026-04-09
 
 ### Fixed

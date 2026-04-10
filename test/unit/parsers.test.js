@@ -24,6 +24,24 @@ describe('BaseAgent', () => {
     agent = new BaseAgent('test', 'test-cmd');
   });
 
+  describe('shutdown guards', () => {
+    it('skips refresh while stopping', async () => {
+      const parseSpy = jest.spyOn(agent, 'parseOutput');
+
+      agent.requestStop();
+      await agent.refresh();
+
+      expect(parseSpy).not.toHaveBeenCalled();
+      expect(agent.isRefreshing).toBe(false);
+    });
+
+    it('rejects spawnProcess while stopping', async () => {
+      agent.requestStop();
+
+      await expect(agent.spawnProcess()).rejects.toThrow('Agent stopping');
+    });
+  });
+
   describe('stripAnsi', () => {
     it('removes basic color codes', () => {
       const input = '\x1B[31mRed text\x1B[0m';

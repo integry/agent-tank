@@ -2,7 +2,7 @@ const { EventEmitter } = require('events');
 const { installShutdownHandlers } = require('../../src/shutdown-handler.js');
 
 describe('installShutdownHandlers', () => {
-  it('calls shutdown on SIGINT and removes listeners on cleanup', () => {
+  it('calls shutdown on SIGTERM and removes listeners on cleanup', () => {
     const shutdown = jest.fn();
     const processObj = new EventEmitter();
     processObj.off = processObj.removeListener.bind(processObj);
@@ -13,12 +13,12 @@ describe('installShutdownHandlers', () => {
       stdin: { isTTY: false },
     });
 
-    processObj.emit('SIGINT');
-    expect(shutdown).toHaveBeenCalledWith('SIGINT');
+    processObj.emit('SIGTERM');
+    expect(shutdown).toHaveBeenCalledWith('SIGTERM');
 
     shutdown.mockClear();
     cleanup();
-    processObj.emit('SIGINT');
+    processObj.emit('SIGTERM');
     expect(shutdown).not.toHaveBeenCalled();
   });
 

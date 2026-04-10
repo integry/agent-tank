@@ -25,6 +25,22 @@ class BaseAgent {
     this._onDataCallback = null;
     this._commandInFlight = false;
     this._disposables = [];
+    this._stopRequested = false;
+  }
+
+  _createStopError() {
+    return new Error('Agent stopping');
+  }
+
+  isStopping() {
+    return this._stopRequested;
+  }
+
+  requestStop() {
+    this._stopRequested = true;
+    this.isRefreshing = false;
+    this._commandInFlight = false;
+    this._onDataCallback = null;
   }
 
   getStatus() {
@@ -40,6 +56,11 @@ class BaseAgent {
   }
 
   async refresh() {
+    if (this.isStopping()) {
+      logger.agent(this.name, 'Skipping refresh while stopping');
+      return;
+    }
+
     if (this.isRefreshing) {
       logger.agent(this.name, 'Already refreshing, skipping...');
       return;
@@ -67,6 +88,10 @@ class BaseAgent {
         if (this.freshProcess) {
           this.killProcess();
         }
+      }
+
+      if (this.isStopping()) {
+        throw this._createStopError();
       }
 
       const output = await this.runCommand();
@@ -109,6 +134,10 @@ class BaseAgent {
       if (hasData) { this.usage = parsed; this.lastUpdated = new Date().toISOString(); } else if (this.usage) { logger.agent(this.name, 'Parse returned no data, preserving last known usage'); this.error = 'Failed to parse — using cached data'; } else { this.usage = parsed; this.lastUpdated = new Date().toISOString(); }
       logger.agent(this.name, 'Parsed usage:', logger.json(this.usage));
     } catch (err) {
+      if (this.isStopping() && err.message === 'Agent stopping') {
+        logger.agent(this.name, 'Refresh cancelled during shutdown');
+        return;
+      }
       logger.error(`[${this.name}] Error during refresh:`, err.message);
       this.error = err.message;
     } finally {
@@ -118,6 +147,10 @@ class BaseAgent {
   }
 
   async runCommand() {
+    if (this.isStopping()) {
+      throw this._createStopError();
+    }
+
     if (this.freshProcess) {
       return this._runCommandFresh();
     }
@@ -131,6 +164,10 @@ class BaseAgent {
   }
 
   async spawnProcess() {
+    if (this.isStopping()) {
+      throw this._createStopError();
+    }
+
     return new Promise((resolve, reject) => {
       let trustHandled = false;
       let spawnOutput = '';
@@ -146,6 +183,9 @@ class BaseAgent {
           cwd: '/tmp',
           env,
         });
+        if (typeof this.shell.pid === 'number') {
+          logger.agent(this.name, 'Persistent process pid:', logger.dim(String(this.shell.pid)));
+        }
       } catch (spawnErr) {
         logger.error(`[${this.name}] Failed to spawn:`, spawnErr.message);
         reject(new Error(`Failed to spawn ${this.command}: ${spawnErr.message}`));
@@ -153,6 +193,10 @@ class BaseAgent {
       }
 
       const timer = setTimeout(() => {
+        if (this.isStopping()) {
+          reject(this._createStopError());
+          return;
+        }
         logger.error(`[${this.name}] Spawn timeout after ${this.getTimeout()}ms`);
         this.killProcess();
         reject(new Error('Timeout waiting for process to become ready'));
@@ -160,6 +204,15 @@ class BaseAgent {
 
       let trustCooldownUntil = 0;
       const spawnDataHandler = this.shell.onData((data) => {
+        if (this.isStopping()) {
+          clearTimeout(timer);
+          spawnDataHandler.dispose();
+          spawnExitHandler.dispose();
+          this.killProcess();
+          reject(this._createStopError());
+          return;
+        }
+
         spawnOutput += data;
 
         // Handle trust/update prompts during spawn (only once each)
@@ -203,12 +256,20 @@ class BaseAgent {
         spawnExitHandler.dispose();
         this.shell = null;
         this.processReady = false;
+        if (this.isStopping()) {
+          reject(this._createStopError());
+          return;
+        }
         reject(new Error(`Process exited during spawn with code ${exitCode}`));
       });
     });
   }
 
   async sendCommandAndWait() {
+    if (this.isStopping()) {
+      throw this._createStopError();
+    }
+
     return new Promise((resolve, reject) => {
       const existingOutput = this.output;
       const existingAuthState = this.detectAuthenticationState ? this.detectAuthenticationState(existingOutput) : null;
@@ -229,6 +290,12 @@ class BaseAgent {
       };
 
       const timer = setTimeout(() => {
+        if (this.isStopping()) {
+          this._commandInFlight = false;
+          this._onDataCallback = null;
+          reject(this._createStopError());
+          return;
+        }
         logger.agent(this.name, 'Command timeout after', logger.dim(`${this.getTimeout()}ms`), ', output length:', logger.dim(`${this.output.length}`));
         if (this.output.length > 0) {
           logger.agent(this.name, 'Partial output:', logger.dim(this.stripAnsi(this.output).substring(0, 500)));
@@ -246,6 +313,13 @@ class BaseAgent {
       }, this.getTimeout());
 
       this._onDataCallback = () => {
+        if (this.isStopping()) {
+          this._commandInFlight = false;
+          this._onDataCallback = null;
+          clearTimeout(timer);
+          reject(this._createStopError());
+          return;
+        }
         if (this.hasCompleteOutput(this.output)) {
           logger.agent(this.name, 'Complete output detected');
           // Small delay to capture any remaining output
@@ -299,7 +373,8 @@ class BaseAgent {
   _handleAdditionalPrompts(_s, _d, _o) { } // Hook for subclasses; killProcess: see below
   killProcess() { // Terminates the persistent PTY process
     if (this.shell) {
-      logger.agent(this.name, 'Killing persistent process');
+      const pidText = typeof this.shell.pid === 'number' ? ` (pid ${this.shell.pid})` : '';
+      logger.agent(this.name, `Killing persistent process${pidText}`);
       const shell = this.shell;
       for (const d of this._disposables) { d.dispose(); }
       this._disposables = []; this._onDataCallback = null; this.processReady = false;
@@ -315,6 +390,10 @@ class BaseAgent {
   }
 
   async _runCommandFresh() {
+    if (this.isStopping()) {
+      throw this._createStopError();
+    }
+
     return new Promise((resolve, reject) => {
       const timeout = this.getTimeout();
       let output = '';
@@ -342,6 +421,12 @@ class BaseAgent {
 
       const timer = setTimeout(() => {
         if (!completed) {
+          if (this.isStopping()) {
+            completed = true;
+            shell.kill();
+            reject(this._createStopError());
+            return;
+          }
           completed = true;
           logger.agent(this.name, 'Timeout after', logger.dim(`${timeout}ms`), ', output length:', logger.dim(`${output.length}`));
           if (output.length > 0) {
@@ -360,6 +445,16 @@ class BaseAgent {
 
       let trustCooldownUntil = 0;
       shell.onData((data) => {
+        if (this.isStopping()) {
+          if (!completed) {
+            completed = true;
+            clearTimeout(timer);
+            shell.kill();
+            reject(this._createStopError());
+          }
+          return;
+        }
+
         output += data;
 
         if (output.length <= data.length) {
@@ -403,6 +498,10 @@ class BaseAgent {
         if (!completed) {
           completed = true;
           clearTimeout(timer);
+          if (this.isStopping()) {
+            reject(this._createStopError());
+            return;
+          }
           logger.agent(this.name, 'Process exited with code', logger.dim(exitCode), ', output length:', logger.dim(`${output.length}`));
           if (output) {
             resolve(output);
@@ -422,6 +521,7 @@ class BaseAgent {
 
   /** Lightweight keepalive method to prevent session expiration. Subclasses can override. @returns {Promise<boolean>} True if keepalive succeeded */
   async keepalive() {
+    if (this.isStopping()) { return false; }
     if (this.freshProcess) { console.log(`[${this.name}] Keepalive skipped (fresh process mode)`); return true; }
     if (!this.shell || !this.processReady) { console.log(`[${this.name}] Keepalive: spawning process...`); await this.spawnProcess(); }
     if (this.shell) { console.log(`[${this.name}] Keepalive: sending ping...`); this.shell.write('\x1b'); return true; }

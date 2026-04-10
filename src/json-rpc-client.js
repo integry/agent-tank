@@ -44,6 +44,9 @@ class JsonRpcClient extends EventEmitter {
           env: this.options.env,
           stdio: ['pipe', 'pipe', 'pipe'],
         });
+        if (typeof this.process.pid === 'number') {
+          console.log(`[JsonRpcClient] Started ${this.command} (pid ${this.process.pid})`);
+        }
 
         this.process.on('error', (err) => {
           this.isConnected = false;

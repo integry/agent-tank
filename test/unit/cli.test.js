@@ -206,6 +206,20 @@ describe('CLI', () => {
       expect(result.stdout).toContain('agent-tank - Monitor LLM CLI usage limits');
     });
 
+    itWithPty('outputs version with --version', () => {
+      const result = runCli(['--version']);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.trim()).toBe('0.9.3');
+    });
+
+    itWithPty('outputs version with -v short flag', () => {
+      const result = runCli(['-v']);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.trim()).toBe('0.9.3');
+    });
+
     itWithPty('lists all available CLI options in help', () => {
       const result = runCli(['--help']);
 
@@ -220,6 +234,7 @@ describe('CLI', () => {
       expect(result.stdout).toContain('--fresh-process');
       expect(result.stdout).toContain('--claude-api');
       expect(result.stdout).toContain('--config');
+      expect(result.stdout).toContain('--version');
       expect(result.stdout).toContain('--auto-discover');
       expect(result.stdout).toContain('--auto-refresh');
       expect(result.stdout).toContain('--auto-refresh-interval');

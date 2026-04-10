@@ -1,5 +1,4 @@
 function installShutdownHandlers({ shutdown, processObj = process, stdin = process.stdin }) {
-  const onSigint = () => shutdown('SIGINT');
   const onSigterm = () => shutdown('SIGTERM');
   const onStdinData = (chunk) => {
     const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk || ''));
@@ -8,7 +7,6 @@ function installShutdownHandlers({ shutdown, processObj = process, stdin = proce
     }
   };
 
-  processObj.on('SIGINT', onSigint);
   processObj.on('SIGTERM', onSigterm);
 
   const shouldWatchStdin = stdin && stdin.isTTY && typeof stdin.on === 'function';
@@ -20,7 +18,6 @@ function installShutdownHandlers({ shutdown, processObj = process, stdin = proce
   }
 
   return () => {
-    processObj.off('SIGINT', onSigint);
     processObj.off('SIGTERM', onSigterm);
 
     if (shouldWatchStdin) {

@@ -4,6 +4,7 @@
 const { parseArgs } = require('node:util');
 const { AgentTank } = require('../src/index.js');
 const { installShutdownHandlers } = require('../src/shutdown-handler.js');
+const pkg = require('../package.json');
 
 const options = {
   claude: { type: 'boolean', default: false },
@@ -18,6 +19,7 @@ const options = {
   'fresh-process': { type: 'boolean', default: false },
   config: { type: 'string', short: 'c' },
   help: { type: 'boolean', short: 'h', default: false },
+  version: { type: 'boolean', short: 'v', default: false },
   'auto-discover': { type: 'boolean', default: true },
   'auto-refresh': { type: 'boolean', default: true },
   'auto-refresh-interval': { type: 'string', default: '60' },
@@ -57,6 +59,7 @@ Options:
   --auth-token <token>  API key for Bearer token auth
   --fresh-process       Spawn a new process per refresh (default: false)
   --config, -c          Path to config file (JSON)
+  --version, -v         Show version
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-mode <mode>         Refresh mode: none, interval, activity (default: activity)
@@ -124,6 +127,12 @@ HTTP Endpoints:
 async function main() {
   if (values.help) {
     printHelp();
+    process.exitCode = 0;
+    return;
+  }
+
+  if (values.version) {
+    process.stdout.write(`${pkg.version}\n`);
     process.exitCode = 0;
     return;
   }

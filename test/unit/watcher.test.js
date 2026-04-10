@@ -496,15 +496,23 @@ describe('AgentTank', () => {
     });
 
     it('kills agent processes during shutdown', () => {
-      const agentA = { killProcess: jest.fn() };
-      const agentB = { killProcess: jest.fn() };
+      const agentA = { requestStop: jest.fn(), killProcess: jest.fn() };
+      const agentB = { requestStop: jest.fn(), killProcess: jest.fn() };
       tank.agents.set('claude', agentA);
       tank.agents.set('gemini', agentB);
 
       tank.stop();
 
+      expect(agentA.requestStop).toHaveBeenCalled();
+      expect(agentB.requestStop).toHaveBeenCalled();
       expect(agentA.killProcess).toHaveBeenCalled();
       expect(agentB.killProcess).toHaveBeenCalled();
+    });
+
+    it('marks the tank as stopping during shutdown', () => {
+      tank.stop();
+
+      expect(tank.stopping).toBe(true);
     });
   });
 
