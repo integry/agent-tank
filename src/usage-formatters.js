@@ -49,10 +49,10 @@ function getStatusDotClass(value) {
 }
 
 function resetInfoItem(resetsIn, originalValue, cycleType, options = {}) {
-  const { isZero = false, paceData = null } = options;
+  const { paceData = null } = options;
   // Always render the wrapper so XHR updates can show/hide it dynamically.
-  // Hidden when at 0% (no useful info when at full capacity).
-  const hidden = isZero ? ' style="display:none"' : '';
+  // Hidden only when there is no reset information to show.
+  const hidden = resetsIn ? '' : ' style="display:none"';
   const tooltip = originalValue ? ` title="${originalValue}"` : '';
 
   // Calculate elapsed time progress bar

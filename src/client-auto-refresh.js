@@ -87,8 +87,8 @@ ${metricExtractors}
       if (modelContainer) {
         const resetWrapper = modelContainer.querySelector('.reset-info-wrapper');
         if (resetWrapper) {
-          if (isZero || !resetsIn) {
-            // Hide "Resets in" when at 0%
+          if (!resetsIn) {
+            // Hide reset info only when the backend provides no reset time
             resetWrapper.style.display = 'none';
           } else {
             resetWrapper.style.display = '';

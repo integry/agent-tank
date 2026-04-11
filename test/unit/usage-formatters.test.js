@@ -104,8 +104,14 @@ describe('UsageFormatters', () => {
       expect(result).toContain('time-progress-fill');
     });
 
-    it('hides wrapper when isZero is true', () => {
+    it('shows wrapper when usage is zero but reset info exists', () => {
       const result = resetInfoItem('5h', null, 'session', { isZero: true });
+
+      expect(result).not.toContain('style="display:none"');
+    });
+
+    it('hides wrapper when reset info is missing', () => {
+      const result = resetInfoItem('', null, 'session', { isZero: false });
 
       expect(result).toContain('style="display:none"');
     });

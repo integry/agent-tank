@@ -25,4 +25,29 @@ describe('statusPage', () => {
     expect(html).toContain('auth-notice');
     expect(html).not.toContain('Failed to sign in');
   });
+
+  it('shows reset info for zero-usage codex metrics when reset time exists', () => {
+    const html = statusPage({
+      codex: {
+        usage: {
+          model: 'gpt-5.4',
+          fiveHour: {
+            percentUsed: 0,
+            resetsAt: '03:00',
+            resetsIn: '3h 45m',
+            resetsInSeconds: 13500,
+          },
+        },
+        metadata: null,
+        lastUpdated: '2026-04-11T00:00:00.000Z',
+        error: null,
+        auth: null,
+        isRefreshing: false,
+        publicStatus: null,
+      },
+    });
+
+    expect(html).toContain('3h 45m');
+    expect(html).not.toContain('reset-info-wrapper" style="display:none"');
+  });
 });
