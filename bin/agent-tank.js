@@ -13,6 +13,7 @@ const options = {
   'claude-api': { type: 'boolean', default: false },
   port: { type: 'string', default: '3456' },
   host: { type: 'string' },
+  docker: { type: 'boolean', default: true },
   'auth-user': { type: 'string' },
   'auth-pass': { type: 'string' },
   'auth-token': { type: 'string' },
@@ -53,7 +54,8 @@ Options:
   --codex               Enable Codex monitoring
   --claude-api          Use direct Anthropic API for Claude usage (faster, 60s refresh)
   --port <port>         HTTP server port (default: 3456)
-  --host <host>         Bind address (default: 127.0.0.1)
+  --host <host>         Bind address (default: 127.0.0.1 + Docker bridge when available)
+  --docker              Enable Docker bridge bind when --host is omitted (default: true)
   --auth-user <user>    HTTP Basic Auth username
   --auth-pass <pass>    HTTP Basic Auth password
   --auth-token <token>  API key for Bearer token auth
@@ -83,6 +85,7 @@ Environment variables:
   AGENT_TANK_PASS       Basic auth password (overrides --auth-pass)
   AGENT_TANK_TOKEN      API key (overrides --auth-token)
   AGENT_TANK_HOST       Bind address (overrides --host)
+  AGENT_TANK_DOCKER     Enable/disable Docker bridge bind ("1"/"true" or "0"/"false")
   AGENT_TANK_FRESH_PROCESS  Use fresh process per refresh ("1" or "true")
   AGENT_TANK_CLAUDE_API Use direct Anthropic API for Claude usage ("1" or "true")
   AGENT_TANK_AUTO_REFRESH   Enable/disable background auto-refresh ("1" or "true" / "0" or "false")
@@ -98,6 +101,7 @@ Examples:
   agent-tank --claude --gemini        # Monitor specific agents
   agent-tank --port 8080              # Use custom port
   agent-tank --host 0.0.0.0           # Expose on all interfaces
+  agent-tank --no-docker              # Bind localhost only when host is omitted
   agent-tank --auth-user admin --auth-pass secret  # Enable basic auth
   agent-tank --auth-token mykey       # Enable API key auth
   agent-tank -c ./config.json         # Use config file
@@ -161,6 +165,13 @@ async function main() {
   };
 
   const host = process.env.AGENT_TANK_HOST || values.host || config.host;
+  const dockerEnv = process.env.AGENT_TANK_DOCKER;
+  let dockerAccess = values.docker;
+  if (dockerEnv !== undefined) {
+    dockerAccess = dockerEnv === '1' || dockerEnv === 'true';
+  } else if (config.dockerAccess !== undefined) {
+    dockerAccess = config.dockerAccess;
+  }
 
   const freshProcessEnv = process.env.AGENT_TANK_FRESH_PROCESS;
   const freshProcess = values['fresh-process'] ||
@@ -251,6 +262,7 @@ async function main() {
     autoDiscover: values['auto-discover'] && agents.length === 0,
     port: parseInt(values.port || config.port || '3456', 10),
     host,
+    dockerAccess,
     auth,
     freshProcess,
     claudeApi,

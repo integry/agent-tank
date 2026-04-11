@@ -135,9 +135,12 @@ function displayServerBanner(tank) {
   if (tank.auth.token) {
     logger.info('🔑 Authentication: API key');
   }
-  logger.server(`Listening on: ${tank.host}:${tank.port}`);
-  logger.server(`📄 Status page: http://${tank.host}:${tank.port}/`);
-  logger.server(`📡 JSON API:    http://${tank.host}:${tank.port}/status`);
+  const listenHosts = tank.listenHosts && tank.listenHosts.length > 0 ? tank.listenHosts : [tank.host];
+  logger.server(`Listening on: ${listenHosts.map(host => `${host}:${tank.port}`).join(', ')}`);
+  for (const host of listenHosts) {
+    logger.server(`📄 Status page: http://${host}:${tank.port}`);
+    logger.server(`📡 JSON API:    http://${host}:${tank.port}/status`);
+  }
   console.log('');
 }
 

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] - 2026-04-12
+
+### Added
+
+- Bind to the local Docker bridge by default when `--host` is omitted, so containers on the same host can reach Agent Tank without exposing it publicly
+- Add `--no-docker` and `AGENT_TANK_DOCKER` to disable Docker bridge binding explicitly
+
+### Fixed
+
+- Keep zero-usage reset times visible in the UI for Claude, Gemini, and Codex when reset information exists
+- Remove trailing slashes from startup banner status page URLs
+
 ## [0.9.3] - 2026-04-11
 
 ### Added

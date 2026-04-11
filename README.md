@@ -75,6 +75,14 @@ By default it starts on:
 http://127.0.0.1:3456
 ```
 
+If Docker is running with a detectable local bridge interface, Agent Tank also binds that bridge address by default so containers on the same host can reach it without exposing it on the public interface.
+
+Use this if you want localhost only:
+
+```bash
+agent-tank --no-docker
+```
+
 ### Most Common Commands
 
 ```bash
@@ -145,6 +153,12 @@ agent-tank --once --json
 agent-tank --host 0.0.0.0 --port 8080
 ```
 
+### Disable Docker Bridge Binding
+
+```bash
+agent-tank --no-docker
+```
+
 ### Disable Background Refresh
 
 ```bash
@@ -159,7 +173,8 @@ Options:
   --gemini              Enable Gemini monitoring
   --codex               Enable Codex monitoring
   --port <port>         HTTP server port (default: 3456)
-  --host <host>         Bind address (default: 127.0.0.1)
+  --host <host>         Bind address (default: 127.0.0.1 + Docker bridge when available)
+  --docker              Enable Docker bridge bind when --host is omitted (default: true)
   --auth-user <user>    HTTP Basic Auth username
   --auth-pass <pass>    HTTP Basic Auth password
   --auth-token <token>  API key for Bearer token auth
@@ -192,6 +207,7 @@ Environment variables override CLI flags and config file values.
 | `AGENT_TANK_PASS` | Basic auth password |
 | `AGENT_TANK_TOKEN` | Bearer token auth |
 | `AGENT_TANK_HOST` | Bind address |
+| `AGENT_TANK_DOCKER` | Enable/disable Docker bridge bind when `--host` is omitted |
 | `AGENT_TANK_FRESH_PROCESS` | Use fresh process per refresh (`1`/`true`) |
 | `AGENT_TANK_CLAUDE_API` | Use Claude API mode (`1`/`true`) |
 | `AGENT_TANK_AUTO_REFRESH` | Enable/disable auto-refresh |
@@ -210,6 +226,7 @@ Environment variables override CLI flags and config file values.
   "gemini": true,
   "codex": false,
   "port": 8080,
+  "dockerAccess": true,
   "claudeApi": false,
   "autoRefresh": {
     "mode": "activity",

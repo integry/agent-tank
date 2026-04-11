@@ -1,4 +1,5 @@
 const path = require('node:path');
+const os = require('node:os');
 const { ClaudeAgent } = require('./agents/claude.js');
 const { GeminiAgent } = require('./agents/gemini.js');
 const { CodexAgent } = require('./agents/codex.js');
@@ -22,6 +23,7 @@ const pkg = require(path.join(__dirname, '..', 'package.json'));
  * - 'activity': Activity-based polling (refreshes when log activity is detected)
  */
 const AUTO_REFRESH_MODES = ['none', 'interval', 'activity'];
+const DOCKER_INTERFACE_PATTERNS = [/^docker\d*$/i, /^br-/i, /^podman\d*$/i];
 
 function describeAgentShutdown(agent) {
   const parts = [];
@@ -41,10 +43,34 @@ function describeAgentShutdown(agent) {
   return parts.join(', ');
 }
 
+function isPrivateIpv4(address) {
+  return /^10\./.test(address) ||
+    /^192\.168\./.test(address) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(address);
+}
+
+function detectDockerHost(networkInterfaces = os.networkInterfaces()) {
+  for (const [name, addresses] of Object.entries(networkInterfaces)) {
+    if (!DOCKER_INTERFACE_PATTERNS.some(pattern => pattern.test(name))) {
+      continue;
+    }
+
+    for (const info of addresses || []) {
+      if (info && info.family === 'IPv4' && !info.internal && isPrivateIpv4(info.address)) {
+        return info.address;
+      }
+    }
+  }
+
+  return null;
+}
+
 class AgentTank {
   constructor(options = {}) {
     this.port = options.port || 3456;
     this.host = options.host || '127.0.0.1';
+    this.explicitHost = !!options.host;
+    this.dockerAccess = options.dockerAccess !== false;
     this.autoDiscover = options.autoDiscover !== false;
     this.requestedAgents = options.agents || null;
     this.freshProcess = options.freshProcess || false;
@@ -52,6 +78,8 @@ class AgentTank {
     this.auth = options.auth || {};
     this.agents = new Map();
     this.server = null;
+    this.servers = [];
+    this.listenHosts = [];
     this.publicStatus = {}; // Public API status from upstream providers
     this.skipServer = options.skipServer || false; // Skip HTTP server in one-shot mode
     this.lastRefreshedAt = null;
@@ -183,7 +211,7 @@ class AgentTank {
 
     // Start HTTP server immediately so it's available during agent loading (unless skipped)
     if (!this.skipServer) {
-      this.startServer();
+      await this.startServer();
     }
 
     // Pre-spawn persistent processes in parallel before sending commands
@@ -377,10 +405,62 @@ class AgentTank {
   }
 
   startServer() {
-    this.server = createServer(this);
-    this.server.listen(this.port, this.host, () => {
+    const hosts = this._resolveListenHosts();
+
+    return Promise.all(hosts.map(async (host, index) => {
+      const server = createServer(this);
+      try {
+        await new Promise((resolve, reject) => {
+          const onError = (err) => {
+            server.off('listening', onListening);
+            reject(err);
+          };
+          const onListening = () => {
+            server.off('error', onError);
+            resolve();
+          };
+          server.once('error', onError);
+          server.once('listening', onListening);
+          server.listen(this.port, host);
+        });
+        this.servers.push(server);
+        this.listenHosts.push(host);
+      } catch (err) {
+        try {
+          server.close();
+        } catch (_closeErr) {
+          // Ignore cleanup errors for failed listeners
+        }
+
+        if (index === 0) {
+          throw err;
+        }
+
+        logger.warn(`Could not bind optional host ${host}:${this.port} (${err.message})`);
+      }
+    })).then(() => {
+      this.server = this.servers[0] || null;
+      if (this.listenHosts.length > 0) {
+        this.host = this.listenHosts[0];
+      }
       displayServerBanner(this);
     });
+  }
+
+  _resolveListenHosts(detectHost = detectDockerHost) {
+    if (this.explicitHost) {
+      return [this.host];
+    }
+
+    const hosts = ['127.0.0.1'];
+    if (this.dockerAccess) {
+      const dockerHost = detectHost();
+      if (dockerHost && dockerHost !== '127.0.0.1') {
+        hosts.push(dockerHost);
+      }
+    }
+
+    return hosts;
   }
 
   stop() {
@@ -395,10 +475,15 @@ class AgentTank {
       }
       agent.killProcess();
     }
-    if (this.server) {
+    if (this.servers.length > 0) {
       console.log('[Shutdown] Closing HTTP server');
-      this.server.close();
+      for (const server of this.servers) {
+        server.close();
+      }
     }
+    this.server = null;
+    this.servers = [];
+    this.listenHosts = [];
   }
 
   /** Get keepalive status. @returns {Object|null} Keepalive manager status or null if not initialized */
@@ -419,4 +504,4 @@ class AgentTank {
   }
 }
 
-module.exports = { AgentTank, AUTO_REFRESH_MODES };
+module.exports = { AgentTank, AUTO_REFRESH_MODES, detectDockerHost };

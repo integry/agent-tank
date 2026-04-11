@@ -10,7 +10,7 @@ jest.mock('node-pty', () => ({
   spawn: jest.fn()
 }), { virtual: true });
 
-const { AgentTank, AUTO_REFRESH_MODES } = require('../../src/index.js');
+const { AgentTank, AUTO_REFRESH_MODES, detectDockerHost } = require('../../src/index.js');
 
 describe('AgentTank', () => {
   describe('constructor', () => {
@@ -27,6 +27,10 @@ describe('AgentTank', () => {
 
       it('sets default host to 127.0.0.1', () => {
         expect(tank.host).toBe('127.0.0.1');
+      });
+
+      it('enables docker bridge binding by default', () => {
+        expect(tank.dockerAccess).toBe(true);
       });
 
       it('enables auto-discover by default', () => {
@@ -108,6 +112,12 @@ describe('AgentTank', () => {
       it('accepts custom host', () => {
         const tank = new AgentTank({ host: '0.0.0.0' });
         expect(tank.host).toBe('0.0.0.0');
+        expect(tank.explicitHost).toBe(true);
+      });
+
+      it('can disable docker bridge binding', () => {
+        const tank = new AgentTank({ dockerAccess: false });
+        expect(tank.dockerAccess).toBe(false);
       });
 
       it('accepts specific agents list', () => {
@@ -514,6 +524,40 @@ describe('AgentTank', () => {
 
       expect(tank.stopping).toBe(true);
     });
+
+    it('closes all listening servers during shutdown', () => {
+      const serverA = { close: jest.fn() };
+      const serverB = { close: jest.fn() };
+      tank.servers = [serverA, serverB];
+      tank.server = serverA;
+
+      tank.stop();
+
+      expect(serverA.close).toHaveBeenCalled();
+      expect(serverB.close).toHaveBeenCalled();
+      expect(tank.server).toBeNull();
+      expect(tank.servers).toEqual([]);
+    });
+  });
+
+  describe('listen host resolution', () => {
+    it('binds localhost and docker bridge by default when detected', () => {
+      const tank = new AgentTank();
+
+      expect(tank._resolveListenHosts(() => '172.17.0.1')).toEqual(['127.0.0.1', '172.17.0.1']);
+    });
+
+    it('binds localhost only when docker bridge binding is disabled', () => {
+      const tank = new AgentTank({ dockerAccess: false });
+
+      expect(tank._resolveListenHosts(() => '172.17.0.1')).toEqual(['127.0.0.1']);
+    });
+
+    it('uses only the explicit host when provided', () => {
+      const tank = new AgentTank({ host: '0.0.0.0' });
+
+      expect(tank._resolveListenHosts(() => '172.17.0.1')).toEqual(['0.0.0.0']);
+    });
   });
 
   describe('getKeepaliveStatus', () => {
@@ -631,5 +675,25 @@ describe('AgentTank', () => {
     it('has exactly 3 modes', () => {
       expect(AUTO_REFRESH_MODES).toHaveLength(3);
     });
+  });
+});
+
+describe('detectDockerHost', () => {
+  it('returns docker bridge IPv4 address when docker interface is present', () => {
+    const host = detectDockerHost({
+      lo: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
+      docker0: [{ address: '172.17.0.1', family: 'IPv4', internal: false }],
+    });
+
+    expect(host).toBe('172.17.0.1');
+  });
+
+  it('returns null when no matching docker interface exists', () => {
+    const host = detectDockerHost({
+      lo: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
+      eth0: [{ address: '192.168.1.10', family: 'IPv4', internal: false }],
+    });
+
+    expect(host).toBeNull();
   });
 });
