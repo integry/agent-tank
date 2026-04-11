@@ -2,47 +2,158 @@
 
 ![Agent Tank Web UI preview](https://raw.githubusercontent.com/integry/agent-tank/main/media/www-preview.png)
 
-Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via a simple HTTP API.
+Agent Tank is a local dashboard and HTTP API for monitoring usage limits in AI coding agent CLIs.
 
-> **Note:** Agent Tank is designed for **AI coding agent subscriptions** such as Claude Code Pro/Max, Google Gemini CLI (with Advanced/Max plans), and ChatGPT Codex (with Plus/Pro plans). It tracks **active session and rate limit usage**—not API key consumption or pay-per-use billing. If you're using API keys with pay-as-you-go pricing, this tool won't help you track costs; check your provider's billing dashboard instead.
+It supports:
 
-> **How Agent Tank gets the data:** Agent Tank reads usage data straight from the local coding agent CLIs you already use. It launches the installed tools in a PTY, runs their built-in usage commands such as Claude Code `/usage`, Gemini `/stats`, and Codex `/status`, then parses the terminal output into a unified HTTP API and web dashboard. It does not scrape provider websites or rely on browser sessions.
+- Claude Code
+- Gemini CLI
+- OpenAI Codex
 
-## Features
+## How It Gets the Data
 
-- **Privacy-first** - Runs entirely locally with no external data transmission
-- **Auto-discovery** - Automatically detects installed LLM CLI tools
-- **HTTP API** - Query usage limits via REST endpoints
-- **Unified Web UI** - All-in-one dashboard showing Claude, Gemini, and Codex usage at a glance
-- **Instant Tab Tracking** - Pin the dashboard to your browser tab and see live usage updates via favicon and title changes
-- **Lightweight** - Single dependency (node-pty)
-- **Multi-agent** - Monitor Claude, Gemini, and Codex simultaneously
-- **Secure by design** - No browser cookies, web scraping, or credential access
+This is the part that matters.
 
-## Usage
+Agent Tank reads usage directly from the local CLI tools you already use. It launches the installed CLIs locally, runs their built-in usage commands, and parses the output into a unified web UI and JSON API.
 
-### Basic Usage
+- Claude: runs `/usage`
+- Gemini: runs `/stats`
+- Codex: prefers JSON-RPC `account/rateLimits/read`, falls back to `/status`
+
+What it does not do:
+
+- It does not scrape provider websites
+- It does not read browser cookies
+- It does not depend on a logged-in browser session
+- It does not MITM or inspect your network traffic
+- It does not send your usage data to a remote service
+
+If you have seen other tools built around log-file heuristics or browser-session scraping, Agent Tank is deliberately not that.
+
+## Who It Is For
+
+Agent Tank is meant for subscription-based coding agent products where the CLI itself exposes session or limit information.
+
+Examples:
+
+- Claude Code Pro / Max
+- Gemini CLI with supported subscription plans
+- ChatGPT Codex with supported plans
+
+It is not for:
+
+- pay-as-you-go API key billing
+- cost tracking for API requests
+- provider billing dashboards
+
+If you need API spend tracking, use the provider’s billing tools instead.
+
+## Quick Start
+
+### Install
 
 ```bash
-# Auto-discover and monitor all available LLM agents
-agent-tank
+npm install -g agent-tank
+```
 
-# Monitor specific agents only
+Or run it directly:
+
+```bash
+npx agent-tank
+```
+
+### First Run
+
+```bash
+# Auto-discover installed agents and start the web UI + API
+agent-tank
+```
+
+By default it starts on:
+
+```text
+http://127.0.0.1:3456
+```
+
+### Most Common Commands
+
+```bash
+# Monitor only specific agents
 agent-tank --claude --gemini
 
-# Use a custom port (default: 3456)
+# Use a custom port
 agent-tank --port 8080
 
-# Fetch usage once and exit (no HTTP server)
-agent-tank --once
+# Fetch once and print JSON
+agent-tank --once --json
 
-# Output pure JSON for scripting/piping
+# Show the installed Agent Tank version
+agent-tank --version
+```
+
+## What You Get
+
+### Web UI
+
+- Single-page dashboard for all supported agents
+- Live refresh
+- Reset countdowns
+- Pace indicators
+- Browser-tab tracking via title and favicon updates
+
+### HTTP API
+
+- `GET /status`
+- `GET /status/:agent`
+- `POST /refresh`
+- `POST /refresh/:agent`
+- `GET /config`
+- `GET /history`
+- `GET /history/:agent`
+
+### Supported Metrics
+
+| Agent | Method | Metrics |
+|---|---|---|
+| Claude | PTY `/usage` or Anthropic OAuth API | Current session, weekly all-models, weekly Sonnet-only |
+| Gemini | PTY `/stats` | Per-model usage and reset windows |
+| Codex | JSON-RPC preferred, PTY fallback | 5-hour limits, weekly limits, model/account info |
+
+## Basic Usage
+
+### Auto-Discover Everything
+
+```bash
+agent-tank
+```
+
+### Monitor Specific Agents
+
+```bash
+agent-tank --claude --codex
+```
+
+### One-Shot Scripting Mode
+
+```bash
 agent-tank --once --json
 ```
 
-### Command Line Options
+### Bind to a Different Host or Port
 
+```bash
+agent-tank --host 0.0.0.0 --port 8080
 ```
+
+### Disable Background Refresh
+
+```bash
+agent-tank --auto-refresh-mode none
+```
+
+## Command Line Options
+
+```text
 Options:
   --claude              Enable Claude monitoring
   --gemini              Enable Gemini monitoring
@@ -55,6 +166,7 @@ Options:
   --fresh-process       Spawn a new process per refresh (default: false)
   --claude-api          Use direct Anthropic API for Claude usage (faster, 60s refresh)
   --config, -c          Path to config file (JSON)
+  --version, -v         Show version
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-mode <mode>         Refresh mode: none, interval, activity (default: activity)
@@ -68,29 +180,29 @@ Options:
   --help, -h            Show this help message
 ```
 
+## Configuration
+
 ### Environment Variables
 
-Environment variables override CLI flags and config file settings:
+Environment variables override CLI flags and config file values.
 
 | Variable | Description |
-|----------|-------------|
-| `AGENT_TANK_USER` | Basic auth username (overrides `--auth-user`) |
-| `AGENT_TANK_PASS` | Basic auth password (overrides `--auth-pass`) |
-| `AGENT_TANK_TOKEN` | API key (overrides `--auth-token`) |
-| `AGENT_TANK_HOST` | Bind address (overrides `--host`) |
-| `AGENT_TANK_FRESH_PROCESS` | Use fresh process per refresh (`1` or `true`) |
-| `AGENT_TANK_CLAUDE_API` | Use direct Anthropic API for Claude usage (`1` or `true`) |
-| `AGENT_TANK_AUTO_REFRESH` | Enable/disable background auto-refresh (`1`/`true` or `0`/`false`) |
-| `AGENT_TANK_AUTO_REFRESH_MODE` | Refresh mode: `none`, `interval`, or `activity` (default: `activity`) |
+|---|---|
+| `AGENT_TANK_USER` | Basic auth username |
+| `AGENT_TANK_PASS` | Basic auth password |
+| `AGENT_TANK_TOKEN` | Bearer token auth |
+| `AGENT_TANK_HOST` | Bind address |
+| `AGENT_TANK_FRESH_PROCESS` | Use fresh process per refresh (`1`/`true`) |
+| `AGENT_TANK_CLAUDE_API` | Use Claude API mode (`1`/`true`) |
+| `AGENT_TANK_AUTO_REFRESH` | Enable/disable auto-refresh |
+| `AGENT_TANK_AUTO_REFRESH_MODE` | `none`, `interval`, or `activity` |
 | `AGENT_TANK_AUTO_REFRESH_INTERVAL` | Auto-refresh interval in seconds |
-| `AGENT_TANK_ACTIVITY_DEBOUNCE` | Activity debounce interval in milliseconds (default: 5000) |
-| `AGENT_TANK_KEEPALIVE` | Enable/disable session keepalive (`1`/`true` or `0`/`false`) |
-| `AGENT_TANK_KEEPALIVE_INTERVAL` | Session keepalive interval in seconds (default: 300) |
-| `AGENT_TANK_HISTORY_RETENTION_DAYS` | Days to retain usage history (default: 14) |
+| `AGENT_TANK_ACTIVITY_DEBOUNCE` | Activity debounce interval in milliseconds |
+| `AGENT_TANK_KEEPALIVE` | Enable/disable keepalive |
+| `AGENT_TANK_KEEPALIVE_INTERVAL` | Keepalive interval in seconds |
+| `AGENT_TANK_HISTORY_RETENTION_DAYS` | History retention window |
 
-### Configuration File
-
-You can use a JSON configuration file:
+### Config File
 
 ```json
 {
@@ -98,192 +210,26 @@ You can use a JSON configuration file:
   "gemini": true,
   "codex": false,
   "port": 8080,
+  "claudeApi": false,
+  "autoRefresh": {
+    "mode": "activity",
+    "interval": 60,
+    "activityDebounce": 5000
+  },
+  "keepalive": {
+    "enabled": true,
+    "interval": 300
+  },
   "history": {
-    "retentionDays": 7
+    "retentionDays": 14
   }
 }
 ```
+
+Run with:
 
 ```bash
 agent-tank -c config.json
-```
-
-## Claude API Mode
-
-By default, Claude usage data is fetched by spawning a PTY session and running the `/usage` command. With `--claude-api`, Agent Tank fetches usage directly from the Anthropic OAuth API instead, which is faster and allows a 60-second refresh interval (vs 10 minutes for PTY).
-
-```bash
-agent-tank --claude --claude-api
-```
-
-### How It Works
-
-- Uses the OAuth token from `~/.claude/.credentials.json` (the same credentials Claude Code uses)
-- Calls the `api.anthropic.com/api/oauth/usage` endpoint with the `anthropic-beta: oauth-2025-04-20` header
-- Automatically refreshes expired tokens using the OAuth refresh token flow
-- Falls back to PTY mode if the API call fails
-
-### Configuration
-
-```json
-{
-  "claude": true,
-  "claudeApi": true
-}
-```
-
-Or via environment variable:
-
-```bash
-AGENT_TANK_CLAUDE_API=1 agent-tank --claude
-```
-
-## Activity-Based Polling
-
-Agent Tank supports intelligent activity-based polling that monitors local log directories for LLM CLI activity. Instead of polling on a fixed interval (which can waste resources during idle periods), activity mode only triggers usage refreshes when you're actively using the CLI tools.
-
-### How It Works
-
-1. **Log Directory Monitoring**: Agent Tank watches the following directories for file changes:
-   - Claude: `~/.config/claude/projects/`, `~/.claude/`
-   - Codex: `~/.codex/sessions/`, `~/.codex/`
-   - Gemini: `~/.config/gemini/`, `~/.gemini/`
-
-2. **Debounced Detection**: When activity is detected, a configurable debounce timer starts. This prevents excessive refreshes during bursts of activity.
-
-3. **On-Demand Refresh Cycles**: After the debounce period, a refresh cycle begins and continues at the configured interval while activity is ongoing.
-
-4. **Idle State**: When no more activity is detected, polling stops to conserve resources.
-
-### Auto-Refresh Modes
-
-Agent Tank supports three refresh modes:
-
-| Mode | Description |
-|------|-------------|
-| `activity` | (Default) Monitors log directories and refreshes when CLI activity is detected |
-| `interval` | Traditional interval-based polling at fixed intervals |
-| `none` | No automatic refresh; manual refresh only via `POST /refresh` |
-
-### Configuration
-
-```bash
-# Use activity-based polling (default)
-agent-tank
-
-# Use activity mode with custom debounce (wait 10 seconds after activity)
-agent-tank --activity-debounce 10000
-
-# Use traditional interval-based polling
-agent-tank --auto-refresh-mode interval
-
-# Disable all auto-refresh (manual only)
-agent-tank --auto-refresh-mode none
-
-# Via environment variables
-AGENT_TANK_AUTO_REFRESH_MODE=activity agent-tank
-AGENT_TANK_ACTIVITY_DEBOUNCE=10000 agent-tank
-```
-
-### Notes
-
-- Activity mode automatically falls back to interval mode if no log directories are found
-- The debounce interval is specified in milliseconds (default: 5000ms = 5 seconds)
-- During active usage, refreshes occur at the `--auto-refresh-interval` rate (default: 60 seconds)
-- Activity mode is disabled in one-shot mode (`--once`)
-
-## Session Keepalive
-
-Agent Tank includes an automatic session keepalive feature that prevents LLM CLI sessions from expiring due to inactivity. This is especially useful for Claude and Codex, which have session timeouts that require periodic activity.
-
-### How It Works
-
-The keepalive manager runs in the background and periodically sends lightweight "ping" commands to each agent's PTY session. This maintains the connection without triggering API calls or affecting rate limits.
-
-### Configuration
-
-```bash
-# Use default keepalive (every 5 minutes)
-agent-tank
-
-# Custom keepalive interval (every 10 minutes)
-agent-tank --keepalive-interval 600
-
-# Disable keepalive
-agent-tank --no-keepalive
-
-# Via environment variable
-AGENT_TANK_KEEPALIVE_INTERVAL=600 agent-tank
-```
-
-### Notes
-
-- Keepalive is automatically disabled in fresh process mode (`--fresh-process`) since there are no persistent sessions to maintain
-- Keepalive is also disabled in one-shot mode (`--once`)
-- The feature only affects PTY-based sessions; JSON-RPC mode (used by Codex when available) doesn't require keepalive
-
-## Usage History & Pace Evaluation
-
-Agent Tank automatically tracks usage history and evaluates whether you're burning through your rate limits faster than expected.
-
-### Features
-
-- **Historical Snapshots**: Usage percentages are stored in `~/.agent-tank/history.json` with timestamps
-- **Automatic Pruning**: Records older than the retention period (default: 14 days) are automatically removed
-- **Pace Evaluation**: Each metric includes a `paceEval` object that calculates:
-  - `expectedPercent`: What your usage should be based on linear pace
-  - `isBurningFast`: Whether you're using faster than the 1.2x threshold
-  - `etaSeconds`: Estimated seconds until you hit 100% (if burning fast)
-  - `deltaPercent`: Difference between actual and expected usage
-
-### Configuration
-
-```bash
-# Keep 7 days of history instead of default 14
-agent-tank --history-retention-days 7
-
-# Via environment variable
-AGENT_TANK_HISTORY_RETENTION_DAYS=7 agent-tank
-```
-
-### API Endpoints
-
-- `GET /history` - Get history statistics (total records, per-agent counts, date ranges)
-- `GET /history/:agent` - Get full history for a specific agent
-
-### Example Pace Evaluation Data
-
-When an agent is burning faster than expected, the `paceEval` object is attached to each metric:
-
-```json
-{
-  "session": {
-    "percent": 60,
-    "resetsInSeconds": 9000,
-    "paceEval": {
-      "expectedPercent": 50,
-      "isBurningFast": true,
-      "etaSeconds": 6000,
-      "paceRatio": 1.2,
-      "elapsedPercent": 50,
-      "deltaPercent": 10
-    }
-  }
-}
-```
-
-This example shows: 50% of the 5-hour session has elapsed, but 60% of usage is consumed. At this pace (1.2x), you'll hit 100% in approximately 6000 seconds (1h 40m).
-
-## Installation
-
-```bash
-npm install -g agent-tank
-```
-
-Or run directly with npx:
-
-```bash
-npx agent-tank
 ```
 
 ## HTTP API
@@ -291,19 +237,17 @@ npx agent-tank
 ### Endpoints
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+|---|---|---|
 | GET | `/` | HTML status page |
 | GET | `/status` | JSON status for all agents |
-| GET | `/status/:agent` | JSON status for specific agent |
-| GET | `/config` | Auto-refresh and history configuration (JSON) |
-| GET | `/history` | Usage history statistics (JSON) |
-| GET | `/history/:agent` | Usage history for specific agent (JSON) |
+| GET | `/status/:agent` | JSON status for one agent |
+| GET | `/config` | Auto-refresh and history config |
+| GET | `/history` | History summary |
+| GET | `/history/:agent` | History for one agent |
 | POST | `/refresh` | Refresh all agents |
-| POST | `/refresh/:agent` | Refresh specific agent |
+| POST | `/refresh/:agent` | Refresh one agent |
 
-### Example Responses
-
-#### GET /status
+### Example `GET /status`
 
 ```json
 {
@@ -323,19 +267,9 @@ npx agent-tank
         "resetsAt": "Mar 13, 3am (Europe/London)",
         "resetsIn": "4d 5h",
         "resetsInSeconds": 364364
-      },
-      "weeklySonnet": {
-        "label": "Current week (Sonnet only)",
-        "percent": 5,
-        "resetsAt": "Mar 13, 10am (Europe/London)",
-        "resetsIn": "4d 12h",
-        "resetsInSeconds": 389564
       }
     },
     "metadata": {
-      "sessionId": "0b34aa59-...",
-      "cwd": "/tmp",
-      "organization": "Your Organization",
       "email": "user@example.com",
       "version": "2.1.71"
     },
@@ -343,94 +277,25 @@ npx agent-tank
     "error": null,
     "isRefreshing": false
   },
-  "gemini": {
-    "name": "gemini",
-    "usage": {
-      "models": [
-        {
-          "model": "gemini-2.5-flash",
-          "usageLeft": 100,
-          "resetsIn": "24h",
-          "percentUsed": 0,
-          "resetsInSeconds": 86400
-        },
-        {
-          "model": "gemini-2.5-pro",
-          "usageLeft": 99.5,
-          "resetsIn": "12h 16m",
-          "percentUsed": 0.5,
-          "resetsInSeconds": 44160
-        }
-      ]
-    },
-    "metadata": {
-      "version": "0.24.5",
-      "email": "user@example.com",
-      "authMethod": "OAuth",
-      "model": "auto-gemini-2.5",
-      "os": "linux",
-      "updateAvailable": {
-        "current": "0.24.5",
-        "latest": "0.32.1"
-      }
-    },
-    "lastUpdated": "2026-03-08T21:47:14.138Z",
-    "error": null,
-    "isRefreshing": false
-  },
   "codex": {
     "name": "codex",
     "usage": {
       "fiveHour": {
-        "percentLeft": 100,
-        "resetsAt": "02:44 on 9 Mar",
-        "label": "5h limit",
         "percentUsed": 0,
+        "resetsAt": "02:44 on 9 Mar",
         "resetsIn": "4h 56m",
         "resetsInSeconds": 17807
       },
       "weekly": {
-        "percentLeft": 100,
-        "resetsAt": "21:44 on 15 Mar",
-        "label": "Weekly limit",
         "percentUsed": 0,
+        "resetsAt": "21:44 on 15 Mar",
         "resetsIn": "6d 23h",
         "resetsInSeconds": 604607
-      },
-      "version": {
-        "current": "0.107.0",
-        "latest": "0.111.0"
-      },
-      "modelLimits": [
-        {
-          "name": "GPT-5.3-Codex-Spark",
-          "fiveHour": {
-            "percentLeft": 100,
-            "resetsAt": "02:46 on 9 Mar",
-            "label": "5h limit",
-            "percentUsed": 0,
-            "resetsIn": "4h 58m",
-            "resetsInSeconds": 17927
-          },
-          "weekly": {
-            "percentLeft": 100,
-            "resetsAt": "21:46 on 15 Mar",
-            "label": "Weekly limit",
-            "percentUsed": 0,
-            "resetsIn": "6d 23h",
-            "resetsInSeconds": 604727
-          }
-        }
-      ],
-      "model": "gpt-5.3-codex",
-      "account": "user@example.com"
+      }
     },
     "metadata": {
-      "directory": "/tmp",
-      "sessionId": "019ccf68-...",
-      "collaborationMode": "Default",
-      "model": "gpt-5.3-codex",
-      "email": "user@example.com"
+      "email": "user@example.com",
+      "model": "gpt-5.3-codex"
     },
     "lastUpdated": "2026-03-08T21:47:12.648Z",
     "error": null,
@@ -439,220 +304,206 @@ npx agent-tank
 }
 ```
 
-#### GET /status/claude
+## Claude API Mode
 
-```json
-{
-  "name": "claude",
-  "usage": {
-    "session": {
-      "label": "Current session",
-      "percent": 42,
-      "resetsAt": "10pm (Europe/London)",
-      "resetsIn": "12m",
-      "resetsInSeconds": 764
-    },
-    "weeklyAll": {
-      "label": "Current week (all models)",
-      "percent": 31,
-      "resetsAt": "Mar 13, 3am (Europe/London)",
-      "resetsIn": "4d 5h",
-      "resetsInSeconds": 364364
-    },
-    "weeklySonnet": {
-      "label": "Current week (Sonnet only)",
-      "percent": 5,
-      "resetsAt": "Mar 13, 10am (Europe/London)",
-      "resetsIn": "4d 12h",
-      "resetsInSeconds": 389564
-    }
-  },
-  "metadata": {
-    "sessionId": "0b34aa59-...",
-    "cwd": "/tmp",
-    "organization": "Your Organization",
-    "email": "user@example.com",
-    "version": "2.1.71"
-  },
-  "lastUpdated": "2026-03-08T21:47:15.090Z",
-  "error": null,
-  "isRefreshing": false
-}
+By default, Claude usage is collected via PTY by running `/usage`.
+
+With `--claude-api`, Agent Tank uses the Anthropic OAuth usage API instead. This is usually faster and supports a shorter refresh interval.
+
+```bash
+agent-tank --claude --claude-api
 ```
 
-## Developer & Advanced Setup
+How it works:
 
-### Prerequisites
+- reads the same Claude OAuth credentials the CLI already uses
+- calls `https://api.anthropic.com/api/oauth/usage`
+- refreshes expired OAuth tokens when needed
+- falls back to PTY mode if the API path fails
 
-#### Build Requirements
+You can also enable it with:
 
-The `node-pty` dependency requires native compilation. You'll need:
+```bash
+AGENT_TANK_CLAUDE_API=1 agent-tank --claude
+```
 
-- **Python 3.8+** (Python 3.11 recommended)
-- **C++ build tools** (gcc, g++, make)
-- **Node.js development headers**
+## Auto-Refresh Modes
 
-##### Linux (Ubuntu/Debian)
+Agent Tank supports three refresh strategies:
+
+| Mode | Description |
+|---|---|
+| `activity` | Default. Watches known local agent directories and refreshes when activity is detected |
+| `interval` | Refreshes on a fixed timer |
+| `none` | No background refresh. Use manual refresh only |
+
+Examples:
+
+```bash
+# Default mode
+agent-tank
+
+# Interval polling
+agent-tank --auto-refresh-mode interval
+
+# Manual-only mode
+agent-tank --auto-refresh-mode none
+
+# Longer activity debounce
+agent-tank --activity-debounce 10000
+```
+
+### Activity-Based Polling
+
+In activity mode, Agent Tank watches common local directories:
+
+- Claude: `~/.config/claude/projects/`, `~/.claude/`
+- Codex: `~/.codex/sessions/`, `~/.codex/`
+- Gemini: `~/.config/gemini/`, `~/.gemini/`
+
+If no suitable directories are found, it falls back to interval mode.
+
+## Session Keepalive
+
+Keepalive helps persistent PTY-backed sessions stay warm.
+
+```bash
+# Default keepalive
+agent-tank
+
+# Every 10 minutes
+agent-tank --keepalive-interval 600
+
+# Disable keepalive
+agent-tank --no-keepalive
+```
+
+Notes:
+
+- disabled automatically in `--fresh-process`
+- disabled automatically in `--once`
+- not needed for Codex JSON-RPC mode
+
+## Usage History and Pace
+
+Agent Tank stores usage snapshots and calculates whether a metric is being consumed faster than the time window would suggest.
+
+You can configure retention:
+
+```bash
+agent-tank --history-retention-days 7
+```
+
+History endpoints:
+
+- `GET /history`
+- `GET /history/:agent`
+
+## Installation Notes
+
+### Build Requirements
+
+`node-pty` requires native compilation support.
+
+You need:
+
+- Python 3.8+
+- C/C++ build tools
+- Node.js development headers
+
+#### Ubuntu / Debian
+
 ```bash
 sudo apt-get install python3.11 python3.11-dev build-essential nodejs-dev
 ```
 
-##### Linux (Fedora/RHEL/CentOS)
+#### Fedora / RHEL / CentOS
+
 ```bash
 sudo dnf install python3.11 python3.11-devel gcc gcc-c++ make nodejs-devel
 ```
 
-##### Linux (openSUSE)
+#### openSUSE
+
 ```bash
 sudo zypper install python311 python311-devel gcc gcc-c++ make nodejs20-devel
 ```
 
-##### macOS
-```bash
-# Install Xcode Command Line Tools if not already installed
-xcode-select --install
+#### macOS
 
-# Install Python 3.11
+```bash
+xcode-select --install
 brew install python@3.11
 ```
 
-##### Windows
+#### Windows
+
 - Install [Python 3.11+](https://www.python.org/downloads/)
 - Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022)
 
-#### LLM CLI Tools
+## CLI Requirements
 
-You need at least one of these CLI tools installed and authenticated:
+You need at least one supported CLI installed and authenticated.
 
-- [Claude Code](https://claude.ai/download) (`claude`) - **Version 2.0+ required** for `/usage` command support
-- [Gemini CLI](https://github.com/anthropics/gemini-cli) (`gemini`) - **Version 0.24.5+ required** for `/stats` command support
-- [OpenAI Codex](https://platform.openai.com/docs/codex) (`codex`)
+- [Claude Code](https://claude.ai/download) as `claude`
+  - Version 2.0+ required for `/usage`
+- Gemini CLI as `gemini`
+  - Version 0.24.5+ required for `/stats`
+- OpenAI Codex as `codex`
 
-**Version Requirements:**
+Useful checks:
 
-**Claude Code:** Version 1.x does not support the `/usage` command.
 ```bash
-# Check version
 claude --version
-
-# Update to latest
-npm update -g @anthropic-ai/claude-code
-```
-
-**Gemini CLI:** Version 0.24.4 and below do not support the `/stats` command properly.
-```bash
-# Check version
 gemini --version
-
-# Update to latest
-npm update -g gemini
+codex --version
 ```
 
-### Programmatic Usage
+## Programmatic Usage
 
 ```javascript
 const { AgentTank } = require('agent-tank');
 
 const watcher = new AgentTank({
-  agents: ['claude', 'gemini'], // or null for auto-discover
+  agents: ['claude', 'gemini'],
   port: 3456,
   autoDiscover: true
 });
 
 await watcher.start();
 
-// Get status programmatically
 const status = watcher.getStatus();
-console.log(status.claude.usage);
+console.log(status);
 
-// Refresh a specific agent
 await watcher.refreshAgent('claude');
 
-// Stop the server
 watcher.stop();
 ```
 
-### How It Works: Privacy-First Local Execution
-
-Agent Tank is designed with privacy and security as core principles. Understanding how it collects usage data is essential for users evaluating the tool's security posture.
-
-#### Local Execution Architecture
-
-The tool operates entirely on your local machine using two different approaches depending on the CLI tool's capabilities:
-
-**JSON-RPC Mode (Codex)**
-
-For the Codex CLI, Agent Tank uses a structured JSON-RPC protocol when available:
-
-1. **Starts the app-server** - Launches `codex -s read-only -a untrusted app-server`
-2. **Sends JSON-RPC requests** - Calls `account/rateLimits/read` via stdin
-3. **Receives structured data** - Parses JSON responses with precise rate limit information
-4. **Falls back to PTY** - Automatically uses PTY mode if JSON-RPC is unavailable (older CLI versions)
-
-This approach provides more reliable data parsing and is the preferred method for Codex.
-
-**PTY-Based Mode (Claude, Gemini, Codex fallback)**
-
-For other CLI tools (and as a fallback for Codex), Agent Tank spawns instances within a pseudo-terminal (PTY). This approach is functionally equivalent to you opening a terminal window and typing commands yourself:
-
-1. **Spawns a local PTY** - Creates a pseudo-terminal session on your machine
-2. **Launches the CLI tool** - Starts the authenticated CLI (e.g., `claude`, `gemini`, or `codex`)
-3. **Sends usage commands** - Types the appropriate command (`/usage`, `/stats`, or `/status`)
-4. **Parses the output** - Reads and structures the text response from the terminal
-5. **Exposes via local HTTP** - Makes the parsed data available through a localhost API
-
-#### What Agent Tank Does NOT Do
-
-To be explicit about what this tool avoids:
-
-- **No browser cookie access** - Agent Tank never reads, parses, or transmits browser cookies
-- **No web scraping** - The tool does not access web interfaces or scrape HTML pages
-- **No credential extraction** - Your API keys, tokens, or passwords are never accessed or stored
-- **No network interception** - There is no proxy, MITM, or traffic inspection involved
-- **No external data transmission** - Usage data stays on your machine; nothing is sent to external servers
-
-#### Why This Approach?
-
-LLM usage data is sensitive—it can reveal work patterns, subscription tiers, and usage intensity. By operating through local CLI tools that you've already authenticated, Agent Tank inherits the security model you've already established with each provider. The tool acts as a local automation layer, not a data collection service.
-
-#### Supported Commands
-
-| Agent | Method | Command/RPC | Output |
-|-------|--------|-------------|--------|
-| Claude | PTY | `/usage` | Session %, Weekly % |
-| Gemini | PTY | `/stats` | Model-specific usage % |
-| Codex | JSON-RPC | `account/rateLimits/read` | 5h limit %, Weekly % |
-| Codex | PTY (fallback) | `/status` | 5h limit %, Weekly % |
-
 ## Troubleshooting
 
-### Installation fails with "gyp ERR!"
+### `gyp ERR!` during install
 
-This indicates missing build dependencies. Make sure you have:
+This usually means your system is missing Python, compiler tools, or Node headers.
 
-1. **Python 3.8+**: Check with `python3 --version`. If you have multiple Python versions, set the PYTHON environment variable:
-   ```bash
-   PYTHON=/usr/bin/python3.11 npm install
-   ```
+Try:
 
-2. **Build tools**: Install gcc, g++, and make for your platform (see Prerequisites above)
-
-3. **Node.js headers**: Install the nodejs-devel or nodejs-dev package for your distribution
-
-If you still have issues, try rebuilding:
 ```bash
+PYTHON=/usr/bin/python3.11 npm install
 npm run rebuild
 ```
 
-### Agent shows "Timeout waiting for usage data"
+### `Timeout waiting for usage data`
 
-- Ensure the CLI tool is properly authenticated
-- Try running the CLI tool manually to verify it works
-- Check if there are any prompts requiring user input
+- make sure the CLI works on its own
+- make sure the CLI is authenticated
+- check for trust prompts, auth prompts, or update prompts
+- try `--fresh-process`
+- try disabling keepalive or background refresh while debugging
 
-### Codex fails with cursor position error
+### No agents found
 
-This is handled automatically. If you still see issues, ensure your terminal supports standard escape sequences.
+Make sure at least one supported CLI is installed and on your `PATH`.
 
 ### Port already in use
 
@@ -674,4 +525,4 @@ MIT
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Pull requests are welcome.
