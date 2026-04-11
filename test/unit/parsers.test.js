@@ -470,6 +470,42 @@ describe('ClaudeAgent', () => {
         expect(typeof result.weeklySonnet.pace.paceRatio).toBe('number');
       }
     });
+
+    it('treats partially corrupted Claude usage output as complete when core sections are parseable', () => {
+      const output = `
+        Claude Code has switched from npm to native installer.
+        Current session
+        0% used
+        Rese s 3 m (Europe/Berlin)
+
+        Current week (all models)
+        7% used
+        Apr 17, 11am (Europe/Berlin)
+
+        Current week (Sonnet only)
+        0% used
+      `;
+
+      expect(agent.hasCompleteOutput(output)).toBe(true);
+    });
+
+    it('treats Claude output as complete when session and weekly-all are parseable even without sonnet reset details', () => {
+      const output = `
+        ⎿ Status dialog dismissed
+        Current session
+        0% used
+        Rese s 2:59am (Europe/Berlin)
+
+        Current week (all models)
+        7% used
+        Apr 17, 11am (Europe/Berlin)
+
+        Current week (Sonnet only)
+        0% used
+      `;
+
+      expect(agent.hasCompleteOutput(output)).toBe(true);
+    });
   });
 
   describe('parseResetTime', () => {
@@ -536,6 +572,30 @@ describe('ClaudeAgent', () => {
     it('formats days and hours', () => {
       const result = formatDuration(90000); // 25 hours
       expect(result).toBe('1d 1h');
+    });
+  });
+
+  describe('sendCommands', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('dismisses slash-command autocomplete before submitting /usage', () => {
+      const shell = { write: jest.fn() };
+
+      agent.sendCommands(shell, '');
+      jest.advanceTimersByTime(1500);
+
+      expect(shell.write.mock.calls).toEqual([
+        ['\x1b'],
+        ['/usage'],
+        ['\r'],
+        ['\r'],
+      ]);
     });
   });
 });

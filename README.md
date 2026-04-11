@@ -6,6 +6,8 @@ Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via a s
 
 > **Note:** Agent Tank is designed for **AI coding agent subscriptions** such as Claude Code Pro/Max, Google Gemini CLI (with Advanced/Max plans), and ChatGPT Codex (with Plus/Pro plans). It tracks **active session and rate limit usage**—not API key consumption or pay-per-use billing. If you're using API keys with pay-as-you-go pricing, this tool won't help you track costs; check your provider's billing dashboard instead.
 
+> **How Agent Tank gets the data:** Agent Tank reads usage data straight from the local coding agent CLIs you already use. It launches the installed tools in a PTY, runs their built-in usage commands such as Claude Code `/usage`, Gemini `/stats`, and Codex `/status`, then parses the terminal output into a unified HTTP API and web dashboard. It does not scrape provider websites or rely on browser sessions.
+
 ## Features
 
 - **Privacy-first** - Runs entirely locally with no external data transmission

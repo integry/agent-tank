@@ -204,43 +204,25 @@ class ClaudeAgent extends BaseAgent {
     const clean = this.stripAnsi(output);
     // Detect error responses (rate limiting, session errors) — treat as complete
     if (/rate.?limited|rate_limit_error|Failed to load usage|session.?expired|session.?error|invalid.?session|authentication.?error|auth.?failed|Unable to (?:load|fetch)|Error loading|could not (?:load|fetch)|not authenticated|login required|sign.?in required/i.test(clean)) return true;
-    // Basic requirements - must have actual usage data, not just the loading screen
-    const hasSession = clean.includes('Current session');
-    const hasWeekly = clean.includes('Current week');
-    const hasPercentUsed = clean.includes('% used');
-    if (!hasSession || !hasWeekly || !hasPercentUsed) return false;
+    const parsed = parsePtyOutput(clean);
 
-    // If "all models" section exists, wait for "Sonnet only" section to render
-    const hasAllModels = /Current\s+week\s*\(?\s*all\s+models/i.test(clean);
-    if (hasAllModels) {
-      const hasSonnetOnly = /Current\s+week\s*\(?\s*Sonnet\s+only/i.test(clean);
-      if (!hasSonnetOnly) {
-        return false;
-      }
-      // Both sections exist, check we have at least one timezone per section
-      const allModelsIdx = clean.search(/Current\s+week\s*\(?\s*all\s+models/i);
-      const sonnetOnlyIdx = clean.search(/Current\s+week\s*\(?\s*Sonnet\s+only/i);
-      const allModelsSection = clean.substring(allModelsIdx, sonnetOnlyIdx);
-      const sonnetSection = clean.substring(sonnetOnlyIdx);
+    const hasSessionData = parsed.session && typeof parsed.session.percent === 'number';
+    const hasLegacyWeekly = parsed.weekly && typeof parsed.weekly.percent === 'number';
+    const hasAllModelsWeekly = parsed.weeklyAll && typeof parsed.weeklyAll.percent === 'number';
 
-      const allModelsHasTimezone = /\([A-Za-z]+\/[A-Za-z_]+\)/.test(allModelsSection);
-      const sonnetHasTimezone = /\([A-Za-z]+\/[A-Za-z_]+\)/.test(sonnetSection);
-
-      return allModelsHasTimezone && sonnetHasTimezone;
-    }
-
-    // Fallback for legacy format (single "Current week" without model qualifiers)
-    // Check for timezone pattern which indicates reset times are fully loaded
-    const hasTimezone = /\([A-Za-z]+\/[A-Za-z_]+\)/.test(clean);
-    return hasTimezone;
+    // Newer Claude builds often emit usable session/weekly data before the UI fully settles.
+    // If we can already parse session data plus either weekly format, treat the response as complete.
+    return hasSessionData && (hasLegacyWeekly || hasAllModelsWeekly);
   }
 
   sendCommands(shell, _output) {
     logger.agent(this.name, 'Sending /usage command...');
-    // Escape dismisses any previous output/UI, then type command + Enter
+    // Claude keeps slash-command suggestions open for /usage on newer builds.
+    // Confirm the command selection, then submit the actual command execution.
     setTimeout(() => shell.write('\x1b'), 50);
     setTimeout(() => shell.write('/usage'), 600);
     setTimeout(() => shell.write('\r'), 1000);
+    setTimeout(() => shell.write('\r'), 1400);
   }
 
   // After getting /usage output, dismiss dialog so next refresh starts with clean prompt
