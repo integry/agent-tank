@@ -329,7 +329,7 @@ class BaseAgent {
 
       // Process is already at prompt, send commands immediately
       logger.agent(this.name, 'Sending commands to persistent process...');
-      this.sendCommands(this.shell, this.output);
+      this.sendCommands(this.shell, existingOutput);
     });
   }
 

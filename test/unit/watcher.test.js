@@ -10,7 +10,7 @@ jest.mock('node-pty', () => ({
   spawn: jest.fn()
 }), { virtual: true });
 
-const { AgentTank, AUTO_REFRESH_MODES, detectDockerHost } = require('../../src/index.js');
+const { AgentTank, AUTO_REFRESH_MODES, detectDockerHosts, detectDockerHostsFromInterfaces } = require('../../src/index.js');
 
 describe('AgentTank', () => {
   describe('constructor', () => {
@@ -84,6 +84,10 @@ describe('AgentTank', () => {
 
       it('initializes lastRefreshedAt as null', () => {
         expect(tank.lastRefreshedAt).toBeNull();
+      });
+
+      it('sets default refresh cooldown to 30 seconds', () => {
+        expect(tank.refreshCooldown).toBe(30);
       });
 
       it('disables skipServer by default', () => {
@@ -194,6 +198,11 @@ describe('AgentTank', () => {
       it('accepts custom activity debounce', () => {
         const tank = new AgentTank({ activityDebounce: 10000 });
         expect(tank.autoRefresh.activityDebounce).toBe(10000);
+      });
+
+      it('accepts custom refresh cooldown', () => {
+        const tank = new AgentTank({ refreshCooldown: 45 });
+        expect(tank.refreshCooldown).toBe(45);
       });
 
       it('sets mode to none when autoRefreshEnabled is false', () => {
@@ -640,6 +649,7 @@ describe('AgentTank', () => {
         enabled: true,
         interval: 60,
         activityDebounce: 5000,
+        refreshCooldown: 30,
         lastRefreshedAt: null,
       });
     });
@@ -656,6 +666,71 @@ describe('AgentTank', () => {
       expect(config.mode).toBe('interval');
       expect(config.interval).toBe(120);
       expect(config.activityDebounce).toBe(10000);
+    });
+  });
+
+  describe('refresh cooldown', () => {
+    let tank;
+    let agent;
+
+    beforeEach(() => {
+      tank = new AgentTank({ refreshCooldown: 30 });
+      agent = tank.createAgent('claude');
+      agent.refresh = jest.fn().mockResolvedValue();
+      tank.agents.set('claude', agent);
+    });
+
+    it('skips repeated agent refreshes within the cooldown window', async () => {
+      const nowSpy = jest.spyOn(Date, 'now')
+        .mockReturnValueOnce(1000)
+        .mockReturnValueOnce(1000)
+        .mockReturnValueOnce(15000);
+
+      await tank.refreshAgent('claude');
+      await tank.refreshAgent('claude');
+
+      expect(agent.refresh).toHaveBeenCalledTimes(1);
+      nowSpy.mockRestore();
+    });
+
+    it('allows another refresh after the cooldown window elapses', async () => {
+      const nowSpy = jest.spyOn(Date, 'now')
+        .mockReturnValueOnce(1000)
+        .mockReturnValueOnce(1000)
+        .mockReturnValueOnce(32000);
+
+      await tank.refreshAgent('claude');
+      await tank.refreshAgent('claude');
+
+      expect(agent.refresh).toHaveBeenCalledTimes(2);
+      nowSpy.mockRestore();
+    });
+
+    it('reuses the same in-flight refresh promise for overlapping requests', async () => {
+      let resolveRefresh;
+      const refreshPromise = new Promise(resolve => {
+        resolveRefresh = resolve;
+      });
+      agent.refresh = jest.fn().mockReturnValue(refreshPromise);
+
+      const first = tank.refreshAgent('claude');
+      const second = tank.refreshAgent('claude');
+      resolveRefresh();
+      await Promise.all([first, second]);
+
+      expect(agent.refresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies the cooldown when refreshing all agents', async () => {
+      let now = 1000;
+      const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+
+      await tank.refreshAll();
+      now = 15000;
+      await tank.refreshAll();
+
+      expect(agent.refresh).toHaveBeenCalledTimes(1);
+      nowSpy.mockRestore();
     });
   });
 
@@ -678,22 +753,67 @@ describe('AgentTank', () => {
   });
 });
 
-describe('detectDockerHost', () => {
-  it('returns docker bridge IPv4 address when docker interface is present', () => {
-    const host = detectDockerHost({
+describe('detectDockerHostsFromInterfaces', () => {
+  it('returns docker bridge IPv4 addresses when docker interfaces are present', () => {
+    const hosts = detectDockerHostsFromInterfaces({
       lo: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
       docker0: [{ address: '172.17.0.1', family: 'IPv4', internal: false }],
+      'br-123': [{ address: '172.20.0.1', family: 'IPv4', internal: false }],
     });
 
-    expect(host).toBe('172.17.0.1');
+    expect(hosts).toEqual(['172.17.0.1', '172.20.0.1']);
   });
 
   it('returns null when no matching docker interface exists', () => {
-    const host = detectDockerHost({
+    const hosts = detectDockerHostsFromInterfaces({
       lo: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
       eth0: [{ address: '192.168.1.10', family: 'IPv4', internal: false }],
     });
 
-    expect(host).toBeNull();
+    expect(hosts).toBeNull();
+  });
+});
+
+describe('detectDockerHosts', () => {
+  it('prefers Docker bridge gateways from docker network inspect', () => {
+    const exec = jest.fn((cmd, args) => {
+      if (args[0] === 'network' && args[1] === 'ls') {
+        return [
+          JSON.stringify({ ID: 'bridge-id', Name: 'bridge', Driver: 'bridge' }),
+          JSON.stringify({ ID: 'custom-id', Name: 'app-net', Driver: 'bridge' }),
+          JSON.stringify({ ID: 'host-id', Name: 'host', Driver: 'host' }),
+        ].join('\n');
+      }
+
+      if (args[0] === 'network' && args[1] === 'inspect' && args[2] === 'bridge-id') {
+        return JSON.stringify([{ Gateway: '172.17.0.1' }]);
+      }
+
+      if (args[0] === 'network' && args[1] === 'inspect' && args[2] === 'custom-id') {
+        return JSON.stringify([{ Gateway: '172.20.0.1' }]);
+      }
+
+      throw new Error(`Unexpected docker command: ${cmd} ${args.join(' ')}`);
+    });
+
+    const hosts = detectDockerHosts({ exec, networkInterfaces: {} });
+
+    expect(hosts).toEqual(['172.17.0.1', '172.20.0.1']);
+  });
+
+  it('falls back to interface detection when docker is unavailable', () => {
+    const exec = jest.fn(() => {
+      throw new Error('docker not installed');
+    });
+
+    const hosts = detectDockerHosts({
+      exec,
+      networkInterfaces: {
+        lo: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
+        'br-app': [{ address: '172.21.0.1', family: 'IPv4', internal: false }],
+      },
+    });
+
+    expect(hosts).toEqual(['172.21.0.1']);
   });
 });

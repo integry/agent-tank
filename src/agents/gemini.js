@@ -23,32 +23,36 @@ class GeminiAgent extends BaseAgent {
     };
   }
 
+  _hasReadyPrompt(output) {
+    const clean = this.stripAnsi(output);
+    return clean.includes('Type your message')
+      || clean.includes('gemini>')
+      || /Ready\s*\(/.test(clean);
+  }
+
   isReadyForCommands(output) {
     // Don't consider ready if authentication is in progress
     if (this._isAuthenticating(output)) {
       return false;
     }
-    // v0.24: "Type your message" prompt
-    // v0.35+: "Ready" in terminal title + visible prompt area (no "Type your message")
-    // Also check for terminal title sequence containing "Ready"
-    return output.includes('Type your message')
-      || output.includes('gemini>')
-      || /Ready\s*\(/.test(output);
+    return this._hasReadyPrompt(output);
   }
 
   _isAuthenticating(output) {
     // Detect OAuth/authentication screens where Escape would cancel the flow
     const clean = this.stripAnsi(output);
+    const hasAuthFlow = /waiting for authentication/i.test(clean)
+      || /press esc.*to cancel/i.test(clean)
+      || /authenticating\.\.\./i.test(clean);
 
-    // If we see the ready prompt, auth is complete (even if auth text still in buffer)
-    if (clean.includes('Type your message') || clean.includes('? for shortcuts')) {
+    if (!hasAuthFlow) {
       return false;
     }
 
-    // Only consider authenticating if we see auth-specific text
-    return /waiting for authentication/i.test(clean)
-      || /press esc.*to cancel/i.test(clean)
-      || /authenticating\.\.\./i.test(clean);
+    // Newer Gemini builds can render footer hints like "? for shortcuts"
+    // before the actual input prompt is available. Treat auth as complete
+    // only when the real prompt has returned.
+    return !this._hasReadyPrompt(clean);
   }
 
   detectAuthenticationState(output) {

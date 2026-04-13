@@ -52,6 +52,7 @@ function createRequestHandler(tank) {
           autoRefresh: {
             enabled: tank.autoRefresh.enabled && tank.autoRefresh.interval > 0,
             interval: tank.autoRefresh.interval, // in seconds
+            refreshCooldown: tank.refreshCooldown,
           },
           lastRefreshedAt: tank.lastRefreshedAt,
         };

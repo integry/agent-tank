@@ -230,12 +230,11 @@ class AutoRefreshManager {
       console.log(`Backend auto-refresh [${globalAgents.join(', ')}]: every ${globalInterval}s (interval mode)`);
       this.autoRefreshTimer = setInterval(async () => {
         console.log(`[Auto-refresh] Refreshing ${globalAgents.join(', ')}...`);
-        const promises = globalAgents.map(name => {
-          const agent = this.agents.get(name);
-          return agent ? agent.refresh().catch(err =>
+        const promises = globalAgents.map(name =>
+          this.onRefreshAgent(name).catch(err =>
             console.error(`Error refreshing ${name}:`, err.message)
-          ) : Promise.resolve();
-        });
+          )
+        );
         await Promise.all(promises);
         this.lastRefreshedAt = new Date().toISOString();
       }, globalInterval * 1000);

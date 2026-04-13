@@ -25,6 +25,7 @@ const options = {
   'auto-refresh': { type: 'boolean', default: true },
   'auto-refresh-interval': { type: 'string', default: '60' },
   'auto-refresh-mode': { type: 'string', default: 'activity' },
+  'refresh-cooldown': { type: 'string', default: '30' },
   'activity-debounce': { type: 'string', default: '5000' },
   'history-retention-days': { type: 'string', default: '14' },
   'keepalive': { type: 'boolean', default: true },
@@ -66,6 +67,7 @@ Options:
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-mode <mode>         Refresh mode: none, interval, activity (default: activity)
   --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60, 0 = disabled)
+  --refresh-cooldown <seconds>       Minimum time between refreshes per agent (default: 30, 0 = disabled)
   --activity-debounce <ms>           Activity debounce interval in milliseconds (default: 5000)
   --keepalive           Enable/disable session keepalive (default: true)
   --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300, 0 = disabled)
@@ -91,6 +93,7 @@ Environment variables:
   AGENT_TANK_AUTO_REFRESH   Enable/disable background auto-refresh ("1" or "true" / "0" or "false")
   AGENT_TANK_AUTO_REFRESH_MODE      Refresh mode: none, interval, activity
   AGENT_TANK_AUTO_REFRESH_INTERVAL  Auto-refresh interval in seconds
+  AGENT_TANK_REFRESH_COOLDOWN       Minimum time between refreshes per agent in seconds
   AGENT_TANK_ACTIVITY_DEBOUNCE      Activity debounce interval in milliseconds
   AGENT_TANK_KEEPALIVE      Enable/disable session keepalive ("1" or "true" / "0" or "false")
   AGENT_TANK_KEEPALIVE_INTERVAL  Session keepalive interval in seconds
@@ -109,6 +112,7 @@ Examples:
   agent-tank --auto-refresh-mode activity  # Use activity-based polling (default)
   agent-tank --activity-debounce 10000     # Wait 10 seconds after activity before refresh
   agent-tank --auto-refresh-interval 30  # Refresh every 30 seconds
+  agent-tank --refresh-cooldown 45     # Limit each agent to one refresh every 45 seconds
   agent-tank --no-auto-refresh        # Disable background auto-refresh
   agent-tank --keepalive-interval 600 # Send keepalive every 10 minutes
   agent-tank --no-keepalive           # Disable session keepalive
@@ -210,6 +214,16 @@ async function main() {
     autoRefreshMode = config.autoRefresh.mode;
   }
 
+  const refreshCooldownEnv = process.env.AGENT_TANK_REFRESH_COOLDOWN;
+  let refreshCooldown = parseInt(values['refresh-cooldown'], 10);
+  if (refreshCooldownEnv !== undefined) {
+    refreshCooldown = parseInt(refreshCooldownEnv, 10);
+  } else if (config.refreshCooldown !== undefined) {
+    refreshCooldown = config.refreshCooldown;
+  } else if (config.autoRefresh?.refreshCooldown !== undefined) {
+    refreshCooldown = config.autoRefresh.refreshCooldown;
+  }
+
   // Activity debounce configuration (env > CLI > config file)
   const activityDebounceEnv = process.env.AGENT_TANK_ACTIVITY_DEBOUNCE;
   let activityDebounce = parseInt(values['activity-debounce'], 10);
@@ -269,6 +283,7 @@ async function main() {
     autoRefreshEnabled: onceMode ? false : autoRefreshEnabled, // Disable auto-refresh in one-shot mode
     autoRefreshInterval,
     autoRefreshMode: onceMode ? 'none' : autoRefreshMode, // Disable auto-refresh in one-shot mode
+    refreshCooldown,
     activityDebounce,
     keepaliveEnabled: onceMode ? false : keepaliveEnabled, // Disable keepalive in one-shot mode
     keepaliveInterval,

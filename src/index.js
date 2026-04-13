@@ -1,5 +1,6 @@
 const path = require('node:path');
 const os = require('node:os');
+const { execFileSync } = require('node:child_process');
 const { ClaudeAgent } = require('./agents/claude.js');
 const { GeminiAgent } = require('./agents/gemini.js');
 const { CodexAgent } = require('./agents/codex.js');
@@ -49,7 +50,9 @@ function isPrivateIpv4(address) {
     /^172\.(1[6-9]|2\d|3[0-1])\./.test(address);
 }
 
-function detectDockerHost(networkInterfaces = os.networkInterfaces()) {
+function detectDockerHostsFromInterfaces(networkInterfaces = os.networkInterfaces()) {
+  const hosts = [];
+
   for (const [name, addresses] of Object.entries(networkInterfaces)) {
     if (!DOCKER_INTERFACE_PATTERNS.some(pattern => pattern.test(name))) {
       continue;
@@ -57,12 +60,55 @@ function detectDockerHost(networkInterfaces = os.networkInterfaces()) {
 
     for (const info of addresses || []) {
       if (info && info.family === 'IPv4' && !info.internal && isPrivateIpv4(info.address)) {
-        return info.address;
+        if (!hosts.includes(info.address)) {
+          hosts.push(info.address);
+        }
       }
     }
   }
 
-  return null;
+  return hosts.length > 0 ? hosts : null;
+}
+
+function detectDockerHosts({
+  exec = execFileSync,
+  networkInterfaces = os.networkInterfaces(),
+} = {}) {
+  try {
+    const listOutput = exec('docker', ['network', 'ls', '--format', '{{json .}}'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const networks = listOutput
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => JSON.parse(line))
+      .filter(network => network && network.Driver === 'bridge');
+
+    const hosts = [];
+    for (const network of networks) {
+      const inspectOutput = exec('docker', ['network', 'inspect', network.ID, '--format', '{{json .IPAM.Config}}'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+
+      const ipamConfigs = inspectOutput ? JSON.parse(inspectOutput) : [];
+      for (const config of ipamConfigs || []) {
+        if (config && config.Gateway && isPrivateIpv4(config.Gateway) && !hosts.includes(config.Gateway)) {
+          hosts.push(config.Gateway);
+        }
+      }
+    }
+
+    if (hosts.length > 0) {
+      return hosts;
+    }
+  } catch (_err) {
+    // Fall back to interface detection when Docker is unavailable.
+  }
+
+  return detectDockerHostsFromInterfaces(networkInterfaces);
 }
 
 class AgentTank {
@@ -83,6 +129,9 @@ class AgentTank {
     this.publicStatus = {}; // Public API status from upstream providers
     this.skipServer = options.skipServer || false; // Skip HTTP server in one-shot mode
     this.lastRefreshedAt = null;
+    this.refreshCooldown = Math.max(0, options.refreshCooldown ?? 30);
+    this._agentRefreshStartedAt = new Map();
+    this._agentRefreshPromises = new Map();
     this.stopping = false;
 
     // Auto-refresh configuration (backend periodic refresh)
@@ -299,10 +348,10 @@ class AgentTank {
     const [, publicStatusResult] = await Promise.all([
       // Agent PTY refreshes
       Promise.all(
-        Array.from(this.agents.values()).map(agent =>
-          agent.refresh().catch(err => {
+        Array.from(this.agents.keys()).map(name =>
+          this._refreshAgentWithCooldown(name).catch(err => {
             if (!this.stopping && err.message !== 'Agent stopping') {
-              logger.error(`Error refreshing ${agent.name}:`, err.message);
+              logger.error(`Error refreshing ${name}:`, err.message);
             }
           })
         )
@@ -347,13 +396,54 @@ class AgentTank {
     if (!agent) {
       throw new Error(`Agent not found: ${name}`);
     }
-    await agent.refresh();
+    await this._refreshAgentWithCooldown(name);
 
     // Record snapshot and attach pace evaluation for single agent refresh
     if (agent.usage) {
       this._recordSnapshot(name, agent.usage);
       attachPaceEvaluation(name, agent.usage);
     }
+  }
+
+  _getRefreshCooldownRemainingMs(name, now = Date.now()) {
+    if (this.refreshCooldown <= 0) {
+      return 0;
+    }
+
+    const lastStartedAt = this._agentRefreshStartedAt.get(name);
+    if (!lastStartedAt) {
+      return 0;
+    }
+
+    return Math.max(0, (this.refreshCooldown * 1000) - (now - lastStartedAt));
+  }
+
+  async _refreshAgentWithCooldown(name) {
+    const agent = this.agents.get(name);
+    if (!agent) {
+      throw new Error(`Agent not found: ${name}`);
+    }
+
+    const activeRefresh = this._agentRefreshPromises.get(name);
+    if (activeRefresh) {
+      logger.agent(name, 'Refresh already in progress, reusing existing refresh');
+      return activeRefresh;
+    }
+
+    const remainingMs = this._getRefreshCooldownRemainingMs(name);
+    if (remainingMs > 0) {
+      logger.agent(name, `Refresh cooldown active, skipping (${Math.ceil(remainingMs / 1000)}s remaining)`);
+      return;
+    }
+
+    this._agentRefreshStartedAt.set(name, Date.now());
+    const refreshPromise = agent.refresh().finally(() => {
+      if (this._agentRefreshPromises.get(name) === refreshPromise) {
+        this._agentRefreshPromises.delete(name);
+      }
+    });
+    this._agentRefreshPromises.set(name, refreshPromise);
+    return refreshPromise;
   }
 
   /** Get usage history statistics. @returns {Object} */
@@ -447,16 +537,22 @@ class AgentTank {
     });
   }
 
-  _resolveListenHosts(detectHost = detectDockerHost) {
+  _resolveListenHosts(detectHost = detectDockerHosts) {
     if (this.explicitHost) {
       return [this.host];
     }
 
     const hosts = ['127.0.0.1'];
     if (this.dockerAccess) {
-      const dockerHost = detectHost();
-      if (dockerHost && dockerHost !== '127.0.0.1') {
-        hosts.push(dockerHost);
+      const dockerHosts = detectHost();
+      if (dockerHosts) {
+        // Handle both single IP (legacy) and array of IPs
+        const hostList = Array.isArray(dockerHosts) ? dockerHosts : [dockerHosts];
+        for (const h of hostList) {
+          if (h && h !== '127.0.0.1' && !hosts.includes(h)) {
+            hosts.push(h);
+          }
+        }
       }
     }
 
@@ -500,8 +596,15 @@ class AgentTank {
 
   /** Get the auto-refresh configuration. @returns {Object} */
   getAutoRefreshConfig() {
-    return { mode: this.autoRefresh.mode, enabled: this.autoRefresh.enabled, interval: this.autoRefresh.interval, activityDebounce: this.autoRefresh.activityDebounce, lastRefreshedAt: this.autoRefreshManager ? this.autoRefreshManager.getLastRefreshedAt() : null };
+    return {
+      mode: this.autoRefresh.mode,
+      enabled: this.autoRefresh.enabled,
+      interval: this.autoRefresh.interval,
+      activityDebounce: this.autoRefresh.activityDebounce,
+      refreshCooldown: this.refreshCooldown,
+      lastRefreshedAt: this.autoRefreshManager ? this.autoRefreshManager.getLastRefreshedAt() : null
+    };
   }
 }
 
-module.exports = { AgentTank, AUTO_REFRESH_MODES, detectDockerHost };
+module.exports = { AgentTank, AUTO_REFRESH_MODES, detectDockerHosts, detectDockerHostsFromInterfaces };

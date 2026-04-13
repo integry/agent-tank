@@ -75,7 +75,7 @@ By default it starts on:
 http://127.0.0.1:3456
 ```
 
-If Docker is running with a detectable local bridge interface, Agent Tank also binds that bridge address by default so containers on the same host can reach it without exposing it on the public interface.
+If Docker is available, Agent Tank asks Docker for the active bridge gateway addresses and binds them by default so containers on the same host can reach it without exposing it on the public interface. If Docker is unavailable, it falls back to local bridge interface detection.
 
 Use this if you want localhost only:
 
@@ -97,6 +97,9 @@ agent-tank --once --json
 
 # Show the installed Agent Tank version
 agent-tank --version
+
+# Require at least 60 seconds between refreshes for the same agent
+agent-tank --refresh-cooldown 60
 ```
 
 ## What You Get
@@ -165,6 +168,16 @@ agent-tank --no-docker
 agent-tank --auto-refresh-mode none
 ```
 
+### Slow Down Agent Refreshes
+
+By default, Agent Tank will not refresh the same agent more than once every 30 seconds, even if the refresh is triggered manually or by detected CLI activity. This reduces unnecessary polling and helps avoid CLI-side rate limiting.
+
+```bash
+agent-tank --refresh-cooldown 60
+```
+
+Set it to `0` to disable the cooldown entirely.
+
 ## Command Line Options
 
 ```text
@@ -186,6 +199,7 @@ Options:
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-mode <mode>         Refresh mode: none, interval, activity (default: activity)
   --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60)
+  --refresh-cooldown <seconds>       Minimum time between refreshes per agent (default: 30, 0 = disabled)
   --activity-debounce <ms>           Activity debounce interval in milliseconds (default: 5000)
   --keepalive           Enable/disable session keepalive (default: true)
   --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300)
@@ -213,6 +227,7 @@ Environment variables override CLI flags and config file values.
 | `AGENT_TANK_AUTO_REFRESH` | Enable/disable auto-refresh |
 | `AGENT_TANK_AUTO_REFRESH_MODE` | `none`, `interval`, or `activity` |
 | `AGENT_TANK_AUTO_REFRESH_INTERVAL` | Auto-refresh interval in seconds |
+| `AGENT_TANK_REFRESH_COOLDOWN` | Minimum time between refreshes per agent in seconds |
 | `AGENT_TANK_ACTIVITY_DEBOUNCE` | Activity debounce interval in milliseconds |
 | `AGENT_TANK_KEEPALIVE` | Enable/disable keepalive |
 | `AGENT_TANK_KEEPALIVE_INTERVAL` | Keepalive interval in seconds |
@@ -228,10 +243,12 @@ Environment variables override CLI flags and config file values.
   "port": 8080,
   "dockerAccess": true,
   "claudeApi": false,
+  "refreshCooldown": 30,
   "autoRefresh": {
     "mode": "activity",
     "interval": 60,
-    "activityDebounce": 5000
+    "activityDebounce": 5000,
+    "refreshCooldown": 30
   },
   "keepalive": {
     "enabled": true,

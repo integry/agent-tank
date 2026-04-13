@@ -852,6 +852,20 @@ describe('GeminiAgent', () => {
 
       expect(shell.write).not.toHaveBeenCalled();
     });
+
+    it('does not treat shortcut footer text alone as a ready prompt during authentication', () => {
+      const output = 'Waiting for authentication... (Press Esc or Ctrl+C to cancel) ? for shortcuts';
+
+      expect(agent._isAuthenticating(output)).toBe(true);
+      expect(agent.isReadyForCommands(output)).toBe(false);
+    });
+
+    it('treats actual prompt text as ready after authentication completes', () => {
+      const output = 'Signed in with Google /auth\nType your message';
+
+      expect(agent._isAuthenticating(output)).toBe(false);
+      expect(agent.isReadyForCommands(output)).toBe(true);
+    });
   });
 });
 

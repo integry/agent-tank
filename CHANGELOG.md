@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.5] - 2026-04-13
+
+### Added
+
+- Add a per-agent refresh cooldown with a default of 30 seconds, applied to manual refreshes, startup refreshes, and auto-refresh activity
+- Add `--refresh-cooldown` and `AGENT_TANK_REFRESH_COOLDOWN` to reconfigure or disable the refresh cooldown
+
+### Changed
+
+- Prefer Docker bridge gateway discovery via `docker network inspect`, falling back to local interface detection only when Docker is unavailable
+
+### Fixed
+
+- Stop interval-mode auto-refresh from bypassing the central refresh guard
+- Tighten Gemini CLI readiness detection so auth and agent-thinking screens are less likely to be misread as ready prompts
+
 ## [0.9.4] - 2026-04-12
 
 ### Added
