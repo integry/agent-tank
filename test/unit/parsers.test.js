@@ -822,6 +822,37 @@ describe('GeminiAgent', () => {
       expect(result).toBe(3 * 60 * 60 + 26 * 60);
     });
   });
+
+  describe('sendCommands', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('submits /stats directly without Escape rewinding the UI', () => {
+      const shell = { write: jest.fn() };
+
+      agent.sendCommands(shell, '');
+      jest.advanceTimersByTime(700);
+
+      expect(shell.write.mock.calls).toEqual([
+        ['/stats'],
+        ['\r'],
+      ]);
+    });
+
+    it('does not send /stats while authentication is in progress', () => {
+      const shell = { write: jest.fn() };
+
+      agent.sendCommands(shell, 'Waiting for authentication... (Press Esc or Ctrl+C to cancel)');
+      jest.advanceTimersByTime(1000);
+
+      expect(shell.write).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('CodexAgent', () => {

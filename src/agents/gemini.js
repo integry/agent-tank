@@ -159,12 +159,10 @@ class GeminiAgent extends BaseAgent {
       return;
     }
     logger.agent(this.name, 'Sending /stats command...');
-    // v0.35+: typing /stats triggers autocomplete dropdown.
-    // Escape clears any pending state, then send command, Escape again to dismiss autocomplete
-    setTimeout(() => shell.write('\x1b'), 50);
-    setTimeout(() => shell.write('/stats'), 500);
-    setTimeout(() => shell.write('\x1b'), 1000);
-    setTimeout(() => shell.write('\r'), 1500);
+    // Newer Gemini builds use Esc for "rewind", which can derail the command flow.
+    // Submit /stats directly once the prompt is ready.
+    setTimeout(() => shell.write('/stats'), 200);
+    setTimeout(() => shell.write('\r'), 600);
   }
 
   // Calculate pace data for a model entry (Gemini uses 24h sessions)
