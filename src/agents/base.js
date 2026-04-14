@@ -231,6 +231,10 @@ class BaseAgent {
           clearTimeout(timer);
           spawnDataHandler.dispose();
           spawnExitHandler.dispose();
+          if (!this.shell) {
+            reject(new Error('Process exited during spawn before handlers were attached'));
+            return;
+          }
           this.processReady = true;
           this.output = spawnOutput;
           this._setupPersistentDataHandler();
@@ -243,6 +247,11 @@ class BaseAgent {
           logger.agent(this.name, 'Process ready for commands');
           clearTimeout(timer);
           spawnDataHandler.dispose();
+          spawnExitHandler.dispose();
+          if (!this.shell) {
+            reject(new Error('Process exited during spawn before handlers were attached'));
+            return;
+          }
           this.processReady = true;
           this._setupPersistentDataHandler();
           this._setupPersistentExitHandler();
@@ -334,6 +343,10 @@ class BaseAgent {
   }
 
   _setupPersistentDataHandler() {
+    if (!this.shell) {
+      logger.agent(this.name, 'Skipping persistent data handler setup: shell already exited');
+      return;
+    }
     const handler = this.shell.onData((data) => {
       this.output += data;
 
@@ -356,6 +369,10 @@ class BaseAgent {
   }
 
   _setupPersistentExitHandler() {
+    if (!this.shell) {
+      logger.agent(this.name, 'Skipping persistent exit handler setup: shell already exited');
+      return;
+    }
     const handler = this.shell.onExit(({ exitCode }) => {
       logger.agent(this.name, 'Persistent process exited with code', logger.dim(exitCode));
       this.shell = null; this.processReady = false; this._onDataCallback = null; this._disposables = [];

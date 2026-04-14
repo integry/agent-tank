@@ -11,6 +11,7 @@ jest.mock('node-pty', () => ({
   spawn: jest.fn()
 }));
 
+const mockPty = require('node-pty');
 const { BaseAgent } = require('../../src/agents/base.js');
 const { ClaudeAgent } = require('../../src/agents/claude.js');
 const { GeminiAgent } = require('../../src/agents/gemini.js');
@@ -39,6 +40,35 @@ describe('BaseAgent', () => {
       agent.requestStop();
 
       await expect(agent.spawnProcess()).rejects.toThrow('Agent stopping');
+    });
+
+    it('rejects cleanly if the shell exits after ready detection but before handler setup', async () => {
+      let onDataCb;
+      let onExitCb;
+      const mockShell = {
+        pid: 1234,
+        onData: jest.fn((cb) => {
+          onDataCb = cb;
+          return { dispose: jest.fn() };
+        }),
+        onExit: jest.fn((cb) => {
+          onExitCb = cb;
+          return { dispose: jest.fn() };
+        }),
+        kill: jest.fn(),
+      };
+
+      agent.isReadyForCommands = jest.fn(() => true);
+      mockPty.spawn.mockReturnValueOnce(mockShell);
+
+      const spawnPromise = agent.spawnProcess();
+
+      // Simulate the PTY disappearing in the tiny race window after "ready".
+      agent.shell = null;
+      onDataCb('ready');
+
+      await expect(spawnPromise).rejects.toThrow('Process exited during spawn before handlers were attached');
+      expect(onExitCb).toBeDefined();
     });
   });
 
