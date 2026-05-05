@@ -89,6 +89,9 @@ agent-tank --no-docker
 # Monitor only specific agents
 agent-tank --claude --gemini
 
+# Prefer direct Gemini quota fetching
+agent-tank --gemini --gemini-mode direct
+
 # Use a custom port
 agent-tank --port 8080
 
@@ -185,6 +188,7 @@ Options:
   --claude              Enable Claude monitoring
   --gemini              Enable Gemini monitoring
   --codex               Enable Codex monitoring
+  --gemini-mode <mode>  Gemini strategy: fallback, direct, pty (default: fallback)
   --port <port>         HTTP server port (default: 3456)
   --host <host>         Bind address (default: 127.0.0.1 + Docker bridge when available)
   --docker              Enable Docker bridge bind when --host is omitted (default: true)
@@ -224,6 +228,7 @@ Environment variables override CLI flags and config file values.
 | `AGENT_TANK_DOCKER` | Enable/disable Docker bridge bind when `--host` is omitted |
 | `AGENT_TANK_FRESH_PROCESS` | Use fresh process per refresh (`1`/`true`) |
 | `AGENT_TANK_CLAUDE_API` | Use Claude API mode (`1`/`true`) |
+| `AGENT_TANK_GEMINI_MODE` | Gemini strategy: `fallback`, `direct`, or `pty` |
 | `AGENT_TANK_AUTO_REFRESH` | Enable/disable auto-refresh |
 | `AGENT_TANK_AUTO_REFRESH_MODE` | `none`, `interval`, or `activity` |
 | `AGENT_TANK_AUTO_REFRESH_INTERVAL` | Auto-refresh interval in seconds |
@@ -243,6 +248,7 @@ Environment variables override CLI flags and config file values.
   "port": 8080,
   "dockerAccess": true,
   "claudeApi": false,
+  "geminiMode": "fallback",
   "refreshCooldown": 30,
   "autoRefresh": {
     "mode": "activity",
@@ -264,6 +270,28 @@ Run with:
 
 ```bash
 agent-tank -c config.json
+```
+
+## Gemini Modes
+
+By default, Gemini runs in `fallback` mode:
+
+- try a direct quota fetch using the local Gemini OAuth session
+- fall back to PTY `/stats` if the direct path fails
+
+Available modes:
+
+- `fallback`: direct first, PTY fallback
+- `direct`: use the direct quota API only
+- `pty`: use interactive Gemini CLI `/stats` only
+
+In `--once` mode, Agent Tank prints the result and exits immediately after the output is flushed.
+
+Examples:
+
+```bash
+agent-tank --gemini --gemini-mode direct
+agent-tank --gemini --gemini-mode pty
 ```
 
 ## HTTP API

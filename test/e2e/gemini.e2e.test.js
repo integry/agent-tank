@@ -423,12 +423,22 @@ describeIfGemini('GeminiAgent E2E', () => {
   describe('Configuration', () => {
     it('has correct default timeout', () => {
       const agent = new GeminiAgent();
-      expect(agent.getTimeout()).toBe(25000);
+      expect(agent.getTimeout()).toBe(35000);
     });
 
     it('uses correct command', () => {
       const agent = new GeminiAgent();
       expect(agent.command).toBe('gemini');
+    });
+
+    it('starts Gemini with --skip-trust', () => {
+      const agent = new GeminiAgent();
+      expect(agent.args).toEqual(['--skip-trust']);
+    });
+
+    it('defaults Gemini mode to fallback', () => {
+      const agent = new GeminiAgent();
+      expect(agent.mode).toBe('fallback');
     });
 
     it('has correct agent name', () => {

@@ -1,12 +1,58 @@
 const { BaseAgent } = require('./base.js');
 const { calculatePace } = require('../pace-evaluator.js');
 const { CYCLE_DURATIONS } = require('../usage-formatters.js');
+const { GeminiDirectQuotaClient, normalizeGeminiMode } = require('./gemini-direct.js');
 const logger = require('../logger.js');
 
 class GeminiAgent extends BaseAgent {
-  constructor() {
-    super('gemini', 'gemini');
+  constructor(options = {}) {
+    super('gemini', 'gemini', ['--skip-trust']);
+    this.mode = normalizeGeminiMode(options.mode);
+    this.directClient = new GeminiDirectQuotaClient(options.directClientOptions);
     this._aboutSent = false;
+  }
+
+  async refresh() {
+    if (this.mode === 'pty') {
+      return super.refresh();
+    }
+
+    if (this.isStopping()) {
+      logger.agent(this.name, 'Skipping refresh while stopping');
+      return;
+    }
+
+    if (this.isRefreshing) {
+      logger.agent(this.name, 'Already refreshing, skipping...');
+      return;
+    }
+
+    logger.agent(this.name, `Starting refresh${this.mode === 'direct' ? ' (direct quota mode)' : ' (direct quota mode with PTY fallback)'}...`);
+    this.isRefreshing = true;
+    this.error = null;
+    this.auth = null;
+
+    try {
+      const result = await this.directClient.fetchQuotaUsage();
+      this.usage = result.usage;
+      this.metadata = result.metadata || this.metadata;
+      this._metadataFetched = !!this.metadata;
+      this.lastUpdated = new Date().toISOString();
+      logger.agent(this.name, 'Parsed direct quota usage:', logger.json(this.usage));
+    } catch (err) {
+      if (this.mode === 'fallback') {
+        logger.agent(this.name, `Direct quota fetch failed, falling back to PTY: ${err.message}`);
+        this.isRefreshing = false;
+        return super.refresh();
+      }
+      logger.error(`[${this.name}] Error during direct quota refresh:`, err.message);
+      this.error = err.message;
+    } finally {
+      if (this.isRefreshing) {
+        this.isRefreshing = false;
+        logger.agent(this.name, 'Refresh complete');
+      }
+    }
   }
 
   getTimeout() {
@@ -388,6 +434,11 @@ class GeminiAgent extends BaseAgent {
    * @returns {Promise<boolean>} True if keepalive succeeded
    */
   async keepalive() {
+    if (this.mode === 'direct' || (this.mode === 'fallback' && (!this.shell || !this.processReady))) {
+      console.log(`[${this.name}] Keepalive skipped (${this.mode} mode)`);
+      return true;
+    }
+
     if (this.freshProcess) {
       console.log(`[${this.name}] Keepalive skipped (fresh process mode)`);
       return true;

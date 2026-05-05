@@ -11,6 +11,7 @@ const options = {
   gemini: { type: 'boolean', default: false },
   codex: { type: 'boolean', default: false },
   'claude-api': { type: 'boolean', default: false },
+  'gemini-mode': { type: 'string' },
   port: { type: 'string', default: '3456' },
   host: { type: 'string' },
   docker: { type: 'boolean', default: true },
@@ -43,6 +44,17 @@ function exitWithCode(code, message, stream = process.stderr) {
   process.exitCode = code;
 }
 
+function writeAndExit(stream, text, exitCode, { cleanup, watcher, jsonMode, originalLog }) {
+  stream.write(text, () => {
+    cleanup();
+    watcher.stop();
+    if (jsonMode) {
+      console.log = originalLog;
+    }
+    process.exit(exitCode);
+  });
+}
+
 function printHelp() {
   process.stdout.write(`
 agent-tank - Monitor LLM CLI usage limits
@@ -54,6 +66,7 @@ Options:
   --gemini              Enable Gemini monitoring
   --codex               Enable Codex monitoring
   --claude-api          Use direct Anthropic API for Claude usage (faster, 60s refresh)
+  --gemini-mode <mode>  Gemini strategy: fallback, direct, pty (default: fallback)
   --port <port>         HTTP server port (default: 3456)
   --host <host>         Bind address (default: 127.0.0.1 + Docker bridge when available)
   --docker              Enable Docker bridge bind when --host is omitted (default: true)
@@ -90,6 +103,7 @@ Environment variables:
   AGENT_TANK_DOCKER     Enable/disable Docker bridge bind ("1"/"true" or "0"/"false")
   AGENT_TANK_FRESH_PROCESS  Use fresh process per refresh ("1" or "true")
   AGENT_TANK_CLAUDE_API Use direct Anthropic API for Claude usage ("1" or "true")
+  AGENT_TANK_GEMINI_MODE  Gemini strategy: fallback, direct, pty
   AGENT_TANK_AUTO_REFRESH   Enable/disable background auto-refresh ("1" or "true" / "0" or "false")
   AGENT_TANK_AUTO_REFRESH_MODE      Refresh mode: none, interval, activity
   AGENT_TANK_AUTO_REFRESH_INTERVAL  Auto-refresh interval in seconds
@@ -105,6 +119,7 @@ Examples:
   agent-tank --port 8080              # Use custom port
   agent-tank --host 0.0.0.0           # Expose on all interfaces
   agent-tank --no-docker              # Bind localhost only when host is omitted
+  agent-tank --gemini-mode direct     # Prefer direct Gemini quota API calls
   agent-tank --auth-user admin --auth-pass secret  # Enable basic auth
   agent-tank --auth-token mykey       # Enable API key auth
   agent-tank -c ./config.json         # Use config file
@@ -187,6 +202,9 @@ async function main() {
   const claudeApi = values['claude-api'] ||
     config.claudeApi ||
     claudeApiEnv === '1' || claudeApiEnv === 'true';
+
+  const geminiModeEnv = process.env.AGENT_TANK_GEMINI_MODE;
+  const geminiMode = geminiModeEnv || values['gemini-mode'] || config.geminiMode || 'fallback';
 
   // Auto-refresh configuration (env > CLI > config file)
   const autoRefreshEnv = process.env.AGENT_TANK_AUTO_REFRESH;
@@ -280,6 +298,7 @@ async function main() {
     auth,
     freshProcess,
     claudeApi,
+    geminiMode,
     autoRefreshEnabled: onceMode ? false : autoRefreshEnabled, // Disable auto-refresh in one-shot mode
     autoRefreshInterval,
     autoRefreshMode: onceMode ? 'none' : autoRefreshMode, // Disable auto-refresh in one-shot mode
@@ -311,21 +330,28 @@ async function main() {
       await watcher.start();
       const status = watcher.getStatus();
       if (jsonMode) {
-        // Restore console.log for JSON output
-        console.log = originalLog;
-        console.log(JSON.stringify(status, null, 2));
-        // Suppress console.log again before stopping to avoid extra shutdown output
-        console.log = () => {};
+        const output = `${JSON.stringify(status, null, 2)}\n`;
+        writeAndExit(process.stdout, output, 0, {
+          cleanup: cleanupShutdownHandlers,
+          watcher,
+          jsonMode,
+          originalLog,
+        });
+        return;
       } else {
+        let output = '';
         for (const [name, agentStatus] of Object.entries(status)) {
-          originalLog(`\n=== ${name.toUpperCase()} ===`);
-          originalLog(JSON.stringify(agentStatus, null, 2));
+          output += `\n=== ${name.toUpperCase()} ===\n`;
+          output += `${JSON.stringify(agentStatus, null, 2)}\n`;
         }
+        writeAndExit(process.stdout, output, 0, {
+          cleanup: cleanupShutdownHandlers,
+          watcher,
+          jsonMode,
+          originalLog,
+        });
+        return;
       }
-      cleanupShutdownHandlers();
-      watcher.stop();
-      process.exitCode = 0;
-      return;
     }
 
     await watcher.start();

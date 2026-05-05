@@ -145,6 +145,16 @@ describe('AgentTank', () => {
         expect(tank.claudeApi).toBe(true);
       });
 
+      it('defaults geminiMode to fallback', () => {
+        const defaultTank = new AgentTank();
+        expect(defaultTank.geminiMode).toBe('fallback');
+      });
+
+      it('stores configured geminiMode', () => {
+        const customTank = new AgentTank({ geminiMode: 'direct' });
+        expect(customTank.geminiMode).toBe('direct');
+      });
+
       it('accepts auth configuration with user and pass', () => {
         const auth = { user: 'admin', pass: 'secret' };
         const tank = new AgentTank({ auth });
@@ -274,6 +284,12 @@ describe('AgentTank', () => {
       const agent = tank.createAgent('gemini');
       expect(agent).not.toBeNull();
       expect(agent.name).toBe('gemini');
+    });
+
+    it('passes geminiMode to GeminiAgent', () => {
+      const directTank = new AgentTank({ geminiMode: 'direct' });
+      const agent = directTank.createAgent('gemini');
+      expect(agent.mode).toBe('direct');
     });
 
     it('creates CodexAgent for "codex"', () => {

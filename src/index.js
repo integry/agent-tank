@@ -121,6 +121,7 @@ class AgentTank {
     this.requestedAgents = options.agents || null;
     this.freshProcess = options.freshProcess || false;
     this.claudeApi = options.claudeApi || false; // Use direct Anthropic API for Claude
+    this.geminiMode = options.geminiMode || 'fallback';
     this.auth = options.auth || {};
     this.agents = new Map();
     this.server = null;
@@ -327,7 +328,7 @@ class AgentTank {
       case 'claude':
         return new ClaudeAgent({ useApi: this.claudeApi });
       case 'gemini':
-        return new GeminiAgent();
+        return new GeminiAgent({ mode: this.geminiMode });
       case 'codex':
         return new CodexAgent();
       default:
