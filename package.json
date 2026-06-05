@@ -42,6 +42,7 @@
   },
   "homepage": "https://agenttank.io",
   "dependencies": {
+    "chokidar": "^3.6.0",
     "node-pty": "^1.0.0",
     "source-map-support": "^0.5.21"
   },

@@ -1,7 +1,7 @@
 /**
  * ActivityMonitor - Monitors local log directories for LLM CLI activity
  *
- * Watches known log directories for Claude, Codex, and Gemini using fs.watch.
+ * Watches known log directories for Claude, Codex, and Gemini using chokidar with polling.
  * When activity is detected (new log entries), it triggers usage refresh callbacks
  * with configurable debouncing to prevent excessive polling.
  */
@@ -9,6 +9,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const chokidar = require('chokidar');
 
 /**
  * Default log directories for each agent.
@@ -72,7 +73,7 @@ class ActivityMonitor {
 
   /**
    * Start monitoring log directories for activity.
-   * Sets up fs.watch on each agent's log directories.
+   * Sets up chokidar polling watchers on each agent's log directories.
    *
    * @returns {Object} Status object with monitoring details
    */
@@ -92,7 +93,18 @@ class ActivityMonitor {
       for (const dir of dirs) {
         if (fs.existsSync(dir)) {
           try {
-            const watcher = fs.watch(dir, { recursive: true }, (eventType, filename) => {
+            // Use chokidar with polling to avoid EMFILE errors from too many native watchers
+            const watcher = chokidar.watch(dir, {
+              persistent: true,
+              ignoreInitial: true,
+              usePolling: true,
+              interval: 1000,
+              depth: 99,
+              ignored: ['**/.git/**', '**/*.lock'],
+            });
+
+            watcher.on('all', (eventType, filepath) => {
+              const filename = path.relative(dir, filepath);
               this._handleFileChange(agent, eventType, filename);
             });
 
@@ -158,7 +170,7 @@ class ActivityMonitor {
   }
 
   /**
-   * Handle a file change event from fs.watch.
+   * Handle a file change event from chokidar.
    * Debounces activity detection per agent.
    *
    * @param {string} agent - Agent name

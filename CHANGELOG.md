@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.7] - Unreleased
 
+### Changed
+
+- Use chokidar polling for activity monitoring to reduce native watcher pressure on large CLI log trees
+
 ### Fixed
 
 - Fix Claude Code PTY one-shot stats checks against Claude Code 2.1 compact usage output

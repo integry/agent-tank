@@ -9,16 +9,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { ActivityMonitor, DEFAULT_LOG_DIRECTORIES } = require('../../src/activity-monitor.js');
+const chokidar = require('chokidar');
 
-// Mock fs.watch
+// Mock filesystem existence checks and chokidar watchers
 jest.mock('node:fs', () => {
   const actualFs = jest.requireActual('node:fs');
   return {
     ...actualFs,
-    watch: jest.fn(),
     existsSync: jest.fn(),
   };
 });
+jest.mock('chokidar', () => ({
+  watch: jest.fn(),
+}));
 
 describe('ActivityMonitor', () => {
   let monitor;
@@ -35,7 +38,7 @@ describe('ActivityMonitor', () => {
 
     // Default: directories don't exist
     fs.existsSync.mockReturnValue(false);
-    fs.watch.mockReturnValue(mockWatcher);
+    chokidar.watch.mockReturnValue(mockWatcher);
 
     monitor = new ActivityMonitor();
   });
@@ -134,13 +137,13 @@ describe('ActivityMonitor', () => {
     it('sets up watchers for existing directories', () => {
       fs.existsSync.mockReturnValue(true);
       monitor.start();
-      expect(fs.watch).toHaveBeenCalled();
+      expect(chokidar.watch).toHaveBeenCalled();
     });
 
     it('does not set up watchers for non-existing directories', () => {
       fs.existsSync.mockReturnValue(false);
       monitor.start();
-      expect(fs.watch).not.toHaveBeenCalled();
+      expect(chokidar.watch).not.toHaveBeenCalled();
     });
 
     it('returns status with monitored directories', () => {
