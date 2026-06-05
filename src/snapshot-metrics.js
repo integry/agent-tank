@@ -20,11 +20,11 @@ function extractClaudeMetrics(usage) {
 }
 
 /**
- * Extract Gemini metrics from usage data.
- * @param {Object} usage - Gemini usage data
+ * Extract Antigravity metrics from usage data.
+ * @param {Object} usage - Antigravity usage data
  * @returns {Object|null} Extracted metrics or null
  */
-function extractGeminiMetrics(usage) {
+function extractAgyMetrics(usage) {
   if (!usage.models || !Array.isArray(usage.models)) {
     return null;
   }
@@ -62,8 +62,8 @@ function extractSnapshotMetrics(agentName, usage) {
   switch (agentName) {
     case 'claude':
       return extractClaudeMetrics(usage);
-    case 'gemini':
-      return extractGeminiMetrics(usage);
+    case 'agy':
+      return extractAgyMetrics(usage);
     case 'codex':
       return extractCodexMetrics(usage);
     default:
@@ -74,6 +74,6 @@ function extractSnapshotMetrics(agentName, usage) {
 module.exports = {
   extractSnapshotMetrics,
   extractClaudeMetrics,
-  extractGeminiMetrics,
+  extractAgyMetrics,
   extractCodexMetrics
 };

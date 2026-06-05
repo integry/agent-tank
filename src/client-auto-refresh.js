@@ -142,8 +142,8 @@ ${metricExtractors}
           let metrics = [];
           if (agentName === 'claude') {
             metrics = extractClaudeMetrics(agentData.usage);
-          } else if (agentName === 'gemini') {
-            metrics = extractGeminiMetrics(agentData.usage);
+          } else if (agentName === 'agy') {
+            metrics = extractAgyMetrics(agentData.usage);
           } else if (agentName === 'codex') {
             metrics = extractCodexMetrics(agentData.usage);
           }

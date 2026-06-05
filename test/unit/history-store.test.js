@@ -70,7 +70,7 @@ describe('HistoryStore', () => {
 
     it('adds a snapshot with custom timestamp', () => {
       const customTimestamp = '2025-01-15T10:30:00.000Z';
-      const record = store.addSnapshot('gemini', { models: {} }, customTimestamp);
+      const record = store.addSnapshot('agy', { models: {} }, customTimestamp);
 
       expect(record.timestamp).toBe(customTimestamp);
     });
@@ -109,7 +109,7 @@ describe('HistoryStore', () => {
     it('appends multiple snapshots', () => {
       store.addSnapshot('claude', { session: 10 });
       store.addSnapshot('claude', { session: 20 });
-      store.addSnapshot('gemini', { models: { 'gemini-2.5-flash': 5 } });
+      store.addSnapshot('agy', { models: { 'agy-2.5-flash': 5 } });
 
       const history = store.getHistory();
       expect(history).toHaveLength(3);
@@ -120,7 +120,7 @@ describe('HistoryStore', () => {
     beforeEach(() => {
       store.addSnapshot('claude', { session: 10 });
       store.addSnapshot('claude', { session: 20 });
-      store.addSnapshot('gemini', { models: {} });
+      store.addSnapshot('agy', { models: {} });
       store.addSnapshot('codex', { fiveHour: 5 });
     });
 
@@ -210,7 +210,7 @@ describe('HistoryStore', () => {
   describe('clearHistory', () => {
     beforeEach(() => {
       store.addSnapshot('claude', { session: 10 });
-      store.addSnapshot('gemini', { models: {} });
+      store.addSnapshot('agy', { models: {} });
       store.addSnapshot('codex', { fiveHour: 5 });
     });
 
@@ -245,7 +245,7 @@ describe('HistoryStore', () => {
 
       store.addSnapshot('claude', { session: 10 }, twoHoursAgo.toISOString());
       store.addSnapshot('claude', { session: 20 }, now.toISOString());
-      store.addSnapshot('gemini', { models: {} }, oneHourAgo.toISOString());
+      store.addSnapshot('agy', { models: {} }, oneHourAgo.toISOString());
 
       const stats = store.getStats();
 
@@ -257,7 +257,7 @@ describe('HistoryStore', () => {
       expect(stats.agents.claude.oldest).toBe(twoHoursAgo.toISOString());
       expect(stats.agents.claude.newest).toBe(now.toISOString());
 
-      expect(stats.agents.gemini.count).toBe(1);
+      expect(stats.agents.agy.count).toBe(1);
     });
 
     it('returns empty stats for empty history', () => {

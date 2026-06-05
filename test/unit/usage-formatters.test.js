@@ -8,6 +8,7 @@
 
 const {
   formatClaudeUsage,
+  formatAgyUsage,
   formatCodexUsage,
   resetInfoItem,
   parseResetsInToSeconds,
@@ -58,8 +59,26 @@ describe('UsageFormatters', () => {
       expect(CYCLE_DURATIONS.fiveHour).toBe(5 * 60 * 60);
     });
 
-    it('has correct sessionGemini duration (24 hours)', () => {
-      expect(CYCLE_DURATIONS.sessionGemini).toBe(24 * 60 * 60);
+    it('has correct sessionAgy duration (24 hours)', () => {
+      expect(CYCLE_DURATIONS.sessionAgy).toBe(24 * 60 * 60);
+    });
+  });
+
+  describe('formatAgyUsage', () => {
+    it('preserves Antigravity model display casing', () => {
+      const html = formatAgyUsage({
+        models: [
+          {
+            model: 'Gemini 3.5 Flash (Medium)',
+            percentUsed: 0,
+            resetsIn: null,
+            resetsInSeconds: null,
+          },
+        ],
+      });
+
+      expect(html).toContain('Gemini 3.5 Flash (Medium)');
+      expect(html).not.toContain('gemini 3.5 flash (medium)');
     });
   });
 

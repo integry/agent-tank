@@ -1,49 +1,49 @@
 /**
- * End-to-End tests for GeminiAgent
+ * End-to-End tests for AgyAgent
  *
- * These tests execute the actual Gemini CLI via PTY to validate real-world
+ * These tests execute the actual Antigravity CLI via PTY to validate real-world
  * behavior. Tests may be skipped if the CLI is not installed or if
  * authentication is not configured.
  *
  * Requirements:
- * - Gemini CLI must be installed (`gemini` command available)
- * - User must be authenticated with Gemini CLI
+ * - Antigravity CLI must be installed (`agy` command available)
+ * - User must be authenticated with Antigravity CLI
  * - Tests use freshProcess mode for isolation
  */
 
 const { execSync } = require('child_process');
 
-// Check if Gemini CLI is available before loading node-pty
-let geminiCliAvailable = false;
-let geminiCliPath = null;
+// Check if Antigravity CLI is available before loading node-pty
+let agyCliAvailable = false;
+let agyCliPath = null;
 
 try {
-  geminiCliPath = execSync('which gemini 2>/dev/null', { encoding: 'utf-8' }).trim();
-  geminiCliAvailable = geminiCliPath.length > 0;
+  agyCliPath = execSync('which agy 2>/dev/null', { encoding: 'utf-8' }).trim();
+  agyCliAvailable = agyCliPath.length > 0;
 } catch {
-  geminiCliAvailable = false;
+  agyCliAvailable = false;
 }
 
 // Only load the agent if CLI is available to avoid node-pty issues in environments without it
-const describeIfGemini = geminiCliAvailable ? describe : describe.skip;
+const describeIfAgy = agyCliAvailable ? describe : describe.skip;
 
-describeIfGemini('GeminiAgent E2E', () => {
-  let GeminiAgent;
+describeIfAgy('AgyAgent E2E', () => {
+  let AgyAgent;
 
   beforeAll(() => {
     // Dynamically require to avoid loading node-pty when CLI is not available
-    const { GeminiAgent: Agent } = require('../../src/agents/gemini.js');
-    GeminiAgent = Agent;
+    const { AgyAgent: Agent } = require('../../src/agents/agy.js');
+    AgyAgent = Agent;
   });
 
   // Real PTY operations can take time (up to 25s timeout in agent + overhead)
   jest.setTimeout(60000);
 
   describe('CLI Availability', () => {
-    it('detects Gemini CLI installation', () => {
-      expect(geminiCliAvailable).toBe(true);
-      expect(geminiCliPath).toBeTruthy();
-      console.log(`Gemini CLI found at: ${geminiCliPath}`);
+    it('detects Antigravity CLI installation', () => {
+      expect(agyCliAvailable).toBe(true);
+      expect(agyCliPath).toBeTruthy();
+      console.log(`Antigravity CLI found at: ${agyCliPath}`);
     });
   });
 
@@ -51,7 +51,7 @@ describeIfGemini('GeminiAgent E2E', () => {
     let agent;
 
     beforeEach(() => {
-      agent = new GeminiAgent();
+      agent = new AgyAgent();
       // Enable freshProcess mode for isolation as per requirements
       agent.freshProcess = true;
     });
@@ -70,7 +70,7 @@ describeIfGemini('GeminiAgent E2E', () => {
       // The agent should not have an active shell before refresh
       expect(agent.shell).toBeNull();
 
-      // Attempt refresh - this will spawn a real Gemini process
+      // Attempt refresh - this will spawn a real Antigravity process
       try {
         await agent.refresh();
       } catch (err) {
@@ -79,7 +79,7 @@ describeIfGemini('GeminiAgent E2E', () => {
             err.message.includes('not logged in') ||
             err.message.includes('authentication') ||
             err.message.includes('not authenticated')) {
-          console.log('Skipping test: Gemini CLI not authenticated');
+          console.log('Skipping test: Antigravity CLI not authenticated');
           return;
         }
         throw err;
@@ -121,7 +121,7 @@ describeIfGemini('GeminiAgent E2E', () => {
     let agent;
 
     beforeEach(() => {
-      agent = new GeminiAgent();
+      agent = new AgyAgent();
       agent.freshProcess = true;
     });
 
@@ -196,9 +196,9 @@ describeIfGemini('GeminiAgent E2E', () => {
           expect(modelEntry).toHaveProperty('percentUsed');
           expect(modelEntry).toHaveProperty('resetsInSeconds');
 
-          // Model name should be a string starting with 'gemini-'
+          // Model name should be the display name reported by Antigravity.
           expect(typeof modelEntry.model).toBe('string');
-          expect(modelEntry.model).toMatch(/^gemini-/i);
+          expect(modelEntry.model.length).toBeGreaterThan(0);
 
           // usageLeft should be a number between 0 and 100
           expect(typeof modelEntry.usageLeft).toBe('number');
@@ -210,8 +210,10 @@ describeIfGemini('GeminiAgent E2E', () => {
           expect(modelEntry.percentUsed).toBeGreaterThanOrEqual(0);
           expect(modelEntry.percentUsed).toBeLessThanOrEqual(100);
 
-          // resetsIn should be a string (e.g., "3h 26m")
-          expect(typeof modelEntry.resetsIn).toBe('string');
+          // resetsIn should be a string when Antigravity reports a reset window.
+          if (modelEntry.resetsIn !== null) {
+            expect(typeof modelEntry.resetsIn).toBe('string');
+          }
 
           // resetsInSeconds should be a number or null
           if (modelEntry.resetsInSeconds !== null) {
@@ -271,7 +273,7 @@ describeIfGemini('GeminiAgent E2E', () => {
     let agent;
 
     beforeEach(() => {
-      agent = new GeminiAgent();
+      agent = new AgyAgent();
       agent.freshProcess = true;
     });
 
@@ -306,8 +308,8 @@ describeIfGemini('GeminiAgent E2E', () => {
       expect(status).toHaveProperty('error');
       expect(status).toHaveProperty('isRefreshing');
 
-      // Name should be 'gemini'
-      expect(status.name).toBe('gemini');
+      // Name should be 'agy'
+      expect(status.name).toBe('agy');
 
       // isRefreshing should be false after refresh completes
       expect(status.isRefreshing).toBe(false);
@@ -350,7 +352,7 @@ describeIfGemini('GeminiAgent E2E', () => {
     let agent;
 
     beforeEach(() => {
-      agent = new GeminiAgent();
+      agent = new AgyAgent();
       agent.freshProcess = true;
     });
 
@@ -422,28 +424,23 @@ describeIfGemini('GeminiAgent E2E', () => {
 
   describe('Configuration', () => {
     it('has correct default timeout', () => {
-      const agent = new GeminiAgent();
+      const agent = new AgyAgent();
       expect(agent.getTimeout()).toBe(35000);
     });
 
     it('uses correct command', () => {
-      const agent = new GeminiAgent();
-      expect(agent.command).toBe('gemini');
+      const agent = new AgyAgent();
+      expect(agent.command).toBe('agy');
     });
 
-    it('starts Gemini with --skip-trust', () => {
-      const agent = new GeminiAgent();
-      expect(agent.args).toEqual(['--skip-trust']);
-    });
-
-    it('defaults Gemini mode to fallback', () => {
-      const agent = new GeminiAgent();
-      expect(agent.mode).toBe('fallback');
+    it('starts Antigravity with permission bypass', () => {
+      const agent = new AgyAgent();
+      expect(agent.args).toEqual(['--dangerously-skip-permissions']);
     });
 
     it('has correct agent name', () => {
-      const agent = new GeminiAgent();
-      expect(agent.name).toBe('gemini');
+      const agent = new AgyAgent();
+      expect(agent.name).toBe('agy');
     });
   });
 
@@ -451,7 +448,7 @@ describeIfGemini('GeminiAgent E2E', () => {
     let agent;
 
     beforeEach(() => {
-      agent = new GeminiAgent();
+      agent = new AgyAgent();
       agent.freshProcess = true;
     });
 
@@ -517,18 +514,18 @@ describeIfGemini('GeminiAgent E2E', () => {
 });
 
 // Separate describe block for when CLI is NOT available
-describe('GeminiAgent E2E (CLI Not Available)', () => {
+describe('AgyAgent E2E (CLI Not Available)', () => {
   // Only run these tests if CLI is not available
-  const runTests = !geminiCliAvailable;
+  const runTests = !agyCliAvailable;
 
-  (runTests ? it : it.skip)('skips tests when Gemini CLI is not installed', () => {
-    console.log('Gemini CLI not found - E2E tests are being skipped');
-    expect(geminiCliAvailable).toBe(false);
+  (runTests ? it : it.skip)('skips tests when Antigravity CLI is not installed', () => {
+    console.log('Antigravity CLI not found - E2E tests are being skipped');
+    expect(agyCliAvailable).toBe(false);
   });
 
   (runTests ? it : it.skip)('reports missing CLI appropriately', () => {
     // This test documents the expected behavior when CLI is missing
-    expect(geminiCliPath).toBeFalsy();
-    console.log('To run E2E tests, install Gemini CLI: https://github.com/anthropics/gemini-cli');
+    expect(agyCliPath).toBeFalsy();
+    console.log('To run E2E tests, install Antigravity CLI: https://antigravity.google/docs/cli-getting-started');
   });
 });

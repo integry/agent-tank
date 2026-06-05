@@ -1,5 +1,5 @@
 /**
- * Unit tests for CLI output parsing (BaseAgent, Claude, Gemini, Codex)
+ * Unit tests for CLI output parsing (BaseAgent, Claude, Antigravity, Codex)
  *
  * Tests parser logic to ensure complex regex rules and text stripping
  * functions work across different output variations without invoking
@@ -14,7 +14,7 @@ jest.mock('node-pty', () => ({
 const mockPty = require('node-pty');
 const { BaseAgent } = require('../../src/agents/base.js');
 const { ClaudeAgent } = require('../../src/agents/claude.js');
-const { GeminiAgent } = require('../../src/agents/gemini.js');
+const { AgyAgent } = require('../../src/agents/agy.js');
 const { CodexAgent } = require('../../src/agents/codex.js');
 const { parseResetTime, formatDuration } = require('../../src/agents/pty-output-parser.js');
 
@@ -537,6 +537,20 @@ describe('ClaudeAgent', () => {
       expect(agent.hasCompleteOutput(output)).toBe(true);
     });
 
+    it('waits for weekly Sonnet usage when weekly-all is present', () => {
+      const output = `
+        Current session
+        0% used
+        Resets 8pm (Europe/Berlin)
+
+        Current week (all models)
+        15% used
+        Resets Jun 10, 6pm (Europe/Berlin)
+      `;
+
+      expect(agent.hasCompleteOutput(output)).toBe(false);
+    });
+
     it('parses compact Claude 2.1 usage screen output', () => {
       const output = `
         SettingsStatusConfigUsage Stats Session Totalcost:$0.0000
@@ -648,64 +662,68 @@ describe('ClaudeAgent', () => {
   });
 });
 
-describe('GeminiAgent', () => {
+describe('AgyAgent', () => {
   let agent;
 
   beforeEach(() => {
-    agent = new GeminiAgent();
+    agent = new AgyAgent();
   });
 
   describe('parseOutput', () => {
-    it('parses single model usage', () => {
+    it('parses single model quota block', () => {
       const output = `
-        gemini-2.5-flash   90% (Resets in 3h 26m)
-        Usage limits span all sessions
+        Model Quota
+
+        Gemini 3.5 Flash (Medium)
+        ████████████████████ 100%
+        Quota available
       `;
 
       const result = agent.parseOutput(output);
 
       expect(result.models).toHaveLength(1);
-      expect(result.models[0].model).toBe('gemini-2.5-flash');
-      expect(result.models[0].usageLeft).toBe(90);
-      expect(result.models[0].percentUsed).toBe(10);
-      expect(result.models[0].resetsIn).toBe('3h 26m');
+      expect(result.models[0].model).toBe('Gemini 3.5 Flash (Medium)');
+      expect(result.models[0].usageLeft).toBe(100);
+      expect(result.models[0].percentUsed).toBe(0);
+      expect(result.models[0].resetsIn).toBeNull();
     });
 
-    it('parses multiple model usages', () => {
+    it('parses multiple model quota blocks', () => {
       const output = `
-        gemini-2.5-flash   80% (Resets in 2h 15m)
-        gemini-2.5-pro     50% (Resets in 5h 45m)
-        gemini-1.5-pro     100% (Resets in 30m)
-        Usage limits span all sessions
+        Model Quota
+
+        Gemini 3.5 Flash (Medium)
+        ████████████████ 80%
+        Quota available
+
+        Claude Sonnet 4.6 (Thinking)
+        ██████████ 50%
+        Resets in 5h 45m
+
+        GPT-OSS 120B (Medium)
+        ████████████████████ 100%
+        Quota available
       `;
 
       const result = agent.parseOutput(output);
 
       expect(result.models).toHaveLength(3);
-      expect(result.models[0].model).toBe('gemini-2.5-flash');
+      expect(result.models[0].model).toBe('Gemini 3.5 Flash (Medium)');
       expect(result.models[0].usageLeft).toBe(80);
-      expect(result.models[1].model).toBe('gemini-2.5-pro');
+      expect(result.models[1].model).toBe('Claude Sonnet 4.6 (Thinking)');
       expect(result.models[1].usageLeft).toBe(50);
-      expect(result.models[2].model).toBe('gemini-1.5-pro');
+      expect(result.models[1].resetsIn).toBe('5h 45m');
+      expect(result.models[2].model).toBe('GPT-OSS 120B (Medium)');
       expect(result.models[2].usageLeft).toBe(100);
-    });
-
-    it('handles negative/dash prefix in percentage (output formatting artifact)', () => {
-      const output = `
-        gemini-2.5-flash   -90.2% (Resets in 3h 26m)
-        Usage limits span all sessions
-      `;
-
-      const result = agent.parseOutput(output);
-
-      expect(result.models).toHaveLength(1);
-      expect(result.models[0].usageLeft).toBe(90.2);
     });
 
     it('calculates percentUsed correctly', () => {
       const output = `
-        gemini-2.5-flash   75% (Resets in 1h 30m)
-        Usage limits span all sessions
+        Model Quota
+
+        Gemini 3.5 Flash (High)
+        ███████████████ 75%
+        Quota available
       `;
 
       const result = agent.parseOutput(output);
@@ -715,8 +733,11 @@ describe('GeminiAgent', () => {
 
     it('calculates resetsInSeconds correctly', () => {
       const output = `
-        gemini-2.5-flash   90% (Resets in 2h 30m)
-        Usage limits span all sessions
+        Model Quota
+
+        Gemini 3.1 Pro (Low)
+        ██████████████████ 90%
+        Resets in 2h 30m
       `;
 
       const result = agent.parseOutput(output);
@@ -727,8 +748,11 @@ describe('GeminiAgent', () => {
     it('detects version update notification', () => {
       const output = `
         Update available! 0.24.5 → 0.32.1
-        gemini-2.5-flash   90% (Resets in 3h 26m)
-        Usage limits span all sessions
+        Model Quota
+
+        Gemini 3.5 Flash (Medium)
+        ██████████████████ 90%
+        Quota available
       `;
 
       const result = agent.parseOutput(output);
@@ -740,22 +764,31 @@ describe('GeminiAgent', () => {
 
     it('handles ANSI-formatted output', () => {
       const output = `
-        \x1B[32mgemini-2.5-flash\x1B[0m   \x1B[33m85%\x1B[0m (Resets in 4h 10m)
-        Usage limits span all sessions
+        \x1B[1mModel Quota\x1B[0m
+
+        \x1B[32mGemini 3.5 Flash (Medium)\x1B[0m
+        \x1B[33m█████████████████ 85%\x1B[0m
+        Quota available
       `;
 
       const result = agent.parseOutput(output);
 
       expect(result.models).toHaveLength(1);
-      expect(result.models[0].model).toBe('gemini-2.5-flash');
+      expect(result.models[0].model).toBe('Gemini 3.5 Flash (Medium)');
       expect(result.models[0].usageLeft).toBe(85);
     });
 
     it('avoids duplicate model entries', () => {
       const output = `
-        gemini-2.5-flash   90% (Resets in 3h 26m)
-        gemini-2.5-flash   90% (Resets in 3h 26m)
-        Usage limits span all sessions
+        Model Quota
+
+        Gemini 3.5 Flash (Medium)
+        ██████████████████ 90%
+        Quota available
+
+        Gemini 3.5 Flash (Medium)
+        ██████████████████ 90%
+        Quota available
       `;
 
       const result = agent.parseOutput(output);
@@ -779,8 +812,11 @@ describe('GeminiAgent', () => {
 
     it('handles 0% usage left', () => {
       const output = `
-        gemini-2.5-flash   0% (Resets in 5h 0m)
-        Usage limits span all sessions
+        Model Quota
+
+        Gemini 3.1 Pro (High)
+        0%
+        Resets in 5h 0m
       `;
 
       const result = agent.parseOutput(output);
@@ -791,8 +827,11 @@ describe('GeminiAgent', () => {
 
     it('handles decimal percentages', () => {
       const output = `
-        gemini-2.5-flash   87.5% (Resets in 2h 45m)
-        Usage limits span all sessions
+        Model Quota
+
+        Gemini 3.5 Flash (Medium)
+        █████████████████ 87.5%
+        Resets in 2h 45m
       `;
 
       const result = agent.parseOutput(output);
@@ -803,9 +842,15 @@ describe('GeminiAgent', () => {
 
     it('includes pace data for each model', () => {
       const output = `
-        gemini-2.5-flash   75% (Resets in 12h)
-        gemini-2.5-pro     50% (Resets in 18h)
-        Usage limits span all sessions
+        Model Quota
+
+        Gemini 3.5 Flash (Medium)
+        ███████████████ 75%
+        Resets in 12h
+
+        Claude Sonnet 4.6 (Thinking)
+        ██████████ 50%
+        Resets in 18h
       `;
 
       const result = agent.parseOutput(output);
@@ -880,19 +925,19 @@ describe('GeminiAgent', () => {
       jest.useRealTimers();
     });
 
-    it('submits /stats directly without Escape rewinding the UI', () => {
+    it('submits /usage directly without Escape rewinding the UI', () => {
       const shell = { write: jest.fn() };
 
       agent.sendCommands(shell, '');
       jest.advanceTimersByTime(700);
 
       expect(shell.write.mock.calls).toEqual([
-        ['/stats'],
+        ['/usage'],
         ['\r'],
       ]);
     });
 
-    it('does not send /stats while authentication is in progress', () => {
+    it('does not send /usage while authentication is in progress', () => {
       const shell = { write: jest.fn() };
 
       agent.sendCommands(shell, 'Waiting for authentication... (Press Esc or Ctrl+C to cancel)');
@@ -909,7 +954,7 @@ describe('GeminiAgent', () => {
     });
 
     it('treats actual prompt text as ready after authentication completes', () => {
-      const output = 'Signed in with Google /auth\nType your message';
+      const output = 'Antigravity CLI 1.0.5\nuser@example.com\n/tmp\n>';
 
       expect(agent._isAuthenticating(output)).toBe(false);
       expect(agent.isReadyForCommands(output)).toBe(true);
@@ -1695,58 +1740,57 @@ describe('Graceful Degradation', () => {
     });
   });
 
-  describe('GeminiAgent', () => {
-    const geminiAuthOutput = `
-      Gemini CLI v0.35.2
+  describe('AgyAgent', () => {
+    const agyAuthOutput = `
+      Antigravity CLI 1.0.5
 
       ? Get started
 
       How would you like to authenticate for this project?
 
       1. Sign in with Google
-      2. Use Gemini API Key
+      2. Use Google AI key
       3. Vertex AI
 
       Failed to sign in. Message: Authentication consent could not be obtained.
-      Please run Gemini CLI in an interactive terminal to authenticate, or use NO_BROWSER=true for manual authentication.
     `;
 
     it('returns empty models array for malformed output', () => {
-      const agent = new GeminiAgent();
+      const agent = new AgyAgent();
       const result = agent.parseOutput('random garbage data');
 
       expect(result.models).toEqual([]);
     });
 
     it('parseDurationToSeconds returns null for malformed duration', () => {
-      const agent = new GeminiAgent();
+      const agent = new AgyAgent();
 
       expect(agent.parseDurationToSeconds('not a duration')).toBeNull();
       expect(agent.parseDurationToSeconds(undefined)).toBeNull();
     });
 
-    it('detects unauthenticated Gemini setup screens', () => {
-      const agent = new GeminiAgent();
+    it('detects unauthenticated Antigravity setup screens', () => {
+      const agent = new AgyAgent();
 
-      expect(agent.detectAuthenticationState(geminiAuthOutput)).toEqual({
+      expect(agent.detectAuthenticationState(agyAuthOutput)).toEqual({
         authenticated: false,
         status: 'unauthenticated',
         message: 'Authentication required',
         detail: 'Failed to sign in: Authentication consent could not be obtained.',
-        action: 'Run Gemini CLI in an interactive terminal to authenticate, or use NO_BROWSER=true for manual authentication.',
+        action: 'Run agy in an interactive terminal to authenticate.',
       });
     });
 
-    it('treats unauthenticated Gemini setup screens as complete output', () => {
-      const agent = new GeminiAgent();
+    it('treats unauthenticated Antigravity setup screens as complete output', () => {
+      const agent = new AgyAgent();
 
-      expect(agent.hasCompleteOutput(geminiAuthOutput)).toBe(true);
+      expect(agent.hasCompleteOutput(agyAuthOutput)).toBe(true);
     });
 
-    it('stores Gemini authentication state during refresh', async () => {
-      const agent = new GeminiAgent();
+    it('stores Antigravity authentication state during refresh', async () => {
+      const agent = new AgyAgent();
       agent._metadataFetched = true;
-      agent.runCommand = jest.fn().mockResolvedValue(geminiAuthOutput);
+      agent.runCommand = jest.fn().mockResolvedValue(agyAuthOutput);
 
       await agent.refresh();
 
@@ -1755,7 +1799,7 @@ describe('Graceful Degradation', () => {
         status: 'unauthenticated',
         message: 'Authentication required',
         detail: 'Failed to sign in: Authentication consent could not be obtained.',
-        action: 'Run Gemini CLI in an interactive terminal to authenticate, or use NO_BROWSER=true for manual authentication.',
+        action: 'Run agy in an interactive terminal to authenticate.',
       });
       expect(agent.error).toBe('Authentication required');
       expect(agent.lastUpdated).not.toBeNull();
@@ -1771,7 +1815,7 @@ describe('Graceful Degradation', () => {
       });
 
       it('handleTrustPrompt does not crash when shell becomes null during setTimeout', () => {
-        const agent = new GeminiAgent();
+        const agent = new AgyAgent();
         const mockShell = { write: jest.fn() };
 
         // Call handleTrustPrompt with a valid shell
@@ -1787,7 +1831,7 @@ describe('Graceful Degradation', () => {
       });
 
       it('fetchMetadata setTimeout callbacks handle null shell gracefully', async () => {
-        const agent = new GeminiAgent();
+        const agent = new AgyAgent();
 
         // Set up shell that will be nullified
         agent.shell = { write: jest.fn() };

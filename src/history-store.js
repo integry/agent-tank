@@ -130,7 +130,7 @@ class HistoryStore {
   /**
    * Add a usage snapshot to history.
    *
-   * @param {string} agentName - Name of the agent (e.g., 'claude', 'gemini', 'codex')
+   * @param {string} agentName - Name of the agent (e.g., 'claude', 'agy', 'codex')
    * @param {Object} usageData - The usage data to store
    * @param {string} [timestamp] - ISO timestamp (defaults to current time)
    * @returns {Object} The stored record

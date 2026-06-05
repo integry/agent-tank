@@ -4,7 +4,7 @@ const { formatPaceWarning } = require('./pace-evaluator');
 // Cycle duration constants in seconds
 const CYCLE_DURATIONS = {
   session: 5 * 60 * 60,        // 5 hours = 18000 seconds
-  sessionGemini: 24 * 60 * 60, // 24 hours = 86400 seconds (Gemini uses 24h sessions)
+  sessionAgy: 24 * 60 * 60, // 24 hours = 86400 seconds
   weekly: 7 * 24 * 60 * 60,    // 7 days = 604800 seconds
   fiveHour: 5 * 60 * 60        // 5 hours = 18000 seconds
 };
@@ -169,22 +169,21 @@ function formatClaudeUsage(usage) {
   return html;
 }
 
-function formatGeminiUsage(usage) {
+function formatAgyUsage(usage) {
   let html = '';
   if (usage.models && usage.models.length > 0) {
     for (const model of usage.models) {
       const percent = model.percentUsed ?? 0;
       const isZero = percent === 0;
-      // Use lowercase model name with model-name styling
-      const modelName = model.model.toLowerCase();
+      const modelName = model.model;
       const resetsIn = model.resetsIn || '';
 
       // Use pre-calculated pace data from the usage object
       const paceData = model.pace || null;
 
       html += '<div class="model-container">';
-      html += usageItem(modelName, percent, '% used', { isZero, isModelName: true, agentName: 'gemini', resetsIn });
-      html += resetInfoItem(model.resetsIn, null, 'sessionGemini', { isZero, paceData });
+      html += usageItem(modelName, percent, '% used', { isZero, isModelName: true, agentName: 'agy', resetsIn });
+      html += resetInfoItem(model.resetsIn, null, 'sessionAgy', { isZero, paceData });
       html += '</div>';
     }
   }
@@ -240,7 +239,7 @@ function formatUsage(agentName, usage) {
     return '<p class="usage-item">No data available</p>';
   }
 
-  const formatters = { claude: formatClaudeUsage, gemini: formatGeminiUsage, codex: formatCodexUsage };
+  const formatters = { claude: formatClaudeUsage, agy: formatAgyUsage, codex: formatCodexUsage };
   const formatter = formatters[agentName];
   const html = formatter ? formatter(usage) : '';
 
@@ -250,7 +249,7 @@ function formatUsage(agentName, usage) {
 module.exports = {
   formatUsage,
   formatClaudeUsage,
-  formatGeminiUsage,
+  formatAgyUsage,
   formatCodexUsage,
   usageItem,
   resetInfoItem,

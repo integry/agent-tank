@@ -2,7 +2,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const { ClaudeAgent } = require('./agents/claude.js');
-const { GeminiAgent } = require('./agents/gemini.js');
+const { AgyAgent } = require('./agents/agy.js');
 const { CodexAgent } = require('./agents/codex.js');
 const { discoverAgents } = require('./discovery.js');
 const { fetchPublicStatus } = require('./public-status.js');
@@ -121,7 +121,6 @@ class AgentTank {
     this.requestedAgents = options.agents || null;
     this.freshProcess = options.freshProcess || false;
     this.claudeApi = options.claudeApi || false; // Use direct Anthropic API for Claude
-    this.geminiMode = options.geminiMode || 'fallback';
     this.auth = options.auth || {};
     this.agents = new Map();
     this.server = null;
@@ -236,11 +235,11 @@ class AgentTank {
           logger.warn('No compatible LLM agents found.');
           logger.info('Requirements:');
           logger.info('  - Claude Code 2.0+ (for /usage command support)');
-          logger.info('  - Gemini CLI 0.24.5+ (for /stats command support)');
+          logger.info('  - Antigravity CLI as agy (for /usage command support)');
           logger.info('  - Codex CLI');
           logger.info('\nInstall/update with:');
           logger.info('  npm install -g @anthropic-ai/claude-code@latest');
-          logger.info('  npm install -g gemini@latest');
+          logger.info('  Install Antigravity CLI from https://antigravity.google/docs/cli-getting-started');
           throw new Error('No agents found');
         }
         logger.success(`✅ Found agents: ${agentNames.join(', ')}`);
@@ -327,8 +326,8 @@ class AgentTank {
     switch (name) {
       case 'claude':
         return new ClaudeAgent({ useApi: this.claudeApi });
-      case 'gemini':
-        return new GeminiAgent({ mode: this.geminiMode });
+      case 'agy':
+        return new AgyAgent();
       case 'codex':
         return new CodexAgent();
       default:

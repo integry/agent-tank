@@ -211,7 +211,7 @@ describe('public-status', () => {
       expect(result.status).toBe('operational');
     });
 
-    it('matches products by gemini keyword in title', () => {
+    it('matches products by Gemini keyword in title', () => {
       const json = JSON.stringify([
         {
           id: 'incident-1',
@@ -360,11 +360,11 @@ describe('public-status', () => {
       expect(STATUS_PAGES.codex.type).toBe('statuspage');
     });
 
-    it('has configuration for gemini (Google Cloud)', () => {
-      expect(STATUS_PAGES.gemini).toBeDefined();
-      expect(STATUS_PAGES.gemini.url).toContain('status.cloud.google.com');
-      expect(STATUS_PAGES.gemini.type).toBe('google-cloud');
-      expect(STATUS_PAGES.gemini.productId).toBeDefined();
+    it('has configuration for agy (Google Cloud)', () => {
+      expect(STATUS_PAGES.agy).toBeDefined();
+      expect(STATUS_PAGES.agy.url).toContain('status.cloud.google.com');
+      expect(STATUS_PAGES.agy.type).toBe('google-cloud');
+      expect(STATUS_PAGES.agy.productId).toBeDefined();
     });
   });
 });

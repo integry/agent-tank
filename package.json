@@ -1,7 +1,7 @@
 {
   "name": "agent-tank",
-  "version": "0.9.6",
-  "description": "Monitor and query usage limits for LLM CLI tools (Claude, Gemini, Codex) via HTTP API",
+  "version": "0.9.7",
+  "description": "Monitor and query usage limits for LLM CLI tools (Claude, Antigravity, Codex) via HTTP API",
   "main": "src/index.js",
   "bin": {
     "agent-tank": "bin/agent-tank.js"
@@ -19,7 +19,8 @@
   "keywords": [
     "llm",
     "claude",
-    "gemini",
+    "antigravity",
+    "agy",
     "codex",
     "openai",
     "anthropic",

@@ -125,9 +125,9 @@ describe('AgentTank', () => {
       });
 
       it('accepts specific agents list', () => {
-        const agents = ['claude', 'gemini'];
+        const agents = ['claude', 'agy'];
         const tank = new AgentTank({ agents });
-        expect(tank.requestedAgents).toEqual(['claude', 'gemini']);
+        expect(tank.requestedAgents).toEqual(['claude', 'agy']);
       });
 
       it('disables auto-discover when set to false', () => {
@@ -143,16 +143,6 @@ describe('AgentTank', () => {
       it('enables claudeApi when set to true', () => {
         const tank = new AgentTank({ claudeApi: true });
         expect(tank.claudeApi).toBe(true);
-      });
-
-      it('defaults geminiMode to fallback', () => {
-        const defaultTank = new AgentTank();
-        expect(defaultTank.geminiMode).toBe('fallback');
-      });
-
-      it('stores configured geminiMode', () => {
-        const customTank = new AgentTank({ geminiMode: 'direct' });
-        expect(customTank.geminiMode).toBe('direct');
       });
 
       it('accepts auth configuration with user and pass', () => {
@@ -280,16 +270,10 @@ describe('AgentTank', () => {
       expect(agent.name).toBe('claude');
     });
 
-    it('creates GeminiAgent for "gemini"', () => {
-      const agent = tank.createAgent('gemini');
+    it('creates AgyAgent for "agy"', () => {
+      const agent = tank.createAgent('agy');
       expect(agent).not.toBeNull();
-      expect(agent.name).toBe('gemini');
-    });
-
-    it('passes geminiMode to GeminiAgent', () => {
-      const directTank = new AgentTank({ geminiMode: 'direct' });
-      const agent = directTank.createAgent('gemini');
-      expect(agent.mode).toBe('direct');
+      expect(agent.name).toBe('agy');
     });
 
     it('creates CodexAgent for "codex"', () => {
@@ -328,14 +312,14 @@ describe('AgentTank', () => {
 
     it('can manually add agents to the Map', () => {
       const claudeAgent = tank.createAgent('claude');
-      const geminiAgent = tank.createAgent('gemini');
+      const agyAgent = tank.createAgent('agy');
 
       tank.agents.set('claude', claudeAgent);
-      tank.agents.set('gemini', geminiAgent);
+      tank.agents.set('agy', agyAgent);
 
       expect(tank.agents.size).toBe(2);
       expect(tank.agents.has('claude')).toBe(true);
-      expect(tank.agents.has('gemini')).toBe(true);
+      expect(tank.agents.has('agy')).toBe(true);
     });
 
     it('agents in Map have correct structure', () => {
@@ -366,16 +350,16 @@ describe('AgentTank', () => {
 
     it('returns status for all configured agents', () => {
       const claudeAgent = tank.createAgent('claude');
-      const geminiAgent = tank.createAgent('gemini');
+      const agyAgent = tank.createAgent('agy');
 
       tank.agents.set('claude', claudeAgent);
-      tank.agents.set('gemini', geminiAgent);
+      tank.agents.set('agy', agyAgent);
 
       const status = tank.getStatus();
 
       expect(Object.keys(status)).toHaveLength(2);
       expect(status).toHaveProperty('claude');
-      expect(status).toHaveProperty('gemini');
+      expect(status).toHaveProperty('agy');
     });
 
     it('returns correct status structure for each agent', () => {
@@ -435,13 +419,13 @@ describe('AgentTank', () => {
     });
 
     it('returns correct status structure', () => {
-      const geminiAgent = tank.createAgent('gemini');
-      tank.agents.set('gemini', geminiAgent);
+      const agyAgent = tank.createAgent('agy');
+      tank.agents.set('agy', agyAgent);
 
-      const status = tank.getAgentStatus('gemini');
+      const status = tank.getAgentStatus('agy');
 
       expect(status).toEqual({
-        name: 'gemini',
+        name: 'agy',
         usage: null,
         metadata: null,
         lastUpdated: null,
@@ -453,19 +437,19 @@ describe('AgentTank', () => {
 
     it('returns different status for different agents', () => {
       const claudeAgent = tank.createAgent('claude');
-      const geminiAgent = tank.createAgent('gemini');
+      const agyAgent = tank.createAgent('agy');
 
       claudeAgent.usage = { session: { percent: 30 } };
-      geminiAgent.usage = { dailyQueries: { count: 100 } };
+      agyAgent.usage = { dailyQueries: { count: 100 } };
 
       tank.agents.set('claude', claudeAgent);
-      tank.agents.set('gemini', geminiAgent);
+      tank.agents.set('agy', agyAgent);
 
       const claudeStatus = tank.getAgentStatus('claude');
-      const geminiStatus = tank.getAgentStatus('gemini');
+      const agyStatus = tank.getAgentStatus('agy');
 
       expect(claudeStatus.usage).toEqual({ session: { percent: 30 } });
-      expect(geminiStatus.usage).toEqual({ dailyQueries: { count: 100 } });
+      expect(agyStatus.usage).toEqual({ dailyQueries: { count: 100 } });
     });
   });
 
@@ -534,7 +518,7 @@ describe('AgentTank', () => {
       const agentA = { requestStop: jest.fn(), killProcess: jest.fn() };
       const agentB = { requestStop: jest.fn(), killProcess: jest.fn() };
       tank.agents.set('claude', agentA);
-      tank.agents.set('gemini', agentB);
+      tank.agents.set('agy', agentB);
 
       tank.stop();
 
