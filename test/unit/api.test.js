@@ -41,9 +41,9 @@ const { createRequestHandler } = require('../../src/server.js');
     // Manually add mock agents for testing
     if (options.withAgents !== false) {
       const claudeAgent = tank.createAgent('claude');
-      const geminiAgent = tank.createAgent('gemini');
+      const agyAgent = tank.createAgent('agy');
       tank.agents.set('claude', claudeAgent);
-      tank.agents.set('gemini', geminiAgent);
+      tank.agents.set('agy', agyAgent);
     }
 
     // Use the bare request handler so supertest doesn't need to bind a real socket.
@@ -73,7 +73,7 @@ const { createRequestHandler } = require('../../src/server.js');
         .expect(200);
 
       expect(response.body).toHaveProperty('claude');
-      expect(response.body).toHaveProperty('gemini');
+      expect(response.body).toHaveProperty('agy');
       expect(Object.keys(response.body)).toHaveLength(2);
     });
 
@@ -147,11 +147,11 @@ const { createRequestHandler } = require('../../src/server.js');
       const srv = createTankWithServer();
 
       const response = await request(srv)
-        .get('/status/gemini')
+        .get('/status/agy')
         .expect(200);
 
       expect(response.body).toEqual({
-        name: 'gemini',
+        name: 'agy',
         usage: null,
         metadata: null,
         lastUpdated: null,

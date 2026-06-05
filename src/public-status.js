@@ -3,7 +3,7 @@
  *
  * Fetches status information from public API status pages for Anthropic, OpenAI,
  * and Google Cloud. Uses Statuspage.io JSON API for Anthropic and OpenAI, and
- * Google Cloud's incidents JSON for Google/Gemini.
+ * Google Cloud's incidents JSON for Antigravity's Google-backed models.
  */
 
 const https = require('node:https');
@@ -20,11 +20,11 @@ const STATUS_PAGES = {
     type: 'statuspage',
     name: 'OpenAI',
   },
-  gemini: {
+  agy: {
     url: 'https://status.cloud.google.com/incidents.json',
     type: 'google-cloud',
     name: 'Google Cloud',
-    // Vertex AI Gemini product ID for filtering incidents
+    // Vertex AI Gemini product ID for filtering incidents that may affect Antigravity.
     productId: 'Z0FZJAMvEB4j3NbCJs6B',
   },
 };
@@ -99,7 +99,7 @@ function parseStatuspageResponse(json) {
 function parseGoogleCloudResponse(json, productId) {
   const incidents = JSON.parse(json);
 
-  // Find active incidents affecting the specified product (e.g., Vertex AI Gemini)
+  // Find active incidents affecting the specified product.
   const now = new Date();
   const activeIncidents = incidents.filter((incident) => {
     // Check if incident is ongoing (no end date or recent)
@@ -171,7 +171,7 @@ function parseGoogleCloudResponse(json, productId) {
 
 /**
  * Fetch public status for a single agent
- * @param {string} agentName - Name of the agent (claude, gemini, codex)
+ * @param {string} agentName - Name of the agent (claude, agy, codex)
  * @returns {Promise<object>} - Status object with status, indicator, description
  */
 async function fetchAgentPublicStatus(agentName) {

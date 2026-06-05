@@ -47,14 +47,14 @@ function attachClaudePace(usage) {
 }
 
 /**
- * Attach pace evaluation to Gemini usage metrics.
- * @param {Object} usage - Gemini usage data
+ * Attach pace evaluation to Antigravity usage metrics.
+ * @param {Object} usage - Antigravity usage data
  */
-function attachGeminiPace(usage) {
+function attachAgyPace(usage) {
   if (!usage.models || !Array.isArray(usage.models)) return;
 
   for (const model of usage.models) {
-    attachPaceToData(model, 'percentUsed', 'sessionGemini');
+    attachPaceToData(model, 'percentUsed', 'sessionAgy');
   }
 }
 
@@ -86,8 +86,8 @@ function attachPaceEvaluation(agentName, usage) {
     case 'claude':
       attachClaudePace(usage);
       break;
-    case 'gemini':
-      attachGeminiPace(usage);
+    case 'agy':
+      attachAgyPace(usage);
       break;
     case 'codex':
       attachCodexPace(usage);
@@ -98,7 +98,7 @@ function attachPaceEvaluation(agentName, usage) {
 module.exports = {
   attachPaceEvaluation,
   attachClaudePace,
-  attachGeminiPace,
+  attachAgyPace,
   attachCodexPace,
   attachPaceToData
 };

@@ -41,7 +41,7 @@ const timeHelpers = `
     // Cycle duration constants (mirrored from server-side)
     const CYCLE_DURATIONS = {
       session: 5 * 60 * 60,
-      sessionGemini: 24 * 60 * 60,
+      sessionAgy: 24 * 60 * 60,
       weekly: 7 * 24 * 60 * 60,
       fiveHour: 5 * 60 * 60
     };
@@ -74,21 +74,21 @@ const metricExtractors = `
       return metrics;
     }
 
-    // Extract metrics from Gemini usage data
-    function extractGeminiMetrics(usage) {
+    // Extract metrics from Antigravity usage data
+    function extractAgyMetrics(usage) {
       const metrics = [];
       if (usage.models && usage.models.length > 0) {
         for (const model of usage.models) {
-          const modelName = model.model.toLowerCase();
-          const metricId = \`gemini-\${modelName.replace(/[^a-z0-9]/g, '-')}\`;
+          const modelName = model.model;
+          const metricId = \`agy-\${modelName.toLowerCase().replace(/[^a-z0-9]/g, '-')}\`;
           metrics.push({
             metricId,
-            agent: 'gemini',
+            agent: 'agy',
             label: modelName,
             percent: model.percentUsed ?? 0,
             resetsIn: model.resetsIn || '',
             resetsAt: model.resetsAt || '',
-            cycle: 'sessionGemini'
+            cycle: 'sessionAgy'
           });
         }
       }

@@ -351,7 +351,7 @@ class BaseAgent {
       this.output += data;
 
       // Always respond to terminal queries — suppressing them causes deadlocks
-      // when CLIs (e.g. Gemini) wait for cursor position responses before
+      // when CLIs wait for cursor position responses before
       // rendering output. Delay slightly during command-in-flight to avoid
       // interleaving with command text being sent via setTimeout.
       if (this._commandInFlight) {

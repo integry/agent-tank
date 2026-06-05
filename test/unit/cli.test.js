@@ -27,6 +27,7 @@ const fs = require('fs');
 const os = require('os');
 
 const CLI_PATH = path.resolve(__dirname, '../../bin/agent-tank.js');
+const pkg = require('../../package.json');
 
 /**
  * Check if node-pty is available by trying to load it.
@@ -210,21 +211,21 @@ describe('CLI', () => {
       const result = runCli(['--version']);
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout.trim()).toBe('0.9.3');
+      expect(result.stdout.trim()).toBe(pkg.version);
     });
 
     itWithPty('outputs version with -v short flag', () => {
       const result = runCli(['-v']);
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout.trim()).toBe('0.9.3');
+      expect(result.stdout.trim()).toBe(pkg.version);
     });
 
     itWithPty('lists all available CLI options in help', () => {
       const result = runCli(['--help']);
 
       expect(result.stdout).toContain('--claude');
-      expect(result.stdout).toContain('--gemini');
+      expect(result.stdout).toContain('--agy');
       expect(result.stdout).toContain('--codex');
       expect(result.stdout).toContain('--port');
       expect(result.stdout).toContain('--host');
@@ -268,7 +269,7 @@ describe('CLI', () => {
       const result = runCli(['--help']);
 
       expect(result.stdout).toContain('Examples:');
-      expect(result.stdout).toContain('agent-tank --claude --gemini');
+      expect(result.stdout).toContain('agent-tank --claude --agy');
       expect(result.stdout).toContain('agent-tank --port 8080');
     });
   });
@@ -740,12 +741,12 @@ describe('CLI', () => {
       }
     });
 
-    itWithPty('--gemini enables Gemini monitoring', async () => {
+    itWithPty('--agy enables Antigravity monitoring', async () => {
       try {
-        const { proc } = await startCliProcess(['--gemini', '--no-auto-discover']);
+        const { proc } = await startCliProcess(['--agy', '--no-auto-discover']);
         proc.kill('SIGTERM');
       } catch (error) {
-        // Expected to fail if gemini CLI is not installed or node-pty not available
+        // Expected to fail if agy CLI is not installed or node-pty not available
         if (!isNodePtyError(error.message)) {
           expect(error.message).not.toContain('Unknown option');
         }
@@ -767,7 +768,7 @@ describe('CLI', () => {
     itWithPty('multiple agent flags can be combined', async () => {
       try {
         const { proc } = await startCliProcess([
-          '--claude', '--gemini', '--codex',
+          '--claude', '--agy', '--codex',
           '--no-auto-discover'
         ]);
         proc.kill('SIGTERM');
@@ -894,10 +895,10 @@ describe('CLI', () => {
       try {
         const { proc } = await startCliProcess([
           '-c', configPath,
-          '--gemini',
+          '--agy',
           '--no-auto-discover'
         ]);
-        // Both claude (from config) and gemini (from CLI) should be enabled
+        // Both claude (from config) and agy (from CLI) should be enabled
         proc.kill('SIGTERM');
       } catch (error) {
         // Expected to fail if CLIs not installed or node-pty not available

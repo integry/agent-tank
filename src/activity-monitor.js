@@ -1,7 +1,7 @@
 /**
  * ActivityMonitor - Monitors local log directories for LLM CLI activity
  *
- * Watches known log directories for Claude, Codex, and Gemini using chokidar with polling.
+ * Watches known log directories for Claude, Codex, and Antigravity using chokidar with polling.
  * When activity is detected (new log entries), it triggers usage refresh callbacks
  * with configurable debouncing to prevent excessive polling.
  */
@@ -24,9 +24,8 @@ const DEFAULT_LOG_DIRECTORIES = {
     path.join(os.homedir(), '.codex', 'sessions'),
     path.join(os.homedir(), '.codex'),
   ],
-  gemini: [
-    path.join(os.homedir(), '.config', 'gemini'),
-    path.join(os.homedir(), '.gemini'),
+  agy: [
+    path.join(os.homedir(), '.gemini', 'antigravity-cli'),
   ],
 };
 

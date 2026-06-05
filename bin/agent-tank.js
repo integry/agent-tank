@@ -8,10 +8,9 @@ const pkg = require('../package.json');
 
 const options = {
   claude: { type: 'boolean', default: false },
-  gemini: { type: 'boolean', default: false },
+  agy: { type: 'boolean', default: false },
   codex: { type: 'boolean', default: false },
   'claude-api': { type: 'boolean', default: false },
-  'gemini-mode': { type: 'string' },
   port: { type: 'string', default: '3456' },
   host: { type: 'string' },
   docker: { type: 'boolean', default: true },
@@ -63,10 +62,9 @@ Usage: agent-tank [options]
 
 Options:
   --claude              Enable Claude monitoring
-  --gemini              Enable Gemini monitoring
+  --agy                 Enable Antigravity monitoring
   --codex               Enable Codex monitoring
   --claude-api          Use direct Anthropic API for Claude usage (faster, 60s refresh)
-  --gemini-mode <mode>  Gemini strategy: fallback, direct, pty (default: fallback)
   --port <port>         HTTP server port (default: 3456)
   --host <host>         Bind address (default: 127.0.0.1 + Docker bridge when available)
   --docker              Enable Docker bridge bind when --host is omitted (default: true)
@@ -103,7 +101,6 @@ Environment variables:
   AGENT_TANK_DOCKER     Enable/disable Docker bridge bind ("1"/"true" or "0"/"false")
   AGENT_TANK_FRESH_PROCESS  Use fresh process per refresh ("1" or "true")
   AGENT_TANK_CLAUDE_API Use direct Anthropic API for Claude usage ("1" or "true")
-  AGENT_TANK_GEMINI_MODE  Gemini strategy: fallback, direct, pty
   AGENT_TANK_AUTO_REFRESH   Enable/disable background auto-refresh ("1" or "true" / "0" or "false")
   AGENT_TANK_AUTO_REFRESH_MODE      Refresh mode: none, interval, activity
   AGENT_TANK_AUTO_REFRESH_INTERVAL  Auto-refresh interval in seconds
@@ -115,11 +112,10 @@ Environment variables:
 
 Examples:
   agent-tank                          # Auto-discover and monitor all available
-  agent-tank --claude --gemini        # Monitor specific agents
+  agent-tank --claude --agy           # Monitor specific agents
   agent-tank --port 8080              # Use custom port
   agent-tank --host 0.0.0.0           # Expose on all interfaces
   agent-tank --no-docker              # Bind localhost only when host is omitted
-  agent-tank --gemini-mode direct     # Prefer direct Gemini quota API calls
   agent-tank --auth-user admin --auth-pass secret  # Enable basic auth
   agent-tank --auth-token mykey       # Enable API key auth
   agent-tank -c ./config.json         # Use config file
@@ -174,7 +170,7 @@ async function main() {
   // Merge CLI options with config (env vars > CLI flags > config file)
   const agents = [];
   if (values.claude || config.claude) agents.push('claude');
-  if (values.gemini || config.gemini) agents.push('gemini');
+  if (values.agy || config.agy) agents.push('agy');
   if (values.codex || config.codex) agents.push('codex');
 
   const auth = {
@@ -202,9 +198,6 @@ async function main() {
   const claudeApi = values['claude-api'] ||
     config.claudeApi ||
     claudeApiEnv === '1' || claudeApiEnv === 'true';
-
-  const geminiModeEnv = process.env.AGENT_TANK_GEMINI_MODE;
-  const geminiMode = geminiModeEnv || values['gemini-mode'] || config.geminiMode || 'fallback';
 
   // Auto-refresh configuration (env > CLI > config file)
   const autoRefreshEnv = process.env.AGENT_TANK_AUTO_REFRESH;
@@ -298,7 +291,6 @@ async function main() {
     auth,
     freshProcess,
     claudeApi,
-    geminiMode,
     autoRefreshEnabled: onceMode ? false : autoRefreshEnabled, // Disable auto-refresh in one-shot mode
     autoRefreshInterval,
     autoRefreshMode: onceMode ? 'none' : autoRefreshMode, // Disable auto-refresh in one-shot mode

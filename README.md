@@ -7,7 +7,7 @@ Agent Tank is a local dashboard and HTTP API for monitoring usage limits in AI c
 It supports:
 
 - Claude Code
-- Gemini CLI
+- Antigravity CLI
 - OpenAI Codex
 
 ## How It Gets the Data
@@ -17,7 +17,7 @@ This is the part that matters.
 Agent Tank reads usage directly from the local CLI tools you already use. It launches the installed CLIs locally, runs their built-in usage commands, and parses the output into a unified web UI and JSON API.
 
 - Claude: runs `/usage`
-- Gemini: runs `/stats`
+- Antigravity: runs `/usage`
 - Codex: prefers JSON-RPC `account/rateLimits/read`, falls back to `/status`
 
 What it does not do:
@@ -37,7 +37,7 @@ Agent Tank is meant for subscription-based coding agent products where the CLI i
 Examples:
 
 - Claude Code Pro / Max
-- Gemini CLI with supported subscription plans
+- Antigravity CLI with supported subscription plans
 - ChatGPT Codex with supported plans
 
 It is not for:
@@ -87,10 +87,7 @@ agent-tank --no-docker
 
 ```bash
 # Monitor only specific agents
-agent-tank --claude --gemini
-
-# Prefer direct Gemini quota fetching
-agent-tank --gemini --gemini-mode direct
+agent-tank --claude --agy
 
 # Use a custom port
 agent-tank --port 8080
@@ -130,7 +127,7 @@ agent-tank --refresh-cooldown 60
 | Agent | Method | Metrics |
 |---|---|---|
 | Claude | PTY `/usage` or Anthropic OAuth API | Current session, weekly all-models, weekly Sonnet-only |
-| Gemini | PTY `/stats` | Per-model usage and reset windows |
+| Antigravity | PTY `/usage` | Per-model quota availability and reset windows when reported |
 | Codex | JSON-RPC preferred, PTY fallback | 5-hour limits, weekly limits, model/account info |
 
 ## Basic Usage
@@ -186,9 +183,8 @@ Set it to `0` to disable the cooldown entirely.
 ```text
 Options:
   --claude              Enable Claude monitoring
-  --gemini              Enable Gemini monitoring
+  --agy                 Enable Antigravity monitoring
   --codex               Enable Codex monitoring
-  --gemini-mode <mode>  Gemini strategy: fallback, direct, pty (default: fallback)
   --port <port>         HTTP server port (default: 3456)
   --host <host>         Bind address (default: 127.0.0.1 + Docker bridge when available)
   --docker              Enable Docker bridge bind when --host is omitted (default: true)
@@ -228,7 +224,6 @@ Environment variables override CLI flags and config file values.
 | `AGENT_TANK_DOCKER` | Enable/disable Docker bridge bind when `--host` is omitted |
 | `AGENT_TANK_FRESH_PROCESS` | Use fresh process per refresh (`1`/`true`) |
 | `AGENT_TANK_CLAUDE_API` | Use Claude API mode (`1`/`true`) |
-| `AGENT_TANK_GEMINI_MODE` | Gemini strategy: `fallback`, `direct`, or `pty` |
 | `AGENT_TANK_AUTO_REFRESH` | Enable/disable auto-refresh |
 | `AGENT_TANK_AUTO_REFRESH_MODE` | `none`, `interval`, or `activity` |
 | `AGENT_TANK_AUTO_REFRESH_INTERVAL` | Auto-refresh interval in seconds |
@@ -243,12 +238,11 @@ Environment variables override CLI flags and config file values.
 ```json
 {
   "claude": true,
-  "gemini": true,
+  "agy": true,
   "codex": false,
   "port": 8080,
   "dockerAccess": true,
   "claudeApi": false,
-  "geminiMode": "fallback",
   "refreshCooldown": 30,
   "autoRefresh": {
     "mode": "activity",
@@ -272,26 +266,17 @@ Run with:
 agent-tank -c config.json
 ```
 
-## Gemini Modes
+## Antigravity
 
-By default, Gemini runs in `fallback` mode:
-
-- try a direct quota fetch using the local Gemini OAuth session
-- fall back to PTY `/stats` if the direct path fails
-
-Available modes:
-
-- `fallback`: direct first, PTY fallback
-- `direct`: use the direct quota API only
-- `pty`: use interactive Gemini CLI `/stats` only
+Antigravity support uses the `agy` CLI and reads the interactive `/usage` output.
 
 In `--once` mode, Agent Tank prints the result and exits immediately after the output is flushed.
 
 Examples:
 
 ```bash
-agent-tank --gemini --gemini-mode direct
-agent-tank --gemini --gemini-mode pty
+agent-tank --agy
+agent-tank --agy --once --json
 ```
 
 ## HTTP API
@@ -421,7 +406,7 @@ In activity mode, Agent Tank watches common local directories:
 
 - Claude: `~/.config/claude/projects/`, `~/.claude/`
 - Codex: `~/.codex/sessions/`, `~/.codex/`
-- Gemini: `~/.config/gemini/`, `~/.gemini/`
+- Antigravity: `~/.gemini/antigravity-cli/`
 
 If no suitable directories are found, it falls back to interval mode.
 
@@ -509,15 +494,15 @@ You need at least one supported CLI installed and authenticated.
 
 - [Claude Code](https://claude.ai/download) as `claude`
   - Version 2.0+ required for `/usage`
-- Gemini CLI as `gemini`
-  - Version 0.24.5+ required for `/stats`
+- Antigravity CLI as `agy`
+  - `/usage` command support required
 - OpenAI Codex as `codex`
 
 Useful checks:
 
 ```bash
 claude --version
-gemini --version
+agy --version
 codex --version
 ```
 
@@ -527,7 +512,7 @@ codex --version
 const { AgentTank } = require('agent-tank');
 
 const watcher = new AgentTank({
-  agents: ['claude', 'gemini'],
+  agents: ['claude', 'agy'],
   port: 3456,
   autoDiscover: true
 });

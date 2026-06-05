@@ -39,7 +39,7 @@ const ANSI = {
 // Agent color mapping
 const AGENT_COLORS = {
   claude: ANSI.magenta,
-  gemini: ANSI.cyan,
+  agy: ANSI.cyan,
   codex: ANSI.green,
 };
 
@@ -139,7 +139,7 @@ const logger = {
 
   /**
    * Log an agent-specific message with mapped color
-   * @param {string} agentName - Name of the agent (claude, gemini, codex)
+   * @param {string} agentName - Name of the agent (claude, agy, codex)
    * @param {...any} args - Message arguments
    */
   agent(agentName, ...args) {

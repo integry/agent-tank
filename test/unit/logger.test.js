@@ -51,8 +51,8 @@ describe('Logger', () => {
       expect(logger.AGENT_COLORS.claude).toBe(logger.ANSI.magenta);
     });
 
-    it('maps gemini to cyan', () => {
-      expect(logger.AGENT_COLORS.gemini).toBe(logger.ANSI.cyan);
+    it('maps agy to cyan', () => {
+      expect(logger.AGENT_COLORS.agy).toBe(logger.ANSI.cyan);
     });
 
     it('maps codex to green', () => {
@@ -133,10 +133,10 @@ describe('Logger', () => {
       expect(output).toContain(logger.ANSI.magenta);
     });
 
-    it('logs gemini messages in cyan', () => {
-      logger.agent('gemini', 'Fetching status');
+    it('logs agy messages in cyan', () => {
+      logger.agent('agy', 'Fetching status');
       const output = consoleLogSpy.mock.calls[0][0];
-      expect(output).toContain('[gemini]');
+      expect(output).toContain('[agy]');
       expect(output).toContain(logger.ANSI.cyan);
     });
 
@@ -184,8 +184,8 @@ describe('Logger', () => {
       expect(logger.getAgentColor('claude')).toBe(logger.ANSI.magenta);
     });
 
-    it('returns cyan for gemini', () => {
-      expect(logger.getAgentColor('gemini')).toBe(logger.ANSI.cyan);
+    it('returns cyan for agy', () => {
+      expect(logger.getAgentColor('agy')).toBe(logger.ANSI.cyan);
     });
 
     it('returns green for codex', () => {
@@ -194,7 +194,7 @@ describe('Logger', () => {
 
     it('handles case-insensitive input', () => {
       expect(logger.getAgentColor('CLAUDE')).toBe(logger.ANSI.magenta);
-      expect(logger.getAgentColor('Gemini')).toBe(logger.ANSI.cyan);
+      expect(logger.getAgentColor('AGY')).toBe(logger.ANSI.cyan);
       expect(logger.getAgentColor('CODEX')).toBe(logger.ANSI.green);
     });
 
@@ -350,9 +350,9 @@ describe('Logger', () => {
     });
 
     it('can be used inline with agent logging', () => {
-      logger.agent('gemini', 'Parsed metadata:', logger.json({ version: '1.0' }));
+      logger.agent('agy', 'Parsed metadata:', logger.json({ version: '1.0' }));
       const output = consoleLogSpy.mock.calls[0][0];
-      expect(output).toContain('[gemini]');
+      expect(output).toContain('[agy]');
       expect(output).toContain(logger.ANSI.dim);
       expect(output).toContain('{"version":"1.0"}');
     });

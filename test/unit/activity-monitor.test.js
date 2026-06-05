@@ -87,7 +87,7 @@ describe('ActivityMonitor', () => {
     });
 
     it('defaults to all known agents', () => {
-      expect(monitor.agents).toEqual(['claude', 'codex', 'gemini']);
+      expect(monitor.agents).toEqual(['claude', 'codex', 'agy']);
     });
   });
 
@@ -102,9 +102,9 @@ describe('ActivityMonitor', () => {
       expect(DEFAULT_LOG_DIRECTORIES.codex.length).toBeGreaterThan(0);
     });
 
-    it('contains gemini directories', () => {
-      expect(DEFAULT_LOG_DIRECTORIES.gemini).toBeDefined();
-      expect(DEFAULT_LOG_DIRECTORIES.gemini.length).toBeGreaterThan(0);
+    it('contains agy directories', () => {
+      expect(DEFAULT_LOG_DIRECTORIES.agy).toBeDefined();
+      expect(DEFAULT_LOG_DIRECTORIES.agy.length).toBeGreaterThan(0);
     });
 
     it('uses home directory for paths', () => {

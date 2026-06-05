@@ -183,7 +183,7 @@ const monitorScript = `
       const { percent, color, agent, label } = trackedMetric;
 
       // Update page title: XX% Agent | Agent Tank (clean format for squeezed tabs)
-      const agentName = agent.charAt(0).toUpperCase() + agent.slice(1);
+      const agentName = agent === 'agy' ? 'Antigravity' : agent.charAt(0).toUpperCase() + agent.slice(1);
       document.title = \`\${percent}% \${agentName} | Agent Tank\`;
 
       // Generate favicon using Canvas API
@@ -204,7 +204,7 @@ const monitorScript = `
 
         // Send browser notification
         if ('Notification' in window && Notification.permission === 'granted') {
-          const agentName = agent.charAt(0).toUpperCase() + agent.slice(1);
+          const agentName = agent === 'agy' ? 'Antigravity' : agent.charAt(0).toUpperCase() + agent.slice(1);
           new Notification('Agent Tank Warning', {
             body: \`\${agentName} \${label} is at \${percent}% usage!\`,
             icon: '/favicon.ico',

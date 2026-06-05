@@ -22,22 +22,15 @@ async function discoverAgents() {
     }
   }
 
-  // Check for Gemini with version requirement
-  if (commandExists('gemini')) {
-    const version = getGeminiVersion();
+  // Check for Antigravity CLI
+  if (commandExists('agy')) {
+    const version = getAgyVersion();
     if (version) {
-      if (!compareVersion(version, 0, 24, 5)) {
-        logger.warn(`Gemini CLI version ${version.full} detected. Version 0.24.5+ required for /stats command.`);
-        logger.warn('Please update: npm update -g gemini');
-      } else {
-        logger.success(`✅ Gemini CLI version ${version.full} detected`);
-        found.push('gemini');
-      }
+      logger.success(`✅ Antigravity CLI version ${version.full} detected`);
     } else {
-      // If we can't determine version, add with warning
-      logger.warn('Gemini found but version unknown. Version 0.24.5+ required for /stats command.');
-      found.push('gemini');
+      logger.success('✅ Antigravity CLI detected (version unknown)');
     }
+    found.push('agy');
   }
 
   // Check for Codex with version info
@@ -81,9 +74,9 @@ function getClaudeVersion() {
   return null;
 }
 
-function getGeminiVersion() {
+function getAgyVersion() {
   try {
-    const output = execSync('gemini --version 2>&1', { encoding: 'utf-8' });
+    const output = execSync('agy --version 2>&1', { encoding: 'utf-8' });
     const match = output.match(/(\d+)\.(\d+)\.(\d+)/);
     if (match) {
       return {
@@ -115,14 +108,6 @@ function getCodexVersion() {
     // Version check failed
   }
   return null;
-}
-
-function compareVersion(version, minMajor, minMinor, minPatch) {
-  if (version.major > minMajor) return true;
-  if (version.major < minMajor) return false;
-  if (version.minor > minMinor) return true;
-  if (version.minor < minMinor) return false;
-  return version.patch >= minPatch;
 }
 
 module.exports = { discoverAgents };

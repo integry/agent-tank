@@ -8,6 +8,14 @@ const { clientScript } = require('./client-script');
 const { getStatusBadgeClass, getStatusText } = require('./public-status');
 
 const styles = fs.readFileSync(path.join(__dirname, 'status-page.css'), 'utf8');
+const AGENT_DISPLAY_NAMES = {
+  agy: 'Antigravity',
+};
+
+function getAgentDisplayName(name) {
+  if (AGENT_DISPLAY_NAMES[name]) return AGENT_DISPLAY_NAMES[name];
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 function escapeHtml(value) {
   return String(value)
@@ -39,7 +47,7 @@ function statusPage(status) {
     const statusClass = data.error ? 'error' : data.isRefreshing ? 'refreshing' : 'ok';
 
     const icon = agentIcons[name] || '';
-    const displayName = name.charAt(0).toUpperCase() + name.slice(1);
+    const displayName = getAgentDisplayName(name);
 
     // Public API status badge
     const publicStatus = data.publicStatus;
@@ -48,7 +56,7 @@ function statusPage(status) {
     const badgeTitle = escapeHtml(publicStatus?.description || 'Unable to fetch status');
     const statusBadgeHtml = `<span class="status-badge ${badgeClass}" title="${badgeTitle}">${badgeText}</span>`;
 
-    // Version update notice - check usage.version (Codex) or metadata.updateAvailable (Gemini)
+    // Version update notice - check usage.version or metadata.updateAvailable.
     const version = data.usage?.version || data.metadata?.updateAvailable;
     const updateHtml = (version && version.current && version.latest && version.current !== version.latest)
       ? `<div class="version-update-notice">Update available: v${version.current} → v${version.latest}</div>`
