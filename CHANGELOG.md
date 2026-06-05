@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.7] - Unreleased
+
+### Fixed
+
+- Fix Claude Code PTY one-shot stats checks against Claude Code 2.1 compact usage output
+- Prevent Claude metadata fetch from crashing when the CLI exits before delayed PTY writes run
+- Dismiss Claude `/status` metadata dialogs before sending `/usage` so one-shot usage checks can complete
+- Parse compact Claude reset timestamps such as `Jun10,6pm(Europe/Berlin)`
+
 ## [0.9.5] - 2026-04-13
 
 ### Added

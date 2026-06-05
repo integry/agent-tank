@@ -536,6 +536,25 @@ describe('ClaudeAgent', () => {
 
       expect(agent.hasCompleteOutput(output)).toBe(true);
     });
+
+    it('parses compact Claude 2.1 usage screen output', () => {
+      const output = `
+        SettingsStatusConfigUsage Stats Session Totalcost:$0.0000
+        Currentsession ██4%used Resets2:50pm(Europe/Berlin)
+        Currentweek(allmodels) ███████▌15%used ResetsJun10,6pm(Europe/Berlin)
+        Current week (Sonet nly) ███████▌15%usd ResetsJun10,6pm(Europe/Berlin)
+        Usagecreditsareoff · Esc to cancel
+      `;
+
+      const result = agent.parseOutput(output);
+
+      expect(result.session.percent).toBe(4);
+      expect(result.session.resetsAt).toBe('2:50pm (Europe/Berlin)');
+      expect(result.weeklyAll.percent).toBe(15);
+      expect(result.weeklyAll.resetsAt).toBe('Jun 10, 6pm (Europe/Berlin)');
+      expect(result.weeklySonnet.percent).toBe(15);
+      expect(agent.hasCompleteOutput(output)).toBe(true);
+    });
   });
 
   describe('parseResetTime', () => {
@@ -614,14 +633,13 @@ describe('ClaudeAgent', () => {
       jest.useRealTimers();
     });
 
-    it('dismisses slash-command autocomplete before submitting /usage', () => {
+    it('submits /usage and confirms the slash-command selection', () => {
       const shell = { write: jest.fn() };
 
       agent.sendCommands(shell, '');
       jest.advanceTimersByTime(1500);
 
       expect(shell.write.mock.calls).toEqual([
-        ['\x1b'],
         ['/usage'],
         ['\r'],
         ['\r'],

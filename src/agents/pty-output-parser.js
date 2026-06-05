@@ -125,6 +125,12 @@ function extractResetTime(section) {
   // Look for date+time pattern FIRST (more specific)
   const dateTimeMatch = section.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s*\d{1,2}(?::\d{2})?\s*(am|pm))\s*\(([^)]+)\)/i);
   if (dateTimeMatch) return `${dateTimeMatch[1]} (${dateTimeMatch[3]})`;
+  // Compact PTY output can lose the column spaces: "Jun10,6pm(Europe/Berlin)".
+  const compactDateTimeMatch = section.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec))(\d{1,2}),?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([^)]+)\)/i);
+  if (compactDateTimeMatch) {
+    const [, month, day, hour, minutes, ampm, tz] = compactDateTimeMatch;
+    return `${month} ${day}, ${hour}${minutes ? `:${minutes}` : ''}${ampm} (${tz})`;
+  }
   // Try clean time-only pattern
   const timeOnlyMatch = section.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*\(([^)]+)\)/i);
   if (timeOnlyMatch) return `${timeOnlyMatch[1]} (${timeOnlyMatch[2]})`;
@@ -149,7 +155,7 @@ function extractResetTime(section) {
  */
 function parseUsageSection(section) {
   if (!section) return null;
-  const percentMatch = section.match(/(\d+)\s*%\s*used/i);
+  const percentMatch = section.match(/(\d+)\s*%\s*use?d/i);
   if (!percentMatch) return null;
   const resetsAt = extractResetTime(section);
   const resetData = resetsAt ? parseResetTime(resetsAt) : null;
@@ -245,21 +251,21 @@ function parsePtyOutput(clean) {
   const usage = { session: null, weeklyAll: null, weeklySonnet: null };
 
   // Parse session
-  const sessionData = parseUsageSection(extractSection(clean, 'Current\\s+session', 'Current\\s+week'));
+  const sessionData = parseUsageSection(extractSection(clean, 'Current\\s*session', 'Current\\s*week'));
   if (sessionData) {
     usage.session = { label: 'Current session', ...sessionData };
     addPaceData(usage.session, 'session');
   }
 
   // Parse weekly (all models)
-  const weeklyAllData = parseUsageSection(extractSection(clean, 'Current\\s+week\\s*\\(?\\s*all\\s+models\\s*\\)?', 'Current\\s+week\\s*\\(?\\s*Sonnet'));
+  const weeklyAllData = parseUsageSection(extractSection(clean, 'Current\\s*week\\s*\\(?\\s*all\\s*models\\s*\\)?', 'Current\\s*week\\s*\\(?\\s*Son'));
   if (weeklyAllData) {
     usage.weeklyAll = { label: 'Current week (all models)', ...weeklyAllData };
     addPaceData(usage.weeklyAll, 'weekly');
   }
 
   // Parse weekly (Sonnet only)
-  const weeklySonnetData = parseUsageSection(extractSection(clean, 'Current\\s+week\\s*\\(?\\s*Sonnet\\s+only\\s*\\)?', 'Extra\\s+usage|esc\\s+to\\s+cancel|Current\\s+week\\s*\\('));
+  const weeklySonnetData = parseUsageSection(extractSection(clean, 'Current\\s*week\\s*\\(?\\s*Son\\w*\\s*\\w*ly\\s*\\)?', 'Extra\\s*usage|esc\\s*to\\s*cancel|Current\\s*week\\s*\\('));
   if (weeklySonnetData) {
     usage.weeklySonnet = { label: 'Current week (Sonnet only)', ...weeklySonnetData };
     addPaceData(usage.weeklySonnet, 'weekly');

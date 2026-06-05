@@ -212,17 +212,24 @@ class ClaudeAgent extends BaseAgent {
 
     // Newer Claude builds often emit usable session/weekly data before the UI fully settles.
     // If we can already parse session data plus either weekly format, treat the response as complete.
-    return hasSessionData && (hasLegacyWeekly || hasAllModelsWeekly);
+    return Boolean(hasSessionData && (hasLegacyWeekly || hasAllModelsWeekly));
   }
 
   sendCommands(shell, _output) {
     logger.agent(this.name, 'Sending /usage command...');
     // Claude keeps slash-command suggestions open for /usage on newer builds.
     // Confirm the command selection, then submit the actual command execution.
-    setTimeout(() => shell.write('\x1b'), 50);
-    setTimeout(() => shell.write('/usage'), 600);
-    setTimeout(() => shell.write('\r'), 1000);
-    setTimeout(() => shell.write('\r'), 1400);
+    const writeIfActive = (value) => {
+      if (!shell) return;
+      try {
+        shell.write(value);
+      } catch (_err) {
+        // The persistent exit handler records the underlying process state.
+      }
+    };
+    setTimeout(() => writeIfActive('/usage'), 100);
+    setTimeout(() => writeIfActive('\r'), 500);
+    setTimeout(() => writeIfActive('\r'), 900);
   }
 
   // After getting /usage output, dismiss dialog so next refresh starts with clean prompt
@@ -286,6 +293,18 @@ class ClaudeAgent extends BaseAgent {
         this._onDataCallback = null;
         this._commandInFlight = false;
         clearTimeout(timer);
+        if (this.shell && statusOutput) {
+          try {
+            this.shell.write('\x1b');
+          } catch (_err) {
+            // The persistent exit handler records the underlying process state.
+          }
+          setTimeout(() => {
+            this.output = '';
+            resolve(result);
+          }, 300);
+          return;
+        }
         resolve(result);
       };
 
@@ -306,10 +325,19 @@ class ClaudeAgent extends BaseAgent {
 
       logger.agent(this.name, 'Sending /status command for metadata...');
       this.output = '';
-      // Send escape first to dismiss any UI, then /status
-      setTimeout(() => this.shell.write('\x1b'), 50);
-      setTimeout(() => this.shell.write('/status'), 600);
-      setTimeout(() => this.shell.write('\r'), 1000);
+      const writeIfActive = (value) => {
+        if (!this.shell) {
+          finish(this._parseStatusOutput(statusOutput));
+          return;
+        }
+        try {
+          this.shell.write(value);
+        } catch (_err) {
+          finish(this._parseStatusOutput(statusOutput));
+        }
+      };
+      setTimeout(() => writeIfActive('/status'), 100);
+      setTimeout(() => writeIfActive('\r'), 500);
     });
   }
 
