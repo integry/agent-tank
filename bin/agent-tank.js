@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* eslint-disable complexity */
+/* eslint-disable complexity, max-lines */
 
 const { parseArgs } = require('node:util');
 const { spawn } = require('node:child_process');

@@ -1,3 +1,5 @@
+/* eslint-disable max-lines */
+
 const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');

@@ -26,10 +26,7 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function statusPage(status) {
-  const agents = Object.entries(status);
-
-  // Calculate the maximum lastUpdated timestamp across all agents for global display
+function getGlobalLastChecked(agents) {
   const maxLastUpdated = agents.reduce((max, [, data]) => {
     if (data.lastUpdated) {
       const ts = new Date(data.lastUpdated).getTime();
@@ -38,42 +35,50 @@ function statusPage(status) {
     return max;
   }, 0);
 
-  const globalLastChecked = maxLastUpdated > 0
+  return maxLastUpdated > 0
     ? new Date(maxLastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
+}
 
-  const agentCards = agents.map(([name, data]) => {
-    const usageHtml = formatUsage(name, data.usage);
-    const statusClass = data.error ? 'error' : data.isRefreshing ? 'refreshing' : 'ok';
+function renderPublicStatusBadge(publicStatus) {
+  const badgeClass = publicStatus ? getStatusBadgeClass(publicStatus.status) : 'status-badge-grey';
+  const badgeText = publicStatus ? getStatusText(publicStatus.status) : 'Unknown';
+  const badgeTitle = escapeHtml(publicStatus?.description || 'Unable to fetch status');
 
-    const icon = agentIcons[name] || '';
-    const displayName = getAgentDisplayName(name);
+  return `<span class="status-badge ${badgeClass}" title="${badgeTitle}">${badgeText}</span>`;
+}
 
-    // Public API status badge
-    const publicStatus = data.publicStatus;
-    const badgeClass = publicStatus ? getStatusBadgeClass(publicStatus.status) : 'status-badge-grey';
-    const badgeText = publicStatus ? getStatusText(publicStatus.status) : 'Unknown';
-    const badgeTitle = escapeHtml(publicStatus?.description || 'Unable to fetch status');
-    const statusBadgeHtml = `<span class="status-badge ${badgeClass}" title="${badgeTitle}">${badgeText}</span>`;
+function renderVersionUpdate(data) {
+  const version = data.usage?.version || data.metadata?.updateAvailable;
 
-    // Version update notice - check usage.version or metadata.updateAvailable.
-    const version = data.usage?.version || data.metadata?.updateAvailable;
-    const updateHtml = (version && version.current && version.latest && version.current !== version.latest)
-      ? `<div class="version-update-notice">Update available: v${version.current} → v${version.latest}</div>`
-      : '';
+  if (!version || !version.current || !version.latest || version.current === version.latest) {
+    return '';
+  }
 
-    const authHtml = data.auth
-      ? `<div class="auth-notice">${escapeHtml(data.auth.action || 'Please log in via the CLI.')}</div>`
-      : '';
-    const errorHtml = data.error && !data.auth ? `<span class="error-msg">${escapeHtml(data.error)}</span>` : '';
+  return `<div class="version-update-notice">Update available: v${version.current} → v${version.latest}</div>`;
+}
 
-    // Only show card-footer if there's an error or update notice
-    const hasFooterContent = errorHtml || authHtml || updateHtml;
-    const footerHtml = hasFooterContent
-      ? `<div class="card-footer">${errorHtml}${authHtml}${updateHtml}</div>`
-      : '';
+function renderCardFooter(data) {
+  const authHtml = data.auth
+    ? `<div class="auth-notice">${escapeHtml(data.auth.action || 'Please log in via the CLI.')}</div>`
+    : '';
+  const errorHtml = data.error && !data.auth ? `<span class="error-msg">${escapeHtml(data.error)}</span>` : '';
+  const updateHtml = renderVersionUpdate(data);
 
-    return `
+  return errorHtml || authHtml || updateHtml
+    ? `<div class="card-footer">${errorHtml}${authHtml}${updateHtml}</div>`
+    : '';
+}
+
+function renderAgentCard([name, data]) {
+  const usageHtml = formatUsage(name, data.usage);
+  const statusClass = data.error ? 'error' : data.isRefreshing ? 'refreshing' : 'ok';
+  const icon = agentIcons[name] || '';
+  const displayName = getAgentDisplayName(name);
+  const statusBadgeHtml = renderPublicStatusBadge(data.publicStatus);
+  const footerHtml = renderCardFooter(data);
+
+  return `
       <div class="agent-card ${statusClass} agent-${name}">
         <h2 class="agent-heading">
           ${icon}
@@ -87,7 +92,12 @@ function statusPage(status) {
         ${footerHtml}
       </div>
     `;
-  }).join('');
+}
+
+function statusPage(status) {
+  const agents = Object.entries(status);
+  const globalLastChecked = getGlobalLastChecked(agents);
+  const agentCards = agents.map(renderAgentCard).join('');
 
   return `<!DOCTYPE html>
 <html>

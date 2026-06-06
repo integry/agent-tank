@@ -1,3 +1,5 @@
+/* eslint-disable max-lines */
+
 const pty = require('node-pty');
 const process = require('node:process');
 const logger = require('../logger.js');
