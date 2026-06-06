@@ -92,6 +92,9 @@ agent-tank --claude --agy
 # Use a custom port
 agent-tank --port 8080
 
+# Keep Agent Tank running after closing this terminal
+agent-tank --background
+
 # Fetch once and print JSON
 agent-tank --once --json
 
@@ -150,6 +153,14 @@ agent-tank --claude --codex
 agent-tank --once --json
 ```
 
+### Background Server Mode
+
+```bash
+agent-tank --background
+```
+
+This starts Agent Tank as a detached process, prints the background PID, and exits the parent command.
+
 ### Bind to a Different Host or Port
 
 ```bash
@@ -206,6 +217,7 @@ Options:
   --history-retention-days <days>    Days to retain usage history (default: 14)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
+  --background          Start Agent Tank as a detached background process
   --help, -h            Show this help message
 ```
 
@@ -232,6 +244,7 @@ Environment variables override CLI flags and config file values.
 | `AGENT_TANK_KEEPALIVE` | Enable/disable keepalive |
 | `AGENT_TANK_KEEPALIVE_INTERVAL` | Keepalive interval in seconds |
 | `AGENT_TANK_HISTORY_RETENTION_DAYS` | History retention window |
+| `AGENT_TANK_BACKGROUND` | Start as a detached background process (`1`/`true`) |
 
 ### Config File
 

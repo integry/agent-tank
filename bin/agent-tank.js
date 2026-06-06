@@ -2,8 +2,12 @@
 /* eslint-disable complexity */
 
 const { parseArgs } = require('node:util');
-const { AgentTank } = require('../src/index.js');
-const { installShutdownHandlers } = require('../src/shutdown-handler.js');
+const { spawn } = require('node:child_process');
+const {
+  filterBackgroundArgs,
+  findAgentTankProcesses,
+  isTruthyEnv,
+} = require('../src/process-utils.js');
 const pkg = require('../package.json');
 
 const options = {
@@ -32,6 +36,7 @@ const options = {
   'keepalive-interval': { type: 'string', default: '300' },
   once: { type: 'boolean', default: false },
   json: { type: 'boolean', default: false },
+  background: { type: 'boolean', default: false },
 };
 
 const { values } = parseArgs({ options, allowPositionals: false, allowNegative: true });
@@ -85,6 +90,7 @@ Options:
   --history-retention-days <days>    Days to retain usage history (default: 14)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
+  --background          Start Agent Tank as a detached background process
   --help, -h            Show this help message
 
 Auto-Refresh Modes:
@@ -109,9 +115,11 @@ Environment variables:
   AGENT_TANK_KEEPALIVE      Enable/disable session keepalive ("1" or "true" / "0" or "false")
   AGENT_TANK_KEEPALIVE_INTERVAL  Session keepalive interval in seconds
   AGENT_TANK_HISTORY_RETENTION_DAYS  Days to retain usage history
+  AGENT_TANK_BACKGROUND  Start as a detached background process ("1" or "true")
 
 Examples:
   agent-tank                          # Auto-discover and monitor all available
+  agent-tank --background             # Start in the background and print the PID
   agent-tank --claude --agy           # Monitor specific agents
   agent-tank --port 8080              # Use custom port
   agent-tank --host 0.0.0.0           # Expose on all interfaces
@@ -143,6 +151,38 @@ HTTP Endpoints:
 `);
 }
 
+function spawnBackgroundProcess() {
+  const childArgs = [
+    process.argv[1],
+    ...filterBackgroundArgs(process.argv.slice(2)),
+  ];
+  const childEnv = {
+    ...process.env,
+    AGENT_TANK_BACKGROUND_CHILD: '1',
+  };
+  delete childEnv.AGENT_TANK_BACKGROUND;
+
+  const child = spawn(process.execPath, childArgs, {
+    detached: true,
+    stdio: 'ignore',
+    env: childEnv,
+  });
+  child.unref();
+
+  process.stdout.write(`Agent Tank started in the background with PID ${child.pid}\n`);
+}
+
+function warnAboutRunningProcesses() {
+  const running = findAgentTankProcesses();
+  if (running.length === 0) {
+    return;
+  }
+
+  const pids = running.map(entry => entry.pid).join(', ');
+  process.stderr.write(`Warning: other Agent Tank process(es) already running: ${pids}\n`);
+  process.stderr.write('Tip: start Agent Tank in the background with agent-tank --background\n');
+}
+
 async function main() {
   if (values.help) {
     printHelp();
@@ -155,6 +195,28 @@ async function main() {
     process.exitCode = 0;
     return;
   }
+
+  const backgroundRequested = values.background || isTruthyEnv(process.env.AGENT_TANK_BACKGROUND);
+  const backgroundChild = process.env.AGENT_TANK_BACKGROUND_CHILD === '1';
+
+  if (backgroundRequested && !backgroundChild && values.once) {
+    exitWithCode(1, 'Error: --background cannot be combined with --once');
+    return;
+  }
+
+  if (backgroundRequested && !backgroundChild && values.json) {
+    exitWithCode(1, 'Error: --background cannot be combined with --json');
+    return;
+  }
+
+  if (backgroundRequested && !backgroundChild) {
+    spawnBackgroundProcess();
+    process.exitCode = 0;
+    return;
+  }
+
+  const { AgentTank } = require('../src/index.js');
+  const { installShutdownHandlers } = require('../src/shutdown-handler.js');
 
   // Load config file if specified
   let config = {};
@@ -344,6 +406,10 @@ async function main() {
         });
         return;
       }
+    }
+
+    if (!jsonMode && !backgroundChild) {
+      warnAboutRunningProcesses();
     }
 
     await watcher.start();

@@ -189,6 +189,32 @@ describe('CLI', () => {
    * Skips the test if node-pty is not available
    */
   const itWithPty = NODE_PTY_AVAILABLE && CLI_SUBPROCESS_AVAILABLE ? it : it.skip;
+  const itWithSubprocess = CLI_SUBPROCESS_AVAILABLE ? it : it.skip;
+
+  describe('early CLI handling', () => {
+    itWithSubprocess('--background appears in help without loading agent modules', () => {
+      const result = runCli(['--help']);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('--background');
+    });
+
+    itWithSubprocess('--background --once fails clearly without loading agent modules', () => {
+      const result = runCli(['--background', '--once']);
+      const output = result.stderr + result.stdout;
+
+      expect(result.exitCode).toBe(1);
+      expect(output).toContain('--background cannot be combined with --once');
+    });
+
+    itWithSubprocess('--background --json fails clearly without loading agent modules', () => {
+      const result = runCli(['--background', '--json']);
+      const output = result.stderr + result.stdout;
+
+      expect(result.exitCode).toBe(1);
+      expect(output).toContain('--background cannot be combined with --json');
+    });
+  });
 
   describe('--help flag', () => {
     itWithPty('outputs help menu and exits with code 0', () => {
@@ -241,6 +267,7 @@ describe('CLI', () => {
       expect(result.stdout).toContain('--auto-refresh-interval');
       expect(result.stdout).toContain('--once');
       expect(result.stdout).toContain('--json');
+      expect(result.stdout).toContain('--background');
     });
 
     itWithPty('lists all environment variables in help', () => {
@@ -254,6 +281,7 @@ describe('CLI', () => {
       expect(result.stdout).toContain('AGENT_TANK_CLAUDE_API');
       expect(result.stdout).toContain('AGENT_TANK_AUTO_REFRESH');
       expect(result.stdout).toContain('AGENT_TANK_AUTO_REFRESH_INTERVAL');
+      expect(result.stdout).toContain('AGENT_TANK_BACKGROUND');
     });
 
     itWithPty('lists HTTP endpoints in help', () => {
@@ -269,6 +297,7 @@ describe('CLI', () => {
       const result = runCli(['--help']);
 
       expect(result.stdout).toContain('Examples:');
+      expect(result.stdout).toContain('agent-tank --background');
       expect(result.stdout).toContain('agent-tank --claude --agy');
       expect(result.stdout).toContain('agent-tank --port 8080');
     });
@@ -813,6 +842,22 @@ describe('CLI', () => {
           throw error;
         }
       }
+    });
+
+    itWithPty('--background --once fails clearly', () => {
+      const result = runCli(['--background', '--once']);
+      const output = result.stderr + result.stdout;
+
+      expect(result.exitCode).toBe(1);
+      expect(output).toContain('--background cannot be combined with --once');
+    });
+
+    itWithPty('--background --json fails clearly', () => {
+      const result = runCli(['--background', '--json']);
+      const output = result.stderr + result.stdout;
+
+      expect(result.exitCode).toBe(1);
+      expect(output).toContain('--background cannot be combined with --json');
     });
   });
 
