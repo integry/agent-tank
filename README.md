@@ -245,6 +245,8 @@ Environment variables override CLI flags and config file values.
 | `AGENT_TANK_KEEPALIVE_INTERVAL` | Keepalive interval in seconds |
 | `AGENT_TANK_HISTORY_RETENTION_DAYS` | History retention window |
 | `AGENT_TANK_BACKGROUND` | Start as a detached background process (`1`/`true`) |
+| `AGENT_TANK_BACKGROUND_LOG` | Background child stdout/stderr log path (defaults to a temp file) |
+| `AGENT_TANK_BACKGROUND_CHILD` | Internal marker set on the detached child process |
 
 ### Config File
 

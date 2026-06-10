@@ -1,4 +1,4 @@
-/* eslint-disable max-lines */
+/* eslint-disable max-lines -- Follow-up split is tracked separately; keep this PR scoped to background startup behavior. */
 
 const path = require('node:path');
 const os = require('node:os');

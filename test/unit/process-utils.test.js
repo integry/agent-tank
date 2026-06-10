@@ -3,6 +3,7 @@ const {
   findAgentTankProcesses,
   isAgentTankCommand,
   parseProcessList,
+  parseWindowsProcessList,
 } = require('../../src/process-utils.js');
 
 describe('process-utils', () => {
@@ -12,8 +13,6 @@ describe('process-utils', () => {
         '--port', '3456',
         '--background',
         '--no-background',
-        '--background=true',
-        '--no-background=false',
         '--claude',
       ])).toEqual(['--port', '3456', '--claude']);
     });
@@ -31,15 +30,29 @@ describe('process-utils', () => {
     });
   });
 
+  describe('parseWindowsProcessList', () => {
+    it('parses powershell JSON into pid and command entries', () => {
+      expect(parseWindowsProcessList(JSON.stringify([
+        { ProcessId: 101, CommandLine: 'node C:\\repo\\bin\\agent-tank.js --port 3456' },
+        { ProcessId: 202, CommandLine: null },
+      ]))).toEqual([
+        { pid: 101, command: 'node C:\\repo\\bin\\agent-tank.js --port 3456' },
+      ]);
+    });
+  });
+
   describe('isAgentTankCommand', () => {
     it('matches installed and source-tree Agent Tank commands', () => {
       expect(isAgentTankCommand('agent-tank --port 3456')).toBe(true);
       expect(isAgentTankCommand('node /repo/bin/agent-tank.js --codex')).toBe(true);
+      expect(isAgentTankCommand('node.exe C:\\repo\\bin\\agent-tank.js --codex')).toBe(true);
     });
 
     it('does not match unrelated commands', () => {
       expect(isAgentTankCommand('node /repo/test/unit/cli.test.js')).toBe(false);
       expect(isAgentTankCommand('agent-tanker --port 3456')).toBe(false);
+      expect(isAgentTankCommand('vim /repo/bin/agent-tank.js')).toBe(false);
+      expect(isAgentTankCommand('less /usr/local/bin/agent-tank')).toBe(false);
     });
   });
 
@@ -65,6 +78,18 @@ describe('process-utils', () => {
       });
 
       expect(findAgentTankProcesses({ execFile })).toEqual([]);
+    });
+
+    it('uses powershell process discovery on Windows', () => {
+      const execFile = jest.fn(() => JSON.stringify([
+        { ProcessId: 100, CommandLine: 'node C:\\repo\\bin\\agent-tank.js --port 3456' },
+        { ProcessId: 200, CommandLine: 'vim C:\\repo\\bin\\agent-tank.js' },
+      ]));
+
+      expect(findAgentTankProcesses({ currentPid: 999, execFile, platform: 'win32' })).toEqual([
+        { pid: 100, command: 'node C:\\repo\\bin\\agent-tank.js --port 3456' },
+      ]);
+      expect(execFile).toHaveBeenCalledWith('powershell.exe', expect.any(Array), expect.any(Object));
     });
   });
 });

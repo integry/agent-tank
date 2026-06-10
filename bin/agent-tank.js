@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-/* eslint-disable complexity, max-lines */
+/* eslint-disable complexity -- CLI option merging is centralized here to preserve precedence behavior. */
 
 const { parseArgs } = require('node:util');
-const { spawn } = require('node:child_process');
 const {
-  filterBackgroundArgs,
-  findAgentTankProcesses,
   isTruthyEnv,
 } = require('../src/process-utils.js');
+const {
+  spawnBackgroundProcess,
+  warnAboutRunningProcesses,
+} = require('../src/cli-background.js');
 const pkg = require('../package.json');
 
 const options = {
@@ -116,6 +117,8 @@ Environment variables:
   AGENT_TANK_KEEPALIVE_INTERVAL  Session keepalive interval in seconds
   AGENT_TANK_HISTORY_RETENTION_DAYS  Days to retain usage history
   AGENT_TANK_BACKGROUND  Start as a detached background process ("1" or "true")
+  AGENT_TANK_BACKGROUND_LOG  Log file for background child stdout/stderr
+  AGENT_TANK_BACKGROUND_CHILD  Internal marker set only on the detached child
 
 Examples:
   agent-tank                          # Auto-discover and monitor all available
@@ -151,38 +154,6 @@ HTTP Endpoints:
 `);
 }
 
-function spawnBackgroundProcess() {
-  const childArgs = [
-    process.argv[1],
-    ...filterBackgroundArgs(process.argv.slice(2)),
-  ];
-  const childEnv = {
-    ...process.env,
-    AGENT_TANK_BACKGROUND_CHILD: '1',
-  };
-  delete childEnv.AGENT_TANK_BACKGROUND;
-
-  const child = spawn(process.execPath, childArgs, {
-    detached: true,
-    stdio: 'ignore',
-    env: childEnv,
-  });
-  child.unref();
-
-  process.stdout.write(`Agent Tank started in the background with PID ${child.pid}\n`);
-}
-
-function warnAboutRunningProcesses() {
-  const running = findAgentTankProcesses();
-  if (running.length === 0) {
-    return;
-  }
-
-  const pids = running.map(entry => entry.pid).join(', ');
-  process.stderr.write(`Warning: other Agent Tank process(es) already running: ${pids}\n`);
-  process.stderr.write('Tip: start Agent Tank in the background with agent-tank --background\n');
-}
-
 async function main() {
   if (values.help) {
     printHelp();
@@ -197,7 +168,7 @@ async function main() {
   }
 
   const backgroundRequested = values.background || isTruthyEnv(process.env.AGENT_TANK_BACKGROUND);
-  const backgroundChild = process.env.AGENT_TANK_BACKGROUND_CHILD === '1';
+  const backgroundChild = isTruthyEnv(process.env.AGENT_TANK_BACKGROUND_CHILD);
 
   if (backgroundRequested && !backgroundChild && values.once) {
     exitWithCode(1, 'Error: --background cannot be combined with --once');
@@ -210,8 +181,8 @@ async function main() {
   }
 
   if (backgroundRequested && !backgroundChild) {
-    spawnBackgroundProcess();
-    process.exitCode = 0;
+    const started = await spawnBackgroundProcess();
+    process.exitCode = started ? 0 : 1;
     return;
   }
 

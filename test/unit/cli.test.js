@@ -192,14 +192,14 @@ describe('CLI', () => {
   const itWithSubprocess = CLI_SUBPROCESS_AVAILABLE ? it : it.skip;
 
   describe('early CLI handling', () => {
-    itWithSubprocess('--background appears in help without loading agent modules', () => {
+    itWithSubprocess('--background appears in help', () => {
       const result = runCli(['--help']);
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('--background');
     });
 
-    itWithSubprocess('--background --once fails clearly without loading agent modules', () => {
+    itWithSubprocess('--background --once fails clearly', () => {
       const result = runCli(['--background', '--once']);
       const output = result.stderr + result.stdout;
 
@@ -207,12 +207,27 @@ describe('CLI', () => {
       expect(output).toContain('--background cannot be combined with --once');
     });
 
-    itWithSubprocess('--background --json fails clearly without loading agent modules', () => {
+    itWithSubprocess('--background --json fails clearly', () => {
       const result = runCli(['--background', '--json']);
       const output = result.stderr + result.stdout;
 
       expect(result.exitCode).toBe(1);
       expect(output).toContain('--background cannot be combined with --json');
+    });
+
+    itWithSubprocess('--background reports early child startup failure with a log path', () => {
+      const logPath = path.join(tempDir, `background-${Date.now()}.log`);
+      const result = runCli(['--background', '--no-auto-discover'], {
+        AGENT_TANK_BACKGROUND_LOG: logPath,
+      });
+      const output = result.stderr + result.stdout;
+
+      expect(result.exitCode).toBe(1);
+      expect(output).toContain('Failed to start Agent Tank in the background');
+      expect(output).toContain(logPath);
+      expect(result.stdout).not.toContain('Agent Tank started in the background');
+      expect(fs.existsSync(logPath)).toBe(true);
+      fs.unlinkSync(logPath);
     });
   });
 
@@ -282,6 +297,7 @@ describe('CLI', () => {
       expect(result.stdout).toContain('AGENT_TANK_AUTO_REFRESH');
       expect(result.stdout).toContain('AGENT_TANK_AUTO_REFRESH_INTERVAL');
       expect(result.stdout).toContain('AGENT_TANK_BACKGROUND');
+      expect(result.stdout).toContain('AGENT_TANK_BACKGROUND_LOG');
     });
 
     itWithPty('lists HTTP endpoints in help', () => {
@@ -844,21 +860,6 @@ describe('CLI', () => {
       }
     });
 
-    itWithPty('--background --once fails clearly', () => {
-      const result = runCli(['--background', '--once']);
-      const output = result.stderr + result.stdout;
-
-      expect(result.exitCode).toBe(1);
-      expect(output).toContain('--background cannot be combined with --once');
-    });
-
-    itWithPty('--background --json fails clearly', () => {
-      const result = runCli(['--background', '--json']);
-      const output = result.stderr + result.stdout;
-
-      expect(result.exitCode).toBe(1);
-      expect(output).toContain('--background cannot be combined with --json');
-    });
   });
 
   describe('configuration priority (env > CLI > config file)', () => {
