@@ -41,6 +41,11 @@ function closeBackgroundLog(logFd, closeSync = fs.closeSync) {
   }
 }
 
+function getBackgroundStartupGraceMs(env = process.env) {
+  const parsed = Number.parseInt(env.AGENT_TANK_BACKGROUND_GRACE_MS, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : BACKGROUND_STARTUP_GRACE_MS;
+}
+
 function waitForBackgroundStartup(child, graceMs, setTimer = setTimeout, clearTimer = clearTimeout) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -77,8 +82,9 @@ async function spawnBackgroundProcess({
   stderr = process.stderr,
   openSync = fs.openSync,
   closeSync = fs.closeSync,
-  startupGraceMs = BACKGROUND_STARTUP_GRACE_MS,
+  startupGraceMs,
 } = {}) {
+  const resolvedStartupGraceMs = startupGraceMs ?? getBackgroundStartupGraceMs(env);
   const logPath = createBackgroundLogPath({ env });
   let logFd;
 
@@ -115,13 +121,14 @@ async function spawnBackgroundProcess({
   closeBackgroundLog(logFd, closeSync);
 
   try {
-    await waitForBackgroundStartup(child, startupGraceMs);
+    await waitForBackgroundStartup(child, resolvedStartupGraceMs);
   } catch (err) {
     writeBackgroundStartFailure({ message: err.message, logPath, stderr });
     return false;
   }
 
   if (!child.pid) {
+    // Extremely defensive: normal spawn failures are reported via the error event above.
     writeBackgroundStartFailure({ message: 'child process PID was not assigned', logPath, stderr });
     return false;
   }
@@ -153,6 +160,7 @@ function warnAboutRunningProcesses({
 module.exports = {
   BACKGROUND_STARTUP_GRACE_MS,
   createBackgroundLogPath,
+  getBackgroundStartupGraceMs,
   spawnBackgroundProcess,
   waitForBackgroundStartup,
   warnAboutRunningProcesses,

@@ -44,8 +44,14 @@ describe('process-utils', () => {
   describe('isAgentTankCommand', () => {
     it('matches installed and source-tree Agent Tank commands', () => {
       expect(isAgentTankCommand('agent-tank --port 3456')).toBe(true);
+      expect(isAgentTankCommand('C:\\Users\\me\\AppData\\Roaming\\npm\\agent-tank.cmd --port 3456')).toBe(true);
+      expect(isAgentTankCommand('node /usr/local/bin/agent-tank --port 3456')).toBe(true);
       expect(isAgentTankCommand('node /repo/bin/agent-tank.js --codex')).toBe(true);
       expect(isAgentTankCommand('node.exe C:\\repo\\bin\\agent-tank.js --codex')).toBe(true);
+    });
+
+    it('matches quoted Agent Tank paths containing spaces', () => {
+      expect(isAgentTankCommand('node "C:\\Program Files\\agent tank\\bin\\agent-tank.js" --codex')).toBe(true);
     });
 
     it('does not match unrelated commands', () => {
@@ -70,6 +76,7 @@ describe('process-utils', () => {
         { pid: 300, command: 'agent-tank --codex' },
       ]);
       expect(execFile).toHaveBeenCalledWith('ps', ['-eo', 'pid=,args='], expect.any(Object));
+      expect(execFile.mock.calls[0][2]).toEqual(expect.objectContaining({ timeout: expect.any(Number) }));
     });
 
     it('returns an empty list when process discovery fails', () => {

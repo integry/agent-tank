@@ -217,17 +217,33 @@ describe('CLI', () => {
 
     itWithSubprocess('--background reports early child startup failure with a log path', () => {
       const logPath = path.join(tempDir, `background-${Date.now()}.log`);
-      const result = runCli(['--background', '--no-auto-discover'], {
-        AGENT_TANK_BACKGROUND_LOG: logPath,
+
+      try {
+        const result = runCli(['--background', '--no-auto-discover'], {
+          AGENT_TANK_BACKGROUND_GRACE_MS: '5000',
+          AGENT_TANK_BACKGROUND_LOG: logPath,
+        });
+        const output = result.stderr + result.stdout;
+
+        expect(result.exitCode).toBe(1);
+        expect(output).toContain('Failed to start Agent Tank in the background');
+        expect(output).toContain(logPath);
+        expect(result.stdout).not.toContain('Agent Tank started in the background');
+        expect(fs.existsSync(logPath)).toBe(true);
+      } finally {
+        if (fs.existsSync(logPath)) {
+          fs.unlinkSync(logPath);
+        }
+      }
+    });
+
+    itWithSubprocess('--no-background overrides AGENT_TANK_BACKGROUND', () => {
+      const result = runCli(['--no-background', '--once', '--json', '--no-auto-discover'], {
+        AGENT_TANK_BACKGROUND: '1',
       });
       const output = result.stderr + result.stdout;
 
-      expect(result.exitCode).toBe(1);
-      expect(output).toContain('Failed to start Agent Tank in the background');
-      expect(output).toContain(logPath);
-      expect(result.stdout).not.toContain('Agent Tank started in the background');
-      expect(fs.existsSync(logPath)).toBe(true);
-      fs.unlinkSync(logPath);
+      expect(output).not.toContain('--background cannot be combined with --once');
     });
   });
 
@@ -859,7 +875,6 @@ describe('CLI', () => {
         }
       }
     });
-
   });
 
   describe('configuration priority (env > CLI > config file)', () => {

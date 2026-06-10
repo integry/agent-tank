@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /* eslint-disable complexity -- CLI option merging is centralized here to preserve precedence behavior. */
+/* eslint-disable max-lines -- CLI help text and option precedence are intentionally kept in one entry point. */
 
 const { parseArgs } = require('node:util');
 const {
@@ -118,6 +119,7 @@ Environment variables:
   AGENT_TANK_HISTORY_RETENTION_DAYS  Days to retain usage history
   AGENT_TANK_BACKGROUND  Start as a detached background process ("1" or "true")
   AGENT_TANK_BACKGROUND_LOG  Log file for background child stdout/stderr
+  AGENT_TANK_BACKGROUND_GRACE_MS  Parent startup grace period before reporting background success
   AGENT_TANK_BACKGROUND_CHILD  Internal marker set only on the detached child
 
 Examples:
@@ -167,17 +169,18 @@ async function main() {
     return;
   }
 
-  const backgroundRequested = values.background || isTruthyEnv(process.env.AGENT_TANK_BACKGROUND);
+  const explicitNoBackground = process.argv.slice(2).includes('--no-background');
+  const backgroundRequested = values.background ||
+    (isTruthyEnv(process.env.AGENT_TANK_BACKGROUND) && !explicitNoBackground);
   const backgroundChild = isTruthyEnv(process.env.AGENT_TANK_BACKGROUND_CHILD);
 
-  if (backgroundRequested && !backgroundChild && values.once) {
-    exitWithCode(1, 'Error: --background cannot be combined with --once');
-    return;
-  }
-
-  if (backgroundRequested && !backgroundChild && values.json) {
-    exitWithCode(1, 'Error: --background cannot be combined with --json');
-    return;
+  if (backgroundRequested && !backgroundChild) {
+    for (const incompatibleFlag of ['once', 'json']) {
+      if (values[incompatibleFlag]) {
+        exitWithCode(1, `Error: --background cannot be combined with --${incompatibleFlag}`);
+        return;
+      }
+    }
   }
 
   if (backgroundRequested && !backgroundChild) {

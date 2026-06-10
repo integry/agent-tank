@@ -1,6 +1,7 @@
 const { EventEmitter } = require('node:events');
 const {
   createBackgroundLogPath,
+  getBackgroundStartupGraceMs,
   spawnBackgroundProcess,
   warnAboutRunningProcesses,
 } = require('../../src/cli-background.js');
@@ -32,6 +33,12 @@ describe('cli-background', () => {
       expect(createBackgroundLogPath({
         env: { AGENT_TANK_BACKGROUND_LOG: '/tmp/custom.log' },
       })).toBe('/tmp/custom.log');
+    });
+  });
+
+  describe('getBackgroundStartupGraceMs', () => {
+    it('uses AGENT_TANK_BACKGROUND_GRACE_MS when it is a non-negative integer', () => {
+      expect(getBackgroundStartupGraceMs({ AGENT_TANK_BACKGROUND_GRACE_MS: '5000' })).toBe(5000);
     });
   });
 

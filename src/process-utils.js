@@ -3,6 +3,7 @@ const path = require('node:path');
 
 const BACKGROUND_ARG_RE = /^--(?:no-)?background$/;
 const AGENT_TANK_BIN_RE = /(^|[\\/])bin[\\/]agent-tank\.js$/;
+const PROCESS_SCAN_TIMEOUT_MS = 2000;
 
 function isTruthyEnv(value) {
   return value === '1' || value === 'true';
@@ -43,11 +44,31 @@ function parseWindowsProcessList(output) {
 }
 
 function commandTokens(command) {
-  return command.trim().split(/\s+/).filter(Boolean);
+  const tokens = [];
+  const tokenRe = /"([^"]*)"|'([^']*)'|[^\s]+/g;
+  let match;
+
+  while ((match = tokenRe.exec(command)) !== null) {
+    tokens.push(match[1] ?? match[2] ?? match[0]);
+  }
+
+  return tokens;
 }
 
 function commandBasename(token) {
-  return path.basename(token.replace(/^"|"$/g, '')).toLowerCase();
+  return path.basename(token.replace(/^"|"$/g, '').replace(/\\/g, '/')).toLowerCase();
+}
+
+function isAgentTankExecutable(token) {
+  const executable = commandBasename(token);
+  return executable === 'agent-tank' ||
+    executable === 'agent-tank.cmd' ||
+    executable === 'agent-tank.ps1';
+}
+
+function isAgentTankNodeScript(token) {
+  const scriptPath = token.replace(/^"|"$/g, '');
+  return AGENT_TANK_BIN_RE.test(scriptPath) || isAgentTankExecutable(scriptPath);
 }
 
 function isAgentTankCommand(command) {
@@ -56,22 +77,23 @@ function isAgentTankCommand(command) {
     return false;
   }
 
-  const executable = commandBasename(tokens[0]);
-  if (executable === 'agent-tank' || executable === 'agent-tank.cmd' || executable === 'agent-tank.ps1') {
+  if (isAgentTankExecutable(tokens[0])) {
     return true;
   }
 
+  const executable = commandBasename(tokens[0]);
   if (executable !== 'node' && executable !== 'node.exe') {
     return false;
   }
 
-  return tokens.slice(1).some(token => AGENT_TANK_BIN_RE.test(token.replace(/^"|"$/g, '')));
+  return tokens.slice(1).some(isAgentTankNodeScript);
 }
 
 function findAgentTankProcesses({
   currentPid = process.pid,
   execFile = execFileSync,
   platform = process.platform,
+  scanTimeoutMs = PROCESS_SCAN_TIMEOUT_MS,
 } = {}) {
   let output;
   let processes;
@@ -85,12 +107,14 @@ function findAgentTankProcesses({
       ], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: scanTimeoutMs,
       });
       processes = parseWindowsProcessList(output);
     } else {
       output = execFile('ps', ['-eo', 'pid=,args='], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: scanTimeoutMs,
       });
       processes = parseProcessList(output);
     }
@@ -110,4 +134,5 @@ module.exports = {
   isTruthyEnv,
   parseProcessList,
   parseWindowsProcessList,
+  PROCESS_SCAN_TIMEOUT_MS,
 };
