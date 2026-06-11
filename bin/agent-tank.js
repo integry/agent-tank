@@ -41,7 +41,12 @@ const options = {
   background: { type: 'boolean', default: false },
 };
 
-const { values } = parseArgs({ options, allowPositionals: false, allowNegative: true });
+const { values, tokens } = parseArgs({
+  options,
+  allowPositionals: false,
+  allowNegative: true,
+  tokens: true,
+});
 
 function exitWithCode(code, message, stream = process.stderr) {
   if (message) {
@@ -120,7 +125,6 @@ Environment variables:
   AGENT_TANK_BACKGROUND  Start as a detached background process ("1" or "true")
   AGENT_TANK_BACKGROUND_LOG  Log file for background child stdout/stderr
   AGENT_TANK_BACKGROUND_GRACE_MS  Parent startup grace period before reporting background success
-  AGENT_TANK_BACKGROUND_CHILD  Internal marker set only on the detached child
 
 Examples:
   agent-tank                          # Auto-discover and monitor all available
@@ -169,7 +173,10 @@ async function main() {
     return;
   }
 
-  const explicitNoBackground = process.argv.slice(2).includes('--no-background');
+  const explicitNoBackground = tokens.some(token =>
+    token.kind === 'option' &&
+    token.name === 'background' &&
+    token.rawName === '--no-background');
   const backgroundRequested = values.background ||
     (isTruthyEnv(process.env.AGENT_TANK_BACKGROUND) && !explicitNoBackground);
   const backgroundChild = isTruthyEnv(process.env.AGENT_TANK_BACKGROUND_CHILD);

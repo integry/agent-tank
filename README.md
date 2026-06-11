@@ -225,7 +225,8 @@ Options:
 
 ### Environment Variables
 
-Environment variables override CLI flags and config file values.
+Environment variables override CLI flags and config file values. The one exception is
+`--no-background`, which can override `AGENT_TANK_BACKGROUND=1` for a foreground run.
 
 | Variable | Description |
 |---|---|
@@ -247,7 +248,6 @@ Environment variables override CLI flags and config file values.
 | `AGENT_TANK_BACKGROUND` | Start as a detached background process (`1`/`true`) |
 | `AGENT_TANK_BACKGROUND_LOG` | Background child stdout/stderr log path (defaults to a temp file) |
 | `AGENT_TANK_BACKGROUND_GRACE_MS` | Parent startup grace period before reporting background success |
-| `AGENT_TANK_BACKGROUND_CHILD` | Internal marker set on the detached child process |
 
 ### Config File
 

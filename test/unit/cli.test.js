@@ -244,6 +244,8 @@ describe('CLI', () => {
       const output = result.stderr + result.stdout;
 
       expect(output).not.toContain('--background cannot be combined with --once');
+      expect(output).not.toContain('Agent Tank started in the background');
+      expect(output).toMatch(/No agents|node-pty|Failed to load native module|pty\.node/);
     });
   });
 
@@ -314,6 +316,7 @@ describe('CLI', () => {
       expect(result.stdout).toContain('AGENT_TANK_AUTO_REFRESH_INTERVAL');
       expect(result.stdout).toContain('AGENT_TANK_BACKGROUND');
       expect(result.stdout).toContain('AGENT_TANK_BACKGROUND_LOG');
+      expect(result.stdout).not.toContain('AGENT_TANK_BACKGROUND_CHILD');
     });
 
     itWithPty('lists HTTP endpoints in help', () => {
