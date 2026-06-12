@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* eslint-disable complexity -- CLI option merging is centralized here to preserve precedence behavior. */
-/* eslint-disable max-lines -- Tracked in PR #89 follow-up; CLI help text and option precedence stay together for now. */
+/* eslint-disable max-lines -- Tracked in issue #90; CLI help text and option precedence stay together for now. */
 
 const { parseArgs } = require('node:util');
 const {
@@ -89,11 +89,11 @@ Options:
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-mode <mode>         Refresh mode: none, interval, activity (default: activity)
-  --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60, 0 = disabled)
+  --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60)
   --refresh-cooldown <seconds>       Minimum time between refreshes per agent (default: 30, 0 = disabled)
   --activity-debounce <ms>           Activity debounce interval in milliseconds (default: 5000)
   --keepalive           Enable/disable session keepalive (default: true)
-  --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300, 0 = disabled)
+  --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300)
   --history-retention-days <days>    Days to retain usage history (default: 14)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
@@ -125,6 +125,7 @@ Environment variables:
   AGENT_TANK_BACKGROUND  Start as a detached background process ("1" or "true")
   AGENT_TANK_BACKGROUND_LOG  Log file for background child stdout/stderr
   AGENT_TANK_BACKGROUND_GRACE_MS  Parent startup grace period before reporting background success
+                                  (success means the child survived this period)
 
 Examples:
   agent-tank                          # Auto-discover and monitor all available
@@ -394,12 +395,10 @@ async function main() {
       }
     }
 
-    const runningProcessesWarning = !jsonMode && !backgroundChild
-      ? warnAboutRunningProcesses()
-      : Promise.resolve();
-
+    if (!jsonMode && !backgroundChild) {
+      await warnAboutRunningProcesses();
+    }
     await watcher.start();
-    await runningProcessesWarning;
   } catch (err) {
     cleanupShutdownHandlers();
     if (jsonMode) {

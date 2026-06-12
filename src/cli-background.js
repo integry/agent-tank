@@ -122,6 +122,7 @@ async function spawnBackgroundProcess({
   }
 
   closeBackgroundLog(logFd, closeSync);
+  child.on('error', ignoreLateChildError);
 
   try {
     await waitForBackgroundStartup(child, resolvedStartupGraceMs);
@@ -137,7 +138,6 @@ async function spawnBackgroundProcess({
   }
 
   child.unref();
-  child.on('error', ignoreLateChildError);
   writeBackgroundStartMessage({ pid: child.pid, logPath, stdout });
   return true;
 }

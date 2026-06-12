@@ -209,11 +209,11 @@ Options:
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-mode <mode>         Refresh mode: none, interval, activity (default: activity)
-  --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60, 0 = disabled)
+  --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60)
   --refresh-cooldown <seconds>       Minimum time between refreshes per agent (default: 30, 0 = disabled)
   --activity-debounce <ms>           Activity debounce interval in milliseconds (default: 5000)
   --keepalive           Enable/disable session keepalive (default: true)
-  --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300, 0 = disabled)
+  --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300)
   --history-retention-days <days>    Days to retain usage history (default: 14)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
@@ -225,8 +225,9 @@ Options:
 
 ### Environment Variables
 
-Environment variables override CLI flags and config file values. The one exception is
-`--no-background`, which can override `AGENT_TANK_BACKGROUND=1` for a foreground run.
+Environment variables override CLI flags and config file values. Background mode has
+three exceptions: `--no-background`, `--once`, and `--json` suppress
+`AGENT_TANK_BACKGROUND=1` for that run.
 
 | Variable | Description |
 |---|---|
@@ -247,7 +248,7 @@ Environment variables override CLI flags and config file values. The one excepti
 | `AGENT_TANK_HISTORY_RETENTION_DAYS` | History retention window |
 | `AGENT_TANK_BACKGROUND` | Start as a detached background process (`1`/`true`) |
 | `AGENT_TANK_BACKGROUND_LOG` | Background child stdout/stderr log path (defaults to a temp file) |
-| `AGENT_TANK_BACKGROUND_GRACE_MS` | Parent startup grace period before reporting background success |
+| `AGENT_TANK_BACKGROUND_GRACE_MS` | Parent startup grace period before reporting background success; success means the child survived this period |
 
 ### Config File
 

@@ -244,6 +244,11 @@ describe('CLI', () => {
       const output = result.stderr + result.stdout;
 
       expect(result.exitCode).not.toBe(0);
+      if (isNodePtyError(output)) {
+        expect(output).toEqual(expect.stringMatching(/node-pty|pty\.node/));
+      } else {
+        expect(output).toContain('No agents specified and auto-discover disabled.');
+      }
       expect(output).not.toContain('--background cannot be combined with --once');
       expect(output).not.toContain('Agent Tank started in the background');
     });
@@ -255,6 +260,11 @@ describe('CLI', () => {
       const output = result.stderr + result.stdout;
 
       expect(result.exitCode).not.toBe(0);
+      if (isNodePtyError(output)) {
+        expect(output).toEqual(expect.stringMatching(/node-pty|pty\.node/));
+      } else {
+        expect(output).toContain('No agents specified and auto-discover disabled.');
+      }
       expect(output).not.toContain('--background cannot be combined with --once');
       expect(output).not.toContain('Agent Tank started in the background');
     });

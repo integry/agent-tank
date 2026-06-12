@@ -1,11 +1,12 @@
 const {
   filterBackgroundArgs,
-  findAgentTankProcesses,
   findAgentTankProcessesAsync,
   isAgentTankCommand,
   parseProcessList,
   parseWindowsProcessList,
+  PROCESS_SCAN_MAX_BUFFER,
   PROCESS_SCAN_TIMEOUT_MS,
+  WINDOWS_PROCESS_SCAN_MAX_BUFFER,
   WINDOWS_PROCESS_SCAN_TIMEOUT_MS,
 } = require('../../src/process-utils.js');
 
@@ -56,6 +57,8 @@ describe('process-utils', () => {
       expect(isAgentTankCommand('C:\\Users\\me\\AppData\\Roaming\\npm\\agent-tank.cmd --port 3456')).toBe(true);
       expect(isAgentTankCommand('node /usr/local/bin/agent-tank --port 3456')).toBe(true);
       expect(isAgentTankCommand('node /repo/bin/agent-tank.js --codex')).toBe(true);
+      expect(isAgentTankCommand('node --import ./register.mjs /repo/bin/agent-tank.js')).toBe(true);
+      expect(isAgentTankCommand('node --experimental-loader ./loader.mjs /repo/bin/agent-tank.js')).toBe(true);
       expect(isAgentTankCommand('node.exe C:\\repo\\bin\\agent-tank.js --codex')).toBe(true);
       expect(isAgentTankCommand('nodejs /repo/bin/agent-tank.js --codex')).toBe(true);
       expect(isAgentTankCommand('node18 /repo/bin/agent-tank.js --codex')).toBe(true);
@@ -75,65 +78,34 @@ describe('process-utils', () => {
     });
   });
 
-  describe('findAgentTankProcesses', () => {
-    it('excludes the current process and finds other Agent Tank-like commands', () => {
-      const execFile = jest.fn(() => `
+  describe('findAgentTankProcessesAsync', () => {
+    it('finds Agent Tank processes without using a synchronous exec API', async () => {
+      const execFileFn = asyncExecFile(`
         100 node /repo/bin/agent-tank.js --port 3456
         200 node /repo/bin/agent-tank.js --port 4567
         300 agent-tank --codex
         400 node other.js
       `);
 
-      expect(findAgentTankProcesses({ currentPid: 200, execFile })).toEqual([
-        { pid: 100, command: 'node /repo/bin/agent-tank.js --port 3456' },
-        { pid: 300, command: 'agent-tank --codex' },
-      ]);
-      expect(execFile).toHaveBeenCalledWith('ps', ['-eo', 'pid=,args='], expect.any(Object));
-      expect(execFile.mock.calls[0][2]).toEqual(expect.objectContaining({
-        timeout: PROCESS_SCAN_TIMEOUT_MS,
-      }));
-    });
-
-    it('returns an empty list when process discovery fails', () => {
-      const execFile = jest.fn(() => {
-        throw new Error('ps failed');
-      });
-
-      expect(findAgentTankProcesses({ execFile })).toEqual([]);
-    });
-
-    it('uses powershell process discovery on Windows', () => {
-      const execFile = jest.fn(() => JSON.stringify([
-        { ProcessId: 100, CommandLine: 'node C:\\repo\\bin\\agent-tank.js --port 3456' },
-        { ProcessId: 200, CommandLine: 'vim C:\\repo\\bin\\agent-tank.js' },
-      ]));
-
-      expect(findAgentTankProcesses({ currentPid: 999, execFile, platform: 'win32' })).toEqual([
-        { pid: 100, command: 'node C:\\repo\\bin\\agent-tank.js --port 3456' },
-      ]);
-      expect(execFile).toHaveBeenCalledWith('powershell.exe', expect.any(Array), expect.any(Object));
-      expect(execFile.mock.calls[0][2]).toEqual(expect.objectContaining({
-        timeout: WINDOWS_PROCESS_SCAN_TIMEOUT_MS,
-      }));
-    });
-  });
-
-  describe('findAgentTankProcessesAsync', () => {
-    it('finds Agent Tank processes without using a synchronous exec API', async () => {
-      const execFileFn = asyncExecFile(`
-        100 node /repo/bin/agent-tank.js --port 3456
-        200 node other.js
-      `);
-
       await expect(findAgentTankProcessesAsync({
-        currentPid: 999,
+        currentPid: 200,
         execFileFn,
       })).resolves.toEqual([
         { pid: 100, command: 'node /repo/bin/agent-tank.js --port 3456' },
+        { pid: 300, command: 'agent-tank --codex' },
       ]);
       expect(execFileFn).toHaveBeenCalledWith('ps', ['-eo', 'pid=,args='], expect.objectContaining({
+        maxBuffer: PROCESS_SCAN_MAX_BUFFER,
         timeout: PROCESS_SCAN_TIMEOUT_MS,
       }), expect.any(Function));
+    });
+
+    it('returns an empty list when process discovery fails', async () => {
+      const execFileFn = jest.fn((_file, _args, _options, callback) => {
+        callback(new Error('ps failed'));
+      });
+
+      await expect(findAgentTankProcessesAsync({ execFileFn })).resolves.toEqual([]);
     });
 
     it('uses the larger Windows timeout for async discovery', async () => {
@@ -149,6 +121,7 @@ describe('process-utils', () => {
         { pid: 100, command: 'node C:\\repo\\bin\\agent-tank.js --port 3456' },
       ]);
       expect(execFileFn).toHaveBeenCalledWith('powershell.exe', expect.any(Array), expect.objectContaining({
+        maxBuffer: WINDOWS_PROCESS_SCAN_MAX_BUFFER,
         timeout: WINDOWS_PROCESS_SCAN_TIMEOUT_MS,
       }), expect.any(Function));
     });
