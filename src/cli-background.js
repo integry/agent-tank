@@ -106,6 +106,8 @@ async function spawnBackgroundProcess({
     AGENT_TANK_BACKGROUND_CHILD: '1',
   };
   delete childEnv.AGENT_TANK_BACKGROUND;
+  delete childEnv.AGENT_TANK_BACKGROUND_LOG;
+  delete childEnv.AGENT_TANK_BACKGROUND_GRACE_MS;
 
   let child;
   try {
@@ -152,7 +154,13 @@ async function warnAboutRunningProcesses({
   findProcesses = findAgentTankProcessesAsync,
   stderr = process.stderr,
 } = {}) {
-  const running = await findProcesses();
+  let running;
+  try {
+    running = await findProcesses();
+  } catch (_err) {
+    return;
+  }
+
   if (running.length === 0) {
     return;
   }

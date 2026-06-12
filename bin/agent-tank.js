@@ -89,11 +89,11 @@ Options:
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-mode <mode>         Refresh mode: none, interval, activity (default: activity)
-  --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60)
+  --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60, 0 = disabled)
   --refresh-cooldown <seconds>       Minimum time between refreshes per agent (default: 30, 0 = disabled)
   --activity-debounce <ms>           Activity debounce interval in milliseconds (default: 5000)
   --keepalive           Enable/disable session keepalive (default: true)
-  --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300)
+  --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300, 0 = disabled)
   --history-retention-days <days>    Days to retain usage history (default: 14)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
@@ -395,10 +395,11 @@ async function main() {
       }
     }
 
-    if (!jsonMode && !backgroundChild) {
-      await warnAboutRunningProcesses();
-    }
+    const runningProcessWarning = (!jsonMode && !backgroundChild) ?
+      warnAboutRunningProcesses() :
+      Promise.resolve();
     await watcher.start();
+    await runningProcessWarning;
   } catch (err) {
     cleanupShutdownHandlers();
     if (jsonMode) {

@@ -108,6 +108,15 @@ describe('process-utils', () => {
       await expect(findAgentTankProcessesAsync({ execFileFn })).resolves.toEqual([]);
     });
 
+    it('returns an empty list when process discovery output cannot be parsed', async () => {
+      const execFileFn = asyncExecFile('not json');
+
+      await expect(findAgentTankProcessesAsync({
+        execFileFn,
+        platform: 'win32',
+      })).resolves.toEqual([]);
+    });
+
     it('uses the larger Windows timeout for async discovery', async () => {
       const execFileFn = asyncExecFile(JSON.stringify([
         { ProcessId: 100, CommandLine: 'node C:\\repo\\bin\\agent-tank.js --port 3456' },

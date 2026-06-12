@@ -55,7 +55,11 @@ describe('cli-background', () => {
 
       const started = await spawnBackgroundProcess({
         argv: ['node', '/repo/bin/agent-tank.js', '--background', '--port', '4567'],
-        env: { AGENT_TANK_BACKGROUND: '1', AGENT_TANK_BACKGROUND_LOG: '/tmp/agent.log' },
+        env: {
+          AGENT_TANK_BACKGROUND: '1',
+          AGENT_TANK_BACKGROUND_LOG: '/tmp/agent.log',
+          AGENT_TANK_BACKGROUND_GRACE_MS: '5000',
+        },
         execPath: '/usr/bin/node',
         spawnFn,
         stdout: stdout.stream,
@@ -77,6 +81,8 @@ describe('cli-background', () => {
         windowsHide: true,
       }));
       expect(spawnFn.mock.calls[0][2].env.AGENT_TANK_BACKGROUND).toBeUndefined();
+      expect(spawnFn.mock.calls[0][2].env.AGENT_TANK_BACKGROUND_LOG).toBeUndefined();
+      expect(spawnFn.mock.calls[0][2].env.AGENT_TANK_BACKGROUND_GRACE_MS).toBeUndefined();
       expect(child.unref).toHaveBeenCalledTimes(1);
       expect(stdout.text()).toContain('PID 4242');
       expect(stdout.text()).toContain('/tmp/agent.log');
@@ -173,6 +179,19 @@ describe('cli-background', () => {
       expect(stderr.text()).not.toContain('secret');
       expect(stderr.text()).toContain('same port');
       expect(stderr.text()).toContain('agent-tank --background');
+    });
+
+    it('does not warn when process discovery fails', async () => {
+      const stderr = streamBuffer();
+
+      await warnAboutRunningProcesses({
+        findProcesses: async () => {
+          throw new Error('scan failed');
+        },
+        stderr: stderr.stream,
+      });
+
+      expect(stderr.text()).toBe('');
     });
   });
 });

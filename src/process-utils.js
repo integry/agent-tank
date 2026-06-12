@@ -191,16 +191,14 @@ async function findAgentTankProcessesAsync({
   platform = process.platform,
   scanTimeoutMs,
 } = {}) {
-  let output;
   const command = getProcessScanCommand(platform, scanTimeoutMs);
 
   try {
-    output = await execFilePromise(execFileFn, command.file, command.args, command.options);
+    const output = await execFilePromise(execFileFn, command.file, command.args, command.options);
+    return filterAgentTankProcesses(command.parse(output), currentPid);
   } catch (_err) {
     return [];
   }
-
-  return filterAgentTankProcesses(command.parse(output), currentPid);
 }
 
 module.exports = {
