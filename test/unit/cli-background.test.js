@@ -2,6 +2,7 @@ const { EventEmitter } = require('node:events');
 const {
   createBackgroundLogPath,
   getBackgroundStartupGraceMs,
+  redactProcessCommand,
   spawnBackgroundProcess,
   warnAboutRunningProcesses,
 } = require('../../src/cli-background.js');
@@ -20,9 +21,12 @@ function streamBuffer() {
   };
 }
 
+const DEFAULT_CHILD_PID = 1234;
+const USE_DEFAULT_CHILD_PID = Symbol('USE_DEFAULT_CHILD_PID');
+
 function childProcessStub(pid) {
   const child = new EventEmitter();
-  child.pid = arguments.length === 0 ? 1234 : pid;
+  child.pid = pid === USE_DEFAULT_CHILD_PID ? DEFAULT_CHILD_PID : pid;
   child.unref = jest.fn();
   return child;
 }
@@ -70,18 +74,20 @@ describe('cli-background', () => {
         detached: true,
         stdio: ['ignore', 10, 10],
         env: expect.objectContaining({ AGENT_TANK_BACKGROUND_CHILD: '1' }),
+        windowsHide: true,
       }));
       expect(spawnFn.mock.calls[0][2].env.AGENT_TANK_BACKGROUND).toBeUndefined();
       expect(child.unref).toHaveBeenCalledTimes(1);
       expect(stdout.text()).toContain('PID 4242');
       expect(stdout.text()).toContain('/tmp/agent.log');
       expect(stderr.text()).toBe('');
+      expect(() => child.emit('error', new Error('late spawn error'))).not.toThrow();
     });
 
     it('reports spawn errors instead of printing success', async () => {
       const stdout = streamBuffer();
       const stderr = streamBuffer();
-      const child = childProcessStub();
+      const child = childProcessStub(USE_DEFAULT_CHILD_PID);
       const spawnFn = jest.fn(() => child);
       const promise = spawnBackgroundProcess({
         argv: ['node', '/repo/bin/agent-tank.js', '--background'],
@@ -105,7 +111,7 @@ describe('cli-background', () => {
 
     it('reports early child exits before claiming startup success', async () => {
       const stderr = streamBuffer();
-      const child = childProcessStub();
+      const child = childProcessStub(USE_DEFAULT_CHILD_PID);
       const promise = spawnBackgroundProcess({
         argv: ['node', '/repo/bin/agent-tank.js', '--background'],
         env: { AGENT_TANK_BACKGROUND_LOG: '/tmp/agent.log' },
@@ -146,17 +152,25 @@ describe('cli-background', () => {
   });
 
   describe('warnAboutRunningProcesses', () => {
-    it('writes process commands, port hint, and background tip to stderr', () => {
+    it('redacts credential flags before writing process commands', () => {
+      expect(redactProcessCommand('agent-tank --auth-pass secret --auth-token=token --port 3456'))
+        .toBe('agent-tank --auth-pass [redacted] --auth-token=[redacted] --port 3456');
+      expect(redactProcessCommand('agent-tank --auth-pass "quoted secret" --auth-token \'quoted-token\''))
+        .toBe('agent-tank --auth-pass [redacted] --auth-token [redacted]');
+    });
+
+    it('writes process commands, port hint, and background tip to stderr', async () => {
       const stderr = streamBuffer();
 
-      warnAboutRunningProcesses({
-        findProcesses: () => [
-          { pid: 100, command: 'node /repo/bin/agent-tank.js --port 3456' },
+      await warnAboutRunningProcesses({
+        findProcesses: async () => [
+          { pid: 100, command: 'node /repo/bin/agent-tank.js --auth-pass secret --port 3456' },
         ],
         stderr: stderr.stream,
       });
 
-      expect(stderr.text()).toContain('PID 100: node /repo/bin/agent-tank.js --port 3456');
+      expect(stderr.text()).toContain('PID 100: node /repo/bin/agent-tank.js --auth-pass [redacted] --port 3456');
+      expect(stderr.text()).not.toContain('secret');
       expect(stderr.text()).toContain('same port');
       expect(stderr.text()).toContain('agent-tank --background');
     });

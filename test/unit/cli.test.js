@@ -243,9 +243,20 @@ describe('CLI', () => {
       });
       const output = result.stderr + result.stdout;
 
+      expect(result.exitCode).not.toBe(0);
       expect(output).not.toContain('--background cannot be combined with --once');
       expect(output).not.toContain('Agent Tank started in the background');
-      expect(output).toMatch(/No agents|node-pty|Failed to load native module|pty\.node/);
+    });
+
+    itWithSubprocess('--once suppresses AGENT_TANK_BACKGROUND default', () => {
+      const result = runCli(['--once', '--json', '--no-auto-discover'], {
+        AGENT_TANK_BACKGROUND: '1',
+      });
+      const output = result.stderr + result.stdout;
+
+      expect(result.exitCode).not.toBe(0);
+      expect(output).not.toContain('--background cannot be combined with --once');
+      expect(output).not.toContain('Agent Tank started in the background');
     });
   });
 

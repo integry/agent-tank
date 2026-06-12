@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* eslint-disable complexity -- CLI option merging is centralized here to preserve precedence behavior. */
-/* eslint-disable max-lines -- CLI help text and option precedence are intentionally kept in one entry point. */
+/* eslint-disable max-lines -- Tracked in PR #89 follow-up; CLI help text and option precedence stay together for now. */
 
 const { parseArgs } = require('node:util');
 const {
@@ -177,8 +177,15 @@ async function main() {
     token.kind === 'option' &&
     token.name === 'background' &&
     token.rawName === '--no-background');
-  const backgroundRequested = values.background ||
-    (isTruthyEnv(process.env.AGENT_TANK_BACKGROUND) && !explicitNoBackground);
+  const explicitBackground = tokens.some(token =>
+    token.kind === 'option' &&
+    token.name === 'background' &&
+    token.rawName === '--background');
+  const envBackgroundRequested = isTruthyEnv(process.env.AGENT_TANK_BACKGROUND) &&
+    !explicitNoBackground &&
+    !values.once &&
+    !values.json;
+  const backgroundRequested = explicitBackground || envBackgroundRequested;
   const backgroundChild = isTruthyEnv(process.env.AGENT_TANK_BACKGROUND_CHILD);
 
   if (backgroundRequested && !backgroundChild) {
@@ -188,9 +195,7 @@ async function main() {
         return;
       }
     }
-  }
 
-  if (backgroundRequested && !backgroundChild) {
     const started = await spawnBackgroundProcess();
     process.exitCode = started ? 0 : 1;
     return;
@@ -389,11 +394,12 @@ async function main() {
       }
     }
 
-    if (!jsonMode && !backgroundChild) {
-      warnAboutRunningProcesses();
-    }
+    const runningProcessesWarning = !jsonMode && !backgroundChild
+      ? warnAboutRunningProcesses()
+      : Promise.resolve();
 
     await watcher.start();
+    await runningProcessesWarning;
   } catch (err) {
     cleanupShutdownHandlers();
     if (jsonMode) {

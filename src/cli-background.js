@@ -4,7 +4,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const {
   filterBackgroundArgs,
-  findAgentTankProcesses,
+  findAgentTankProcessesAsync,
 } = require('./process-utils.js');
 
 const BACKGROUND_STARTUP_GRACE_MS = 750;
@@ -28,6 +28,8 @@ function writeBackgroundStartFailure({ message, logPath, stderr = process.stderr
   stderr.write(`Failed to start Agent Tank in the background: ${message}\n`);
   stderr.write(`Background log: ${logPath}\n`);
 }
+
+function ignoreLateChildError() {}
 
 function openBackgroundLog(logPath, openSync = fs.openSync) {
   return openSync(logPath, 'a');
@@ -111,6 +113,7 @@ async function spawnBackgroundProcess({
       detached: true,
       stdio: ['ignore', logFd, logFd],
       env: childEnv,
+      windowsHide: true,
     });
   } catch (err) {
     closeBackgroundLog(logFd, closeSync);
@@ -134,21 +137,28 @@ async function spawnBackgroundProcess({
   }
 
   child.unref();
+  child.on('error', ignoreLateChildError);
   writeBackgroundStartMessage({ pid: child.pid, logPath, stdout });
   return true;
 }
 
-function warnAboutRunningProcesses({
-  findProcesses = findAgentTankProcesses,
+function redactProcessCommand(command) {
+  return command
+    .replace(/(--auth-pass(?:=|\s+))(?:"[^"]*"|'[^']*'|\S+)/g, '$1[redacted]')
+    .replace(/(--auth-token(?:=|\s+))(?:"[^"]*"|'[^']*'|\S+)/g, '$1[redacted]');
+}
+
+async function warnAboutRunningProcesses({
+  findProcesses = findAgentTankProcessesAsync,
   stderr = process.stderr,
 } = {}) {
-  const running = findProcesses();
+  const running = await findProcesses();
   if (running.length === 0) {
     return;
   }
 
   const lines = running
-    .map(entry => `  PID ${entry.pid}: ${entry.command}`)
+    .map(entry => `  PID ${entry.pid}: ${redactProcessCommand(entry.command)}`)
     .join('\n');
 
   stderr.write('Warning: other Agent Tank process(es) already running:\n');
@@ -161,6 +171,7 @@ module.exports = {
   BACKGROUND_STARTUP_GRACE_MS,
   createBackgroundLogPath,
   getBackgroundStartupGraceMs,
+  redactProcessCommand,
   spawnBackgroundProcess,
   waitForBackgroundStartup,
   warnAboutRunningProcesses,

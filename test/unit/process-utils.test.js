@@ -1,12 +1,21 @@
 const {
   filterBackgroundArgs,
   findAgentTankProcesses,
+  findAgentTankProcessesAsync,
   isAgentTankCommand,
   parseProcessList,
   parseWindowsProcessList,
+  PROCESS_SCAN_TIMEOUT_MS,
+  WINDOWS_PROCESS_SCAN_TIMEOUT_MS,
 } = require('../../src/process-utils.js');
 
 describe('process-utils', () => {
+  function asyncExecFile(output) {
+    return jest.fn((_file, _args, _options, callback) => {
+      callback(null, output);
+    });
+  }
+
   describe('filterBackgroundArgs', () => {
     it('removes background and no-background flags from child argv', () => {
       expect(filterBackgroundArgs([
@@ -48,6 +57,8 @@ describe('process-utils', () => {
       expect(isAgentTankCommand('node /usr/local/bin/agent-tank --port 3456')).toBe(true);
       expect(isAgentTankCommand('node /repo/bin/agent-tank.js --codex')).toBe(true);
       expect(isAgentTankCommand('node.exe C:\\repo\\bin\\agent-tank.js --codex')).toBe(true);
+      expect(isAgentTankCommand('nodejs /repo/bin/agent-tank.js --codex')).toBe(true);
+      expect(isAgentTankCommand('node18 /repo/bin/agent-tank.js --codex')).toBe(true);
     });
 
     it('matches quoted Agent Tank paths containing spaces', () => {
@@ -59,6 +70,8 @@ describe('process-utils', () => {
       expect(isAgentTankCommand('agent-tanker --port 3456')).toBe(false);
       expect(isAgentTankCommand('vim /repo/bin/agent-tank.js')).toBe(false);
       expect(isAgentTankCommand('less /usr/local/bin/agent-tank')).toBe(false);
+      expect(isAgentTankCommand('node build.js --out dist/agent-tank')).toBe(false);
+      expect(isAgentTankCommand('node tool.js /tmp/agent-tank')).toBe(false);
     });
   });
 
@@ -76,7 +89,9 @@ describe('process-utils', () => {
         { pid: 300, command: 'agent-tank --codex' },
       ]);
       expect(execFile).toHaveBeenCalledWith('ps', ['-eo', 'pid=,args='], expect.any(Object));
-      expect(execFile.mock.calls[0][2]).toEqual(expect.objectContaining({ timeout: expect.any(Number) }));
+      expect(execFile.mock.calls[0][2]).toEqual(expect.objectContaining({
+        timeout: PROCESS_SCAN_TIMEOUT_MS,
+      }));
     });
 
     it('returns an empty list when process discovery fails', () => {
@@ -97,6 +112,45 @@ describe('process-utils', () => {
         { pid: 100, command: 'node C:\\repo\\bin\\agent-tank.js --port 3456' },
       ]);
       expect(execFile).toHaveBeenCalledWith('powershell.exe', expect.any(Array), expect.any(Object));
+      expect(execFile.mock.calls[0][2]).toEqual(expect.objectContaining({
+        timeout: WINDOWS_PROCESS_SCAN_TIMEOUT_MS,
+      }));
+    });
+  });
+
+  describe('findAgentTankProcessesAsync', () => {
+    it('finds Agent Tank processes without using a synchronous exec API', async () => {
+      const execFileFn = asyncExecFile(`
+        100 node /repo/bin/agent-tank.js --port 3456
+        200 node other.js
+      `);
+
+      await expect(findAgentTankProcessesAsync({
+        currentPid: 999,
+        execFileFn,
+      })).resolves.toEqual([
+        { pid: 100, command: 'node /repo/bin/agent-tank.js --port 3456' },
+      ]);
+      expect(execFileFn).toHaveBeenCalledWith('ps', ['-eo', 'pid=,args='], expect.objectContaining({
+        timeout: PROCESS_SCAN_TIMEOUT_MS,
+      }), expect.any(Function));
+    });
+
+    it('uses the larger Windows timeout for async discovery', async () => {
+      const execFileFn = asyncExecFile(JSON.stringify([
+        { ProcessId: 100, CommandLine: 'node C:\\repo\\bin\\agent-tank.js --port 3456' },
+      ]));
+
+      await expect(findAgentTankProcessesAsync({
+        currentPid: 999,
+        execFileFn,
+        platform: 'win32',
+      })).resolves.toEqual([
+        { pid: 100, command: 'node C:\\repo\\bin\\agent-tank.js --port 3456' },
+      ]);
+      expect(execFileFn).toHaveBeenCalledWith('powershell.exe', expect.any(Array), expect.objectContaining({
+        timeout: WINDOWS_PROCESS_SCAN_TIMEOUT_MS,
+      }), expect.any(Function));
     });
   });
 });
