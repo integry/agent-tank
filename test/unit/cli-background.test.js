@@ -7,10 +7,11 @@ const {
   warnAboutRunningProcesses,
 } = require('../../src/cli-background.js');
 
-function streamBuffer() {
+function streamBuffer({ isTTY = false } = {}) {
   let value = '';
   return {
     stream: {
+      isTTY,
       write(chunk) {
         value += chunk;
       },
@@ -179,6 +180,49 @@ describe('cli-background', () => {
       expect(stderr.text()).not.toContain('secret');
       expect(stderr.text()).toContain('same port');
       expect(stderr.text()).toContain('agent-tank --background');
+    });
+
+    it('includes kill instructions listing every discovered PID', async () => {
+      const stderr = streamBuffer();
+
+      await warnAboutRunningProcesses({
+        findProcesses: async () => [
+          { pid: 100, command: 'node /repo/bin/agent-tank.js' },
+          { pid: 205, command: 'node /repo/bin/agent-tank.js --port 8080' },
+        ],
+        stderr: stderr.stream,
+      });
+
+      expect(stderr.text()).toContain('kill 100 205');
+      expect(stderr.text()).toContain('kill -9 100 205');
+    });
+
+    it('emits a bold red warning header on an interactive terminal', async () => {
+      const stderr = streamBuffer({ isTTY: true });
+
+      await warnAboutRunningProcesses({
+        findProcesses: async () => [
+          { pid: 100, command: 'node /repo/bin/agent-tank.js' },
+        ],
+        stderr: stderr.stream,
+      });
+
+      // \x1b[1m\x1b[31m ... \x1b[0m around the warning header
+      expect(stderr.text()).toContain('\x1b[1m\x1b[31mWarning: other Agent Tank process(es) already running:\x1b[0m');
+    });
+
+    it('omits ANSI color when stderr is not a TTY', async () => {
+      const stderr = streamBuffer({ isTTY: false });
+
+      await warnAboutRunningProcesses({
+        findProcesses: async () => [
+          { pid: 100, command: 'node /repo/bin/agent-tank.js' },
+        ],
+        stderr: stderr.stream,
+      });
+
+      expect(stderr.text()).toContain('Warning: other Agent Tank process(es) already running:');
+      expect(stderr.text()).not.toContain('\x1b[');
     });
 
     it('does not warn when process discovery fails', async () => {

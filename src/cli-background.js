@@ -6,6 +6,7 @@ const {
   filterBackgroundArgs,
   findAgentTankProcessesAsync,
 } = require('./process-utils.js');
+const { ANSI } = require('./logger.js');
 
 const BACKGROUND_STARTUP_GRACE_MS = 750;
 
@@ -169,9 +170,20 @@ async function warnAboutRunningProcesses({
     .map(entry => `  PID ${entry.pid}: ${redactProcessCommand(entry.command)}`)
     .join('\n');
 
-  stderr.write('Warning: other Agent Tank process(es) already running:\n');
+  // Only emit color when writing to an interactive terminal, so redirected
+  // logs stay free of ANSI escape sequences.
+  const header = 'Warning: other Agent Tank process(es) already running:';
+  const coloredHeader = stderr.isTTY
+    ? `${ANSI.bold}${ANSI.red}${header}${ANSI.reset}`
+    : header;
+
+  const pids = running.map(entry => entry.pid).join(' ');
+
+  stderr.write(`${coloredHeader}\n`);
   stderr.write(`${lines}\n`);
   stderr.write('If this instance uses the same port, startup will fail; choose a different --port or stop the other process.\n');
+  stderr.write(`To stop the process(es) above, run: kill ${pids}\n`);
+  stderr.write(`If a process does not exit, force it with: kill -9 ${pids}\n`);
   stderr.write('Tip: start Agent Tank in the background with agent-tank --background\n');
 }
 

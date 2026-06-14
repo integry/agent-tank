@@ -62,6 +62,47 @@ Or run it directly:
 npx agent-tank
 ```
 
+### Run from Source
+
+If you want to run the latest code from a checkout instead of the published package:
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/integry/agent-tank.git
+cd agent-tank
+
+# 2. Install dependencies (compiles node-pty natively)
+npm install
+
+# 3. Run it
+npm start          # = node bin/agent-tank.js
+```
+
+By default it auto-discovers installed CLIs and serves the dashboard + API at `http://127.0.0.1:3456`.
+
+To pass flags, call the entry point directly (`npm start` does not forward arguments cleanly):
+
+```bash
+node bin/agent-tank.js --claude --codex --port 8080
+node bin/agent-tank.js --once --json          # one-shot, prints JSON, no server
+node bin/agent-tank.js --no-docker            # localhost only
+node bin/agent-tank.js --help                 # full option list
+```
+
+Prerequisites:
+
+- **Node.js 18+**
+- `node-pty` is a native module, so `npm install` needs **Python 3.8+** and **C/C++ build tools**. See [Installation Notes](#installation-notes) if the build fails.
+- At least one supported CLI installed and authenticated on your `PATH` (`claude`, `agy`, or `codex`).
+
+Other useful scripts:
+
+```bash
+npm test           # run all tests
+npm run lint       # check code style
+npm run rebuild    # rebuild node-pty against a detected Python
+```
+
 ### First Run
 
 ```bash
