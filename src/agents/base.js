@@ -32,6 +32,25 @@ class BaseAgent {
     return new Error('Agent stopping');
   }
 
+  /**
+   * Best-effort dump of raw output to a temp file for debugging.
+   * Never throws: the target may be unwritable (e.g. a stale file in
+   * /tmp owned by another user), and these dumps run inside timer
+   * callbacks where an exception would crash the whole process.
+   * @param {string} output Raw output to dump
+   * @returns {string|null} Path written to, or null on failure
+   */
+  writeDebugOutput(output) {
+    const debugPath = require('node:path').join(require('node:os').tmpdir(), `${this.name}-output.txt`);
+    try {
+      require('fs').writeFileSync(debugPath, output);
+      return debugPath;
+    } catch (err) {
+      logger.agent(this.name, 'Could not write debug output:', logger.dim(err.message));
+      return null;
+    }
+  }
+
   isStopping() {
     return this._stopRequested;
   }
@@ -308,7 +327,7 @@ class BaseAgent {
         logger.agent(this.name, 'Command timeout after', logger.dim(`${this.getTimeout()}ms`), ', output length:', logger.dim(`${this.output.length}`));
         if (this.output.length > 0) {
           logger.agent(this.name, 'Partial output:', logger.dim(this.stripAnsi(this.output).substring(0, 500)));
-          require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, this.output);
+          this.writeDebugOutput(this.output);
         }
         // Kill the stuck process so it respawns fresh on the next refresh
         logger.agent(this.name, 'Killing stuck process to force respawn');
@@ -448,8 +467,10 @@ class BaseAgent {
           logger.agent(this.name, 'Timeout after', logger.dim(`${timeout}ms`), ', output length:', logger.dim(`${output.length}`));
           if (output.length > 0) {
             logger.agent(this.name, 'Partial output:', logger.dim(this.stripAnsi(output).substring(0, 500)));
-            require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, output);
-            logger.agent(this.name, 'Full output written to', logger.dim(`/tmp/${this.name}-output.txt`));
+            const debugPath = this.writeDebugOutput(output);
+            if (debugPath) {
+              logger.agent(this.name, 'Full output written to', logger.dim(debugPath));
+            }
           }
           shell.kill();
           if (output.length > 100) {

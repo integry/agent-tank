@@ -229,7 +229,7 @@ class CodexAgent extends BaseAgent {
         logger.agent(this.name, 'Command timeout after', logger.dim(`${this.getTimeout()}ms`), ', output length:', logger.dim(`${this.output.length}`));
         if (this.output.length > 0) {
           logger.agent(this.name, 'Partial output:', logger.dim(this.stripAnsi(this.output).substring(0, 500)));
-          require('fs').writeFileSync(`/tmp/${this.name}-output.txt`, this.output);
+          this.writeDebugOutput(this.output);
         }
         if (this.output.length > 100) {
           finish(this.output);
