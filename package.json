@@ -1,6 +1,6 @@
 {
   "name": "agent-tank",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "description": "Monitor and query usage limits for LLM CLI tools (Claude, Antigravity, Codex) via HTTP API",
   "main": "src/index.js",
   "bin": {

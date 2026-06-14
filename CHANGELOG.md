@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.8] - 2026-06-14
+
+### Added
+
+- Add `--background` (and `AGENT_TANK_BACKGROUND`) to start Agent Tank as a detached process that prints its PID and log path, then exits the parent command
+- Add `AGENT_TANK_BACKGROUND_LOG` to set the background child's stdout/stderr log path, and `AGENT_TANK_BACKGROUND_GRACE_MS` to configure the parent's startup grace period before reporting success
+- Warn at startup when other Agent Tank processes are already running, listing each PID with credential flags redacted, and including `kill` / `kill -9` instructions to stop them; the warning header is shown in bold red on an interactive terminal
+- Document running Agent Tank from source in the README (clone, install, run, flags, prerequisites)
+
+### Fixed
+
+- Harden the debug output dump on the status page so malformed agent output can't crash the process
+
 ## [0.9.7] - 2026-06-05
 
 ### Changed
