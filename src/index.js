@@ -1,3 +1,5 @@
+/* eslint-disable max-lines -- Tracked in issue #90; keep this PR scoped to background startup behavior. */
+
 const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');

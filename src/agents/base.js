@@ -1,3 +1,5 @@
+/* eslint-disable max-lines -- Tracked in issue #90; keep this PR scoped to background startup behavior. */
+
 const pty = require('node-pty');
 const process = require('node:process');
 const logger = require('../logger.js');

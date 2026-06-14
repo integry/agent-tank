@@ -62,6 +62,47 @@ Or run it directly:
 npx agent-tank
 ```
 
+### Run from Source
+
+If you want to run the latest code from a checkout instead of the published package:
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/integry/agent-tank.git
+cd agent-tank
+
+# 2. Install dependencies (compiles node-pty natively)
+npm install
+
+# 3. Run it
+npm start          # = node bin/agent-tank.js
+```
+
+By default it auto-discovers installed CLIs and serves the dashboard + API at `http://127.0.0.1:3456`.
+
+To pass flags, call the entry point directly (`npm start` does not forward arguments cleanly):
+
+```bash
+node bin/agent-tank.js --claude --codex --port 8080
+node bin/agent-tank.js --once --json          # one-shot, prints JSON, no server
+node bin/agent-tank.js --no-docker            # localhost only
+node bin/agent-tank.js --help                 # full option list
+```
+
+Prerequisites:
+
+- **Node.js 18+**
+- `node-pty` is a native module, so `npm install` needs **Python 3.8+** and **C/C++ build tools**. See [Installation Notes](#installation-notes) if the build fails.
+- At least one supported CLI installed and authenticated on your `PATH` (`claude`, `agy`, or `codex`).
+
+Other useful scripts:
+
+```bash
+npm test           # run all tests
+npm run lint       # check code style
+npm run rebuild    # rebuild node-pty against a detected Python
+```
+
 ### First Run
 
 ```bash
@@ -91,6 +132,9 @@ agent-tank --claude --agy
 
 # Use a custom port
 agent-tank --port 8080
+
+# Keep Agent Tank running after closing this terminal
+agent-tank --background
 
 # Fetch once and print JSON
 agent-tank --once --json
@@ -150,6 +194,14 @@ agent-tank --claude --codex
 agent-tank --once --json
 ```
 
+### Background Server Mode
+
+```bash
+agent-tank --background
+```
+
+This starts Agent Tank as a detached process, prints the background PID, and exits the parent command.
+
 ### Bind to a Different Host or Port
 
 ```bash
@@ -198,14 +250,15 @@ Options:
   --auto-discover       Auto-discover available agents (default: true)
   --auto-refresh        Enable/disable background auto-refresh (default: true)
   --auto-refresh-mode <mode>         Refresh mode: none, interval, activity (default: activity)
-  --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60)
+  --auto-refresh-interval <seconds>  Auto-refresh interval in seconds (default: 60, 0 = disabled)
   --refresh-cooldown <seconds>       Minimum time between refreshes per agent (default: 30, 0 = disabled)
   --activity-debounce <ms>           Activity debounce interval in milliseconds (default: 5000)
   --keepalive           Enable/disable session keepalive (default: true)
-  --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300)
+  --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300, 0 = disabled)
   --history-retention-days <days>    Days to retain usage history (default: 14)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
+  --background          Start Agent Tank as a detached background process
   --help, -h            Show this help message
 ```
 
@@ -213,7 +266,9 @@ Options:
 
 ### Environment Variables
 
-Environment variables override CLI flags and config file values.
+Environment variables override CLI flags and config file values. Background mode has
+three exceptions: `--no-background`, `--once`, and `--json` suppress
+`AGENT_TANK_BACKGROUND=1` for that run.
 
 | Variable | Description |
 |---|---|
@@ -232,6 +287,9 @@ Environment variables override CLI flags and config file values.
 | `AGENT_TANK_KEEPALIVE` | Enable/disable keepalive |
 | `AGENT_TANK_KEEPALIVE_INTERVAL` | Keepalive interval in seconds |
 | `AGENT_TANK_HISTORY_RETENTION_DAYS` | History retention window |
+| `AGENT_TANK_BACKGROUND` | Start as a detached background process (`1`/`true`) |
+| `AGENT_TANK_BACKGROUND_LOG` | Background child stdout/stderr log path (defaults to a temp file) |
+| `AGENT_TANK_BACKGROUND_GRACE_MS` | Parent startup grace period before reporting background success; success means the child survived this period |
 
 ### Config File
 

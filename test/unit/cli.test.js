@@ -189,6 +189,86 @@ describe('CLI', () => {
    * Skips the test if node-pty is not available
    */
   const itWithPty = NODE_PTY_AVAILABLE && CLI_SUBPROCESS_AVAILABLE ? it : it.skip;
+  const itWithSubprocess = CLI_SUBPROCESS_AVAILABLE ? it : it.skip;
+
+  describe('early CLI handling', () => {
+    itWithSubprocess('--background appears in help', () => {
+      const result = runCli(['--help']);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('--background');
+    });
+
+    itWithSubprocess('--background --once fails clearly', () => {
+      const result = runCli(['--background', '--once']);
+      const output = result.stderr + result.stdout;
+
+      expect(result.exitCode).toBe(1);
+      expect(output).toContain('--background cannot be combined with --once');
+    });
+
+    itWithSubprocess('--background --json fails clearly', () => {
+      const result = runCli(['--background', '--json']);
+      const output = result.stderr + result.stdout;
+
+      expect(result.exitCode).toBe(1);
+      expect(output).toContain('--background cannot be combined with --json');
+    });
+
+    itWithSubprocess('--background reports early child startup failure with a log path', () => {
+      const logPath = path.join(tempDir, `background-${Date.now()}.log`);
+
+      try {
+        const result = runCli(['--background', '--no-auto-discover'], {
+          AGENT_TANK_BACKGROUND_GRACE_MS: '5000',
+          AGENT_TANK_BACKGROUND_LOG: logPath,
+        });
+        const output = result.stderr + result.stdout;
+
+        expect(result.exitCode).toBe(1);
+        expect(output).toContain('Failed to start Agent Tank in the background');
+        expect(output).toContain(logPath);
+        expect(result.stdout).not.toContain('Agent Tank started in the background');
+        expect(fs.existsSync(logPath)).toBe(true);
+      } finally {
+        if (fs.existsSync(logPath)) {
+          fs.unlinkSync(logPath);
+        }
+      }
+    });
+
+    itWithSubprocess('--no-background overrides AGENT_TANK_BACKGROUND', () => {
+      const result = runCli(['--no-background', '--once', '--json', '--no-auto-discover'], {
+        AGENT_TANK_BACKGROUND: '1',
+      });
+      const output = result.stderr + result.stdout;
+
+      expect(result.exitCode).not.toBe(0);
+      if (isNodePtyError(output)) {
+        expect(output).toEqual(expect.stringMatching(/node-pty|pty\.node/));
+      } else {
+        expect(output).toContain('No agents specified and auto-discover disabled.');
+      }
+      expect(output).not.toContain('--background cannot be combined with --once');
+      expect(output).not.toContain('Agent Tank started in the background');
+    });
+
+    itWithSubprocess('--once suppresses AGENT_TANK_BACKGROUND default', () => {
+      const result = runCli(['--once', '--json', '--no-auto-discover'], {
+        AGENT_TANK_BACKGROUND: '1',
+      });
+      const output = result.stderr + result.stdout;
+
+      expect(result.exitCode).not.toBe(0);
+      if (isNodePtyError(output)) {
+        expect(output).toEqual(expect.stringMatching(/node-pty|pty\.node/));
+      } else {
+        expect(output).toContain('No agents specified and auto-discover disabled.');
+      }
+      expect(output).not.toContain('--background cannot be combined with --once');
+      expect(output).not.toContain('Agent Tank started in the background');
+    });
+  });
 
   describe('--help flag', () => {
     itWithPty('outputs help menu and exits with code 0', () => {
@@ -241,6 +321,7 @@ describe('CLI', () => {
       expect(result.stdout).toContain('--auto-refresh-interval');
       expect(result.stdout).toContain('--once');
       expect(result.stdout).toContain('--json');
+      expect(result.stdout).toContain('--background');
     });
 
     itWithPty('lists all environment variables in help', () => {
@@ -254,6 +335,9 @@ describe('CLI', () => {
       expect(result.stdout).toContain('AGENT_TANK_CLAUDE_API');
       expect(result.stdout).toContain('AGENT_TANK_AUTO_REFRESH');
       expect(result.stdout).toContain('AGENT_TANK_AUTO_REFRESH_INTERVAL');
+      expect(result.stdout).toContain('AGENT_TANK_BACKGROUND');
+      expect(result.stdout).toContain('AGENT_TANK_BACKGROUND_LOG');
+      expect(result.stdout).not.toContain('AGENT_TANK_BACKGROUND_CHILD');
     });
 
     itWithPty('lists HTTP endpoints in help', () => {
@@ -269,6 +353,7 @@ describe('CLI', () => {
       const result = runCli(['--help']);
 
       expect(result.stdout).toContain('Examples:');
+      expect(result.stdout).toContain('agent-tank --background');
       expect(result.stdout).toContain('agent-tank --claude --agy');
       expect(result.stdout).toContain('agent-tank --port 8080');
     });

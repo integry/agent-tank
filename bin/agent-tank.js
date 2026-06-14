@@ -1,9 +1,15 @@
 #!/usr/bin/env node
-/* eslint-disable complexity */
+/* eslint-disable complexity -- CLI option merging is centralized here to preserve precedence behavior. */
+/* eslint-disable max-lines -- Tracked in issue #90; CLI help text and option precedence stay together for now. */
 
 const { parseArgs } = require('node:util');
-const { AgentTank } = require('../src/index.js');
-const { installShutdownHandlers } = require('../src/shutdown-handler.js');
+const {
+  isTruthyEnv,
+} = require('../src/process-utils.js');
+const {
+  spawnBackgroundProcess,
+  warnAboutRunningProcesses,
+} = require('../src/cli-background.js');
 const pkg = require('../package.json');
 
 const options = {
@@ -32,9 +38,15 @@ const options = {
   'keepalive-interval': { type: 'string', default: '300' },
   once: { type: 'boolean', default: false },
   json: { type: 'boolean', default: false },
+  background: { type: 'boolean', default: false },
 };
 
-const { values } = parseArgs({ options, allowPositionals: false, allowNegative: true });
+const { values, tokens } = parseArgs({
+  options,
+  allowPositionals: false,
+  allowNegative: true,
+  tokens: true,
+});
 
 function exitWithCode(code, message, stream = process.stderr) {
   if (message) {
@@ -85,6 +97,7 @@ Options:
   --history-retention-days <days>    Days to retain usage history (default: 14)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
+  --background          Start Agent Tank as a detached background process
   --help, -h            Show this help message
 
 Auto-Refresh Modes:
@@ -109,9 +122,14 @@ Environment variables:
   AGENT_TANK_KEEPALIVE      Enable/disable session keepalive ("1" or "true" / "0" or "false")
   AGENT_TANK_KEEPALIVE_INTERVAL  Session keepalive interval in seconds
   AGENT_TANK_HISTORY_RETENTION_DAYS  Days to retain usage history
+  AGENT_TANK_BACKGROUND  Start as a detached background process ("1" or "true")
+  AGENT_TANK_BACKGROUND_LOG  Log file for background child stdout/stderr
+  AGENT_TANK_BACKGROUND_GRACE_MS  Parent startup grace period before reporting background success
+                                  (success means the child survived this period)
 
 Examples:
   agent-tank                          # Auto-discover and monitor all available
+  agent-tank --background             # Start in the background and print the PID
   agent-tank --claude --agy           # Monitor specific agents
   agent-tank --port 8080              # Use custom port
   agent-tank --host 0.0.0.0           # Expose on all interfaces
@@ -155,6 +173,37 @@ async function main() {
     process.exitCode = 0;
     return;
   }
+
+  const explicitNoBackground = tokens.some(token =>
+    token.kind === 'option' &&
+    token.name === 'background' &&
+    token.rawName === '--no-background');
+  const explicitBackground = tokens.some(token =>
+    token.kind === 'option' &&
+    token.name === 'background' &&
+    token.rawName === '--background');
+  const envBackgroundRequested = isTruthyEnv(process.env.AGENT_TANK_BACKGROUND) &&
+    !explicitNoBackground &&
+    !values.once &&
+    !values.json;
+  const backgroundRequested = explicitBackground || envBackgroundRequested;
+  const backgroundChild = isTruthyEnv(process.env.AGENT_TANK_BACKGROUND_CHILD);
+
+  if (backgroundRequested && !backgroundChild) {
+    for (const incompatibleFlag of ['once', 'json']) {
+      if (values[incompatibleFlag]) {
+        exitWithCode(1, `Error: --background cannot be combined with --${incompatibleFlag}`);
+        return;
+      }
+    }
+
+    const started = await spawnBackgroundProcess();
+    process.exitCode = started ? 0 : 1;
+    return;
+  }
+
+  const { AgentTank } = require('../src/index.js');
+  const { installShutdownHandlers } = require('../src/shutdown-handler.js');
 
   // Load config file if specified
   let config = {};
@@ -346,7 +395,11 @@ async function main() {
       }
     }
 
+    const runningProcessWarning = (!jsonMode && !backgroundChild) ?
+      warnAboutRunningProcesses() :
+      Promise.resolve();
     await watcher.start();
+    await runningProcessWarning;
   } catch (err) {
     cleanupShutdownHandlers();
     if (jsonMode) {
