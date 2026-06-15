@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.10] - 2026-06-15
+
+### Fixed
+
+- Recover Claude session usage from the `/usage` dialog even when its "Current session" row is captured mid-render in a corrupted state, instead of returning only weekly and Sonnet data (and timing out)
+- Stop treating a partial Claude rate limit (e.g. the per-model/Sonnet breakdown) as an error: keep the fresh session and weekly data, omit only the rate-limited section, and surface a rate-limit error only when no usable data is returned
+
 ## [0.9.9] - 2026-06-15
 
 ### Fixed
