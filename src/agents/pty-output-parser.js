@@ -250,8 +250,20 @@ function addPaceData(sectionData, cycleType) {
 function parsePtyOutput(clean) {
   const usage = { session: null, weeklyAll: null, weeklySonnet: null };
 
-  // Parse session
-  const sessionData = parseUsageSection(extractSection(clean, 'Current\\s*session', 'Current\\s*week'));
+  // Parse session. The "Current session" label is frequently corrupted while
+  // Claude's /usage dialog is still rendering (e.g. "Curretsession"), even
+  // though the bar, "N% used", and reset time are intact. When the labeled
+  // extraction fails, fall back to the region before the weekly section — the
+  // session block is the only "N% used" that appears there.
+  let sessionData = parseUsageSection(extractSection(clean, 'Current\\s*session', 'Current\\s*week'));
+  if (!sessionData) {
+    const beforeWeekly = clean.split(/Current\s*week/i);
+    // length > 1 confirms the weekly section exists, i.e. this is real /usage
+    // output and beforeWeekly[0] is the session region (not unrelated text).
+    if (beforeWeekly.length > 1) {
+      sessionData = parseUsageSection(beforeWeekly[0]);
+    }
+  }
   if (sessionData) {
     usage.session = { label: 'Current session', ...sessionData };
     addPaceData(usage.session, 'session');

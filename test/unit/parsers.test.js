@@ -268,6 +268,32 @@ describe('ClaudeAgent', () => {
       expect(result.session.label).toBe('Current session');
     });
 
+    it('recovers session usage when the "Current session" label is corrupted mid-render', () => {
+      // Claude's /usage dialog often renders the session row in a garbled,
+      // concatenated state ("Curretsession", "Reses") while it settles. The
+      // bar, percent, and reset time are intact, so the session must still be
+      // parsed from the region before the weekly section.
+      const output =
+        '❯ /usage SettingsStatusConfigUsage Stats Session Total cost: $0.00 ' +
+        'Curretsession ███████████ 39%used Reses 12:39pm (Europe/Berlin) ' +
+        'Currentweek(allmodels) ██████ 12%used ResetsJun17,5:59pm(Europe/Berlin) ' +
+        'Currentweek(Sonnetonly) 0%used';
+
+      const result = agent.parseOutput(output);
+
+      expect(result.session).not.toBeNull();
+      expect(result.session.percent).toBe(39);
+      expect(result.session.resetsAt).toBe('12:39pm (Europe/Berlin)');
+      expect(result.weeklyAll.percent).toBe(12);
+    });
+
+    it('does not fabricate a session when there is no weekly section', () => {
+      // Guard against the fallback matching stray "% used" text: without a
+      // weekly section this is not real /usage output.
+      const result = agent.parseOutput('Some unrelated text mentioning 50% used somewhere');
+      expect(result.session).toBeNull();
+    });
+
     it('parses weekly all models section', () => {
       const output = `
         Current session
