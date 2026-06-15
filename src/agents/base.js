@@ -134,14 +134,6 @@ class BaseAgent {
         return;
       }
 
-      if (/rate.?limited|rate_limit_error/i.test(cleanOutput)) {
-        logger.agent(this.name, 'Rate limited, preserving last known usage data');
-        this.error = 'Rate limited — using cached data';
-        this.lastUpdated = new Date().toISOString();
-        // Don't overwrite this.usage — keep the last known good data
-        return;
-      }
-
       // Check for session/auth errors — preserve cached data if available
       const sessionErrorMatch = cleanOutput.match(/session.?expired|session.?error|invalid.?session|authentication.?error|auth.?failed|Unable to (?:load|fetch)|Error loading|could not (?:load|fetch)|Failed to load usage|not authenticated|login required|sign.?in required/i);
       if (sessionErrorMatch) {
@@ -152,12 +144,7 @@ class BaseAgent {
         return;
       }
 
-      const parsed = this.parseOutput(output);
-
-      // Only update usage if we got meaningful data (not all-null)
-      const hasData = parsed && Object.values(parsed).some(v => v !== null && v !== undefined && (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0)));
-      if (hasData) { this.usage = parsed; this.lastUpdated = new Date().toISOString(); } else if (this.usage) { logger.agent(this.name, 'Parse returned no data, preserving last known usage'); this.error = 'Failed to parse — using cached data'; } else { this.usage = parsed; this.lastUpdated = new Date().toISOString(); }
-      logger.agent(this.name, 'Parsed usage:', logger.json(this.usage));
+      this._applyParsedUsage(this.parseOutput(output), cleanOutput);
     } catch (err) {
       if (this.isStopping() && err.message === 'Agent stopping') {
         logger.agent(this.name, 'Refresh cancelled during shutdown');
@@ -169,6 +156,34 @@ class BaseAgent {
       this.isRefreshing = false;
       logger.agent(this.name, 'Refresh complete');
     }
+  }
+
+  // Decide what to do with freshly parsed usage, given the raw (cleaned) output.
+  // Prefers fresh data; treats rate-limit notices as an error only when no
+  // usable data came back (a partial rate limit — e.g. Claude's per-model /
+  // Sonnet breakdown — still yields session/weekly data, and the rate-limited
+  // section simply parses to null and is omitted by the formatter).
+  _applyParsedUsage(parsed, cleanOutput) {
+    const hasData = parsed && Object.values(parsed).some(v =>
+      v !== null && v !== undefined &&
+      (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0)));
+
+    if (hasData) {
+      this.usage = parsed;
+      this.lastUpdated = new Date().toISOString();
+    } else if (/rate.?limited|rate_limit_error/i.test(cleanOutput)) {
+      logger.agent(this.name, 'Rate limited with no usable data, preserving last known usage');
+      this.error = this.usage ? 'Rate limited — using cached data' : 'Rate limited';
+      this.lastUpdated = new Date().toISOString();
+      return;
+    } else if (this.usage) {
+      logger.agent(this.name, 'Parse returned no data, preserving last known usage');
+      this.error = 'Failed to parse — using cached data';
+    } else {
+      this.usage = parsed;
+      this.lastUpdated = new Date().toISOString();
+    }
+    logger.agent(this.name, 'Parsed usage:', logger.json(this.usage));
   }
 
   async runCommand() {

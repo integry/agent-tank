@@ -165,4 +165,58 @@ describe('BaseAgent', () => {
       expect(agent.shell).toBeNull();
     });
   });
+
+  describe('refresh rate-limit handling', () => {
+    const { ClaudeAgent } = require('../../src/agents/claude.js');
+    let agent;
+
+    beforeEach(() => {
+      agent = new ClaudeAgent();
+      agent._metadataFetched = true; // skip the /status metadata fetch path
+    });
+
+    it('keeps fresh session/weekly data and omits only the rate-limited Sonnet section', async () => {
+      agent.runCommand = jest.fn().mockResolvedValue([
+        'Current session',
+        '40% used',
+        'Resets 3:00pm (America/New_York)',
+        '',
+        'Current week (all models)',
+        '12% used',
+        'Resets Jun 17, 6pm (America/New_York)',
+        '',
+        'Current week (Sonnet only)',
+        'Per-model breakdown unavailable (rate limited — try again in a moment)',
+      ].join('\n'));
+
+      await agent.refresh();
+
+      // No error surfaced despite the "rate limited" text...
+      expect(agent.error).toBeNull();
+      // ...session and weekly data are kept...
+      expect(agent.usage.session.percent).toBe(40);
+      expect(agent.usage.weeklyAll.percent).toBe(12);
+      // ...and the rate-limited Sonnet section is omitted (null).
+      expect(agent.usage.weeklySonnet).toBeNull();
+    });
+
+    it('surfaces a rate-limit error only when no usable data came back', async () => {
+      agent.runCommand = jest.fn().mockResolvedValue('rate_limit_error: too many requests');
+
+      await agent.refresh();
+
+      expect(agent.error).toMatch(/rate.?limit/i);
+      expect(agent.usage).toBeNull();
+    });
+
+    it('notes cached data is in use when rate-limited with no data but a prior result exists', async () => {
+      agent.usage = { session: { percent: 7 } };
+      agent.runCommand = jest.fn().mockResolvedValue('rate_limited: slow down');
+
+      await agent.refresh();
+
+      expect(agent.error).toBe('Rate limited — using cached data');
+      expect(agent.usage).toEqual({ session: { percent: 7 } }); // preserved
+    });
+  });
 });
