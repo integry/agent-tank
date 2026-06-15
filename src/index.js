@@ -571,7 +571,9 @@ class AgentTank {
       if (typeof agent.requestStop === 'function') {
         agent.requestStop();
       }
-      agent.killProcess();
+      // Shutdown is followed by process.exit(), so escalate to SIGKILL
+      // synchronously — a deferred timer would never run.
+      agent.killProcess({ immediate: true });
     }
     if (this.servers.length > 0) {
       console.log('[Shutdown] Closing HTTP server');

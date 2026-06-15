@@ -5,6 +5,10 @@ const process = require('node:process');
 const logger = require('../logger.js');
 
 class BaseAgent {
+  // Grace period before escalating a runtime SIGTERM to SIGKILL for CLIs that
+  // ignore graceful termination. Overridable in tests.
+  static FORCE_KILL_GRACE_MS = 2000;
+
   constructor(name, command, args = []) {
     this.name = name;
     this.command = command;
@@ -409,22 +413,57 @@ class BaseAgent {
   }
 
   _handleAdditionalPrompts(_s, _d, _o) { } // Hook for subclasses; killProcess: see below
-  killProcess() { // Terminates the persistent PTY process
-    if (this.shell) {
-      const pidText = typeof this.shell.pid === 'number' ? ` (pid ${this.shell.pid})` : '';
-      logger.agent(this.name, `Killing persistent process${pidText}`);
-      const shell = this.shell;
-      for (const d of this._disposables) { d.dispose(); }
-      this._disposables = []; this._onDataCallback = null; this.processReady = false;
-      try {
-        // PTY-backed CLIs may spawn descendants; kill the whole process group when available.
-        if (typeof shell.pid === 'number' && shell.pid > 0) {
-          try { process.kill(-shell.pid, 'SIGTERM'); } catch (_e) { /* Group may not exist */ }
-        }
-        shell.kill();
-      } catch (_e) { /* Process may already be dead */ }
-      this.shell = null;
+  // Terminates the persistent PTY process.
+  //
+  // Some CLIs (notably `agy` and `codex`) ignore SIGTERM/SIGHUP and would
+  // otherwise survive as orphaned processes (reparented to init) every time we
+  // respawn them or the server exits. We always attempt a graceful SIGTERM
+  // first, then escalate to SIGKILL:
+  //   - runtime (default): asynchronously, after a short grace period, if the
+  //     process is still alive (the event loop is running, so the timer fires);
+  //   - immediate (shutdown): synchronously, because the process is about to
+  //     call process.exit() and pending timers would never run.
+  killProcess({ immediate = false } = {}) {
+    if (!this.shell) return;
+    const shell = this.shell;
+    const pid = (typeof shell.pid === 'number' && shell.pid > 0) ? shell.pid : null;
+    const pidText = pid != null ? ` (pid ${pid})` : '';
+    logger.agent(this.name, `Killing persistent process${pidText}`);
+    for (const d of this._disposables) { d.dispose(); }
+    this._disposables = []; this._onDataCallback = null; this.processReady = false;
+
+    this._signalProcess(pid, shell, 'SIGTERM');
+
+    if (immediate) {
+      this._signalProcess(pid, shell, 'SIGKILL');
+    } else if (pid != null) {
+      const timer = setTimeout(() => {
+        if (!this._isProcessAlive(pid)) return;
+        logger.agent(this.name, `Process ${pid} ignored SIGTERM; sending SIGKILL`);
+        this._signalProcess(pid, shell, 'SIGKILL');
+      }, BaseAgent.FORCE_KILL_GRACE_MS);
+      // Never let the escalation timer keep the process alive on its own.
+      if (typeof timer.unref === 'function') timer.unref();
     }
+
+    this.shell = null;
+  }
+
+  // Best-effort signal to a PTY process and its process group. PTY-backed CLIs
+  // may spawn descendants, so we signal the whole group when we have a pid.
+  // Never throws: the process or group may already be gone.
+  _signalProcess(pid, shell, signal) {
+    try {
+      if (pid != null) {
+        try { process.kill(-pid, signal); } catch (_e) { /* Group may not exist */ }
+      }
+      shell.kill(signal);
+    } catch (_e) { /* Process may already be dead */ }
+  }
+
+  // Returns true if the process is still alive (signal 0 probes without killing).
+  _isProcessAlive(pid) {
+    try { process.kill(pid, 0); return true; } catch (_e) { return false; }
   }
 
   async _runCommandFresh() {

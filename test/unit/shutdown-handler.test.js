@@ -22,6 +22,29 @@ describe('installShutdownHandlers', () => {
     expect(shutdown).not.toHaveBeenCalled();
   });
 
+  it('calls shutdown on SIGINT and SIGHUP and removes them on cleanup', () => {
+    const shutdown = jest.fn();
+    const processObj = new EventEmitter();
+    processObj.off = processObj.removeListener.bind(processObj);
+
+    const cleanup = installShutdownHandlers({
+      shutdown,
+      processObj,
+      stdin: { isTTY: false },
+    });
+
+    processObj.emit('SIGINT');
+    expect(shutdown).toHaveBeenCalledWith('SIGINT');
+    processObj.emit('SIGHUP');
+    expect(shutdown).toHaveBeenCalledWith('SIGHUP');
+
+    shutdown.mockClear();
+    cleanup();
+    processObj.emit('SIGINT');
+    processObj.emit('SIGHUP');
+    expect(shutdown).not.toHaveBeenCalled();
+  });
+
   it('calls shutdown when Ctrl+C is received as raw stdin data', () => {
     const shutdown = jest.fn();
     const stdin = new EventEmitter();

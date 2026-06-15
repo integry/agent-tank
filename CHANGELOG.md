@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.9] - 2026-06-15
+
+### Fixed
+
+- Parse the newer Antigravity "Models & Quota" usage screen, keeping each model group's weekly and five-hour limits as distinct, readable entries instead of collapsing them into two generic limits
+- Dismiss the Antigravity usage modal before re-running `/usage`, fixing refreshes that alternated between success and a 35s timeout on the reused session
+- Force-kill agent PTY processes that ignore `SIGTERM`/`SIGHUP` (e.g. `agy`, `codex`) so they no longer survive as orphaned processes after respawns or shutdown
+- Clean up agent processes on `SIGINT` and `SIGHUP` in addition to `SIGTERM`, so detached/background runs shut down cleanly
+
 ## [0.9.8] - 2026-06-14
 
 ### Added
