@@ -67,4 +67,102 @@ describe('BaseAgent', () => {
       expect(agent.writeDebugOutput('partial output')).toBeNull();
     });
   });
+
+  describe('killProcess', () => {
+    let agent;
+    let killSpy;
+    let processKillSpy;
+
+    function attachShell(pid = 4321) {
+      const shell = { pid, kill: jest.fn() };
+      agent.shell = shell;
+      agent._disposables = [{ dispose: jest.fn() }];
+      return shell;
+    }
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      agent = new BaseAgent('agy', 'agy');
+      // process.kill is used both to signal (-pid) and to probe liveness (pid, 0).
+      processKillSpy = jest.spyOn(process, 'kill').mockImplementation(() => true);
+    });
+
+    afterEach(() => {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+      processKillSpy.mockRestore();
+      if (killSpy) killSpy.mockRestore();
+    });
+
+    it('sends SIGTERM to the process group immediately and clears the shell', () => {
+      const shell = attachShell(4321);
+
+      agent.killProcess();
+
+      expect(process.kill).toHaveBeenCalledWith(-4321, 'SIGTERM');
+      expect(shell.kill).toHaveBeenCalledWith('SIGTERM');
+      expect(agent.shell).toBeNull();
+    });
+
+    it('escalates to SIGKILL after the grace period if the process is still alive', () => {
+      const shell = attachShell(4321);
+      // Liveness probe process.kill(pid, 0) returns truthy => still alive.
+
+      agent.killProcess();
+      process.kill.mockClear();
+      shell.kill.mockClear();
+
+      jest.advanceTimersByTime(BaseAgent.FORCE_KILL_GRACE_MS);
+
+      expect(process.kill).toHaveBeenCalledWith(4321, 0); // liveness probe
+      expect(process.kill).toHaveBeenCalledWith(-4321, 'SIGKILL');
+      expect(shell.kill).toHaveBeenCalledWith('SIGKILL');
+    });
+
+    it('does not send SIGKILL if the process already exited within the grace period', () => {
+      const shell = attachShell(4321);
+
+      agent.killProcess();
+      process.kill.mockClear();
+      shell.kill.mockClear();
+
+      // Liveness probe throws => process is gone.
+      processKillSpy.mockImplementation((targetPid, sig) => {
+        if (sig === 0) { throw new Error('ESRCH'); }
+        return true;
+      });
+
+      jest.advanceTimersByTime(BaseAgent.FORCE_KILL_GRACE_MS);
+
+      expect(process.kill).not.toHaveBeenCalledWith(-4321, 'SIGKILL');
+      expect(shell.kill).not.toHaveBeenCalledWith('SIGKILL');
+    });
+
+    it('immediate mode sends SIGKILL synchronously without waiting for a timer', () => {
+      const shell = attachShell(4321);
+
+      agent.killProcess({ immediate: true });
+
+      expect(process.kill).toHaveBeenCalledWith(-4321, 'SIGTERM');
+      expect(process.kill).toHaveBeenCalledWith(-4321, 'SIGKILL');
+      expect(shell.kill).toHaveBeenCalledWith('SIGKILL');
+      // No reliance on pending timers.
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it('is a no-op when there is no shell', () => {
+      agent.shell = null;
+      expect(() => agent.killProcess()).not.toThrow();
+      expect(process.kill).not.toHaveBeenCalled();
+    });
+
+    it('never throws when signalling a process that is already dead', () => {
+      const shell = attachShell(4321);
+      shell.kill.mockImplementation(() => { throw new Error('already dead'); });
+      processKillSpy.mockImplementation(() => { throw new Error('ESRCH'); });
+
+      expect(() => agent.killProcess({ immediate: true })).not.toThrow();
+      expect(agent.shell).toBeNull();
+    });
+  });
 });

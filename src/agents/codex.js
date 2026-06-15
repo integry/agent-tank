@@ -347,12 +347,12 @@ class CodexAgent extends BaseAgent {
     this._rpcSupported = useRpc;
   }
 
-  killProcess() {
+  killProcess(options = {}) {
     if (this._rpcClient) {
       this._rpcClient.stop();
       this._rpcClient = null;
     }
-    super.killProcess();
+    super.killProcess(options);
   }
 
   /** Lightweight keepalive to prevent session expiration. @returns {Promise<boolean>} True if keepalive succeeded */
