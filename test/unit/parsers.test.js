@@ -867,6 +867,71 @@ describe('AgyAgent', () => {
         }
       }
     });
+
+    describe('grouped "Models & Quota" format', () => {
+      // The newer Antigravity build groups quotas under section headers,
+      // with each group sharing a "Weekly Limit" and "Five Hour Limit".
+      const groupedOutput = `
+        └ Models & Quota
+        Account: user@example.com
+        GEMINI MODELS
+        Models within this group: Gemini Flash, Gemini Pro
+        Weekly Limit
+        [██████████████████████████████████████████████████] 100.00%
+        Quota available
+        Five Hour Limit
+        [██████████████████████████████████████████████████] 80.00%
+        Resets in 3h 15m
+        CLAUDE AND GPT MODELS
+        Models within this group: Claude Opus, Claude Sonnet, GPT-OSS
+        Weekly Limit
+        [██████████████████████████████████████████████████] 60.00%
+        Quota available
+        Five Hour Limit
+        [██████████████████████████████████████████████████] 100.00%
+        Quota available
+        ↑/↓ Scroll · pgup/pgdown Page · esc Close
+      `;
+
+      it('keeps each group\'s shared limits as distinct, group-qualified entries', () => {
+        const result = agent.parseOutput(groupedOutput);
+
+        expect(result.models).toHaveLength(4);
+        expect(result.models.map(m => m.model)).toEqual([
+          'Gemini · Weekly Limit',
+          'Gemini · Five Hour Limit',
+          'Claude and GPT · Weekly Limit',
+          'Claude and GPT · Five Hour Limit',
+        ]);
+      });
+
+      it('records the group name and parses per-entry usage', () => {
+        const result = agent.parseOutput(groupedOutput);
+
+        const geminiFiveHour = result.models.find(m => m.model === 'Gemini · Five Hour Limit');
+        expect(geminiFiveHour.group).toBe('Gemini');
+        expect(geminiFiveHour.usageLeft).toBe(80);
+        expect(geminiFiveHour.percentUsed).toBe(20);
+        expect(geminiFiveHour.resetsIn).toBe('3h 15m');
+        expect(geminiFiveHour.resetsInSeconds).toBe(3 * 60 * 60 + 15 * 60);
+
+        const claudeWeekly = result.models.find(m => m.model === 'Claude and GPT · Weekly Limit');
+        expect(claudeWeekly.group).toBe('Claude and GPT');
+        expect(claudeWeekly.usageLeft).toBe(60);
+      });
+
+      it('preserves known acronyms while title-casing group names', () => {
+        expect(agent._formatGroupName('CLAUDE AND GPT')).toBe('Claude and GPT');
+        expect(agent._formatGroupName('GEMINI')).toBe('Gemini');
+      });
+
+      it('does not treat descriptive or chrome lines as models', () => {
+        const result = agent.parseOutput(groupedOutput);
+
+        const names = result.models.map(m => m.model);
+        expect(names.some(n => /Account|within this group|Scroll/i.test(n))).toBe(false);
+      });
+    });
   });
 
   describe('parseDurationToSeconds', () => {

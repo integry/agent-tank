@@ -4,6 +4,10 @@ const { CYCLE_DURATIONS } = require('../usage-formatters.js');
 const logger = require('../logger.js');
 
 class AgyAgent extends BaseAgent {
+  // Matches both the older "Model Quota" screen and the newer grouped
+  // "Models & Quota" screen reported by recent Antigravity CLI builds.
+  static QUOTA_HEADER = /Models?\s*&?\s*Quota/i;
+
   constructor() {
     super('agy', 'agy', ['--dangerously-skip-permissions']);
     this._aboutSent = false;
@@ -128,8 +132,8 @@ class AgyAgent extends BaseAgent {
   hasCompleteOutput(output) {
     const clean = this.stripAnsi(output);
     if (this.detectAuthenticationState(clean)) return true;
-    if (/Model\s+Quota/i.test(clean)) {
-      return /(?:Gemini|Claude|GPT)[\s\S]*\d+(?:\.\d+)?%/i.test(clean);
+    if (AgyAgent.QUOTA_HEADER.test(clean)) {
+      return /(?:Gemini|Claude|GPT|Weekly\s+Limit|Five[\s-]?Hour\s+Limit)[\s\S]*\d+(?:\.\d+)?\s*%/i.test(clean);
     }
     const hasModel = /(?:Gemini|Claude|GPT)[^\n]+/i.test(clean);
     const hasPercent = /\d+(?:\.\d+)?%/i.test(clean);
@@ -175,6 +179,24 @@ class AgyAgent extends BaseAgent {
     setTimeout(() => shell.write('\r'), 600);
   }
 
+  // Convert an ALL-CAPS Antigravity group header (e.g. "CLAUDE AND GPT") into a
+  // readable label ("Claude and GPT"), preserving known acronyms and lowercasing
+  // connective words.
+  _formatGroupName(raw) {
+    const acronyms = new Set(['GPT', 'GPU', 'AI', 'CLI', 'API', 'OSS']);
+    const connectives = new Set(['and', 'or', 'of', 'the', 'for', 'with']);
+    return raw
+      .split(/\s+/)
+      .map((word, idx) => {
+        const upper = word.toUpperCase();
+        if (acronyms.has(upper)) return upper;
+        const lower = word.toLowerCase();
+        if (idx > 0 && connectives.has(lower)) return lower;
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .join(' ');
+  }
+
   // Calculate pace data for a model entry when reset timing is available.
   _addPaceData(entry, resetsInSeconds) {
     const cycleDuration = CYCLE_DURATIONS.sessionAgy;
@@ -201,21 +223,40 @@ class AgyAgent extends BaseAgent {
   }
 
   _parseAgyUsage(clean, usage) {
-    if (!/Model\s+Quota/i.test(clean)) return;
+    if (!AgyAgent.QUOTA_HEADER.test(clean)) return;
 
     const lines = clean.split('\n').map(line => line.trim()).filter(Boolean);
     const knownMarkers = new Set([
       'Model Quota',
+      'Models & Quota',
       'Quota available',
       '? for shortcuts',
     ]);
 
+    // Newer Antigravity builds group quotas under section headers such as
+    // "GEMINI MODELS" / "CLAUDE AND GPT MODELS", with each group reporting its
+    // own "Weekly Limit" and "Five Hour Limit". Track the active group so those
+    // generic labels can be qualified and not collapsed into a single entry.
+    let currentGroup = null;
+
     for (let i = 0; i < lines.length; i++) {
-      const modelLine = lines[i];
-      if (knownMarkers.has(modelLine) || /^(?:[>└]|[-─↑/↓]|esc\s+to\s+cancel)/i.test(modelLine)) {
+      const line = lines[i];
+
+      const groupMatch = line.match(/^([A-Z][A-Z0-9 &/-]*?)\s+MODELS$/);
+      if (groupMatch) {
+        currentGroup = this._formatGroupName(groupMatch[1].trim());
         continue;
       }
-      if (!/[A-Za-z]/.test(modelLine) || /\d+\s*%/.test(modelLine)) {
+
+      if (knownMarkers.has(line) || /^(?:[>└│]|[-─↑/↓]|esc\s+to\s+cancel)/i.test(line)) {
+        continue;
+      }
+      // Descriptive lines that are not models (e.g. "Account: ...",
+      // "Models within this group: ...").
+      if (/^(?:Account|Models within this group)\s*:/i.test(line)) {
+        continue;
+      }
+      if (!/[A-Za-z]/.test(line) || /\d+\s*%/.test(line)) {
         continue;
       }
 
@@ -232,8 +273,16 @@ class AgyAgent extends BaseAgent {
       const resetsIn = resetMatch?.[1]?.trim() || null;
       const resetsInSeconds = resetsIn ? this.parseDurationToSeconds(resetsIn) : null;
 
-      if (!usage.models.find(m => m.model === modelLine)) {
-        const modelEntry = { model: modelLine, usageLeft, percentUsed, resetsIn, resetsInSeconds };
+      // Qualify shared limit labels with their group so entries from different
+      // groups stay distinct; per-model labels are already unique on their own.
+      const isSharedLimit = /^(?:weekly|five[\s-]?hour|5[\s-]?hour|daily|hourly)\b/i.test(line);
+      const modelName = (currentGroup && isSharedLimit)
+        ? `${currentGroup} · ${line}`
+        : line;
+
+      if (!usage.models.find(m => m.model === modelName)) {
+        const modelEntry = { model: modelName, usageLeft, percentUsed, resetsIn, resetsInSeconds };
+        if (currentGroup) modelEntry.group = currentGroup;
         this._addPaceData(modelEntry, resetsInSeconds);
         usage.models.push(modelEntry);
       }
