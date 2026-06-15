@@ -990,13 +990,16 @@ describe('AgyAgent', () => {
       jest.useRealTimers();
     });
 
-    it('submits /usage directly without Escape rewinding the UI', () => {
+    it('dismisses any open modal with Escape before submitting /usage', () => {
       const shell = { write: jest.fn() };
 
       agent.sendCommands(shell, '');
-      jest.advanceTimersByTime(700);
+      jest.advanceTimersByTime(1100);
 
+      // Escape first (closes a leftover /usage modal on a reused process),
+      // then the command, then Enter — no Escape between command and Enter.
       expect(shell.write.mock.calls).toEqual([
+        ['\x1b'],
         ['/usage'],
         ['\r'],
       ]);

@@ -175,8 +175,14 @@ class AgyAgent extends BaseAgent {
       return;
     }
     logger.agent(this.name, 'Sending /usage command...');
-    setTimeout(() => shell.write('/usage'), 200);
-    setTimeout(() => shell.write('\r'), 600);
+    // A prior /usage leaves Antigravity's usage modal open. On a reused
+    // persistent process that modal swallows the next /usage (0 bytes back ->
+    // 35s timeout -> kill/respawn, which is why refreshes alternated
+    // success/timeout). Press Escape first to return to the prompt; it is a
+    // no-op at a clean prompt and safe because auth flows are guarded above.
+    setTimeout(() => shell.write('\x1b'), 200);
+    setTimeout(() => shell.write('/usage'), 600);
+    setTimeout(() => shell.write('\r'), 1000);
   }
 
   // Convert an ALL-CAPS Antigravity group header (e.g. "CLAUDE AND GPT") into a
