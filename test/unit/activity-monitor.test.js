@@ -8,7 +8,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { ActivityMonitor, DEFAULT_LOG_DIRECTORIES } = require('../../src/activity-monitor.js');
+const {
+  ActivityMonitor,
+  DEFAULT_LOG_DIRECTORIES,
+  getAgentLogDirectories,
+} = require('../../src/activity-monitor.js');
 const chokidar = require('chokidar');
 
 // Mock filesystem existence checks and chokidar watchers
@@ -114,6 +118,10 @@ describe('ActivityMonitor', () => {
           expect(dir.startsWith(homedir)).toBe(true);
         }
       }
+    });
+
+    it('uses an account-specific config directory when provided', () => {
+      expect(getAgentLogDirectories('codex', '/srv/codex-work')).toEqual(['/srv/codex-work']);
     });
   });
 

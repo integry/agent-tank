@@ -1,3 +1,5 @@
+/* eslint-disable max-lines -- Claude PTY and API integrations share one provider implementation. */
+
 const { BaseAgent } = require('./base.js');
 const logger = require('../logger.js');
 const { pingKeepalive } = require('./keepalive-helper.js');
@@ -14,6 +16,7 @@ const API_RESPONSE_SENTINEL = '__API_RESPONSE__';
 class ClaudeAgent extends BaseAgent {
   constructor(options = {}) {
     super('claude', 'claude');
+    this.configPath = options.configPath || null;
     this._statusSent = false;
     this.useApi = options.useApi || false;
     this._apiResponse = null; // Stores the API response when using direct API
@@ -30,7 +33,7 @@ class ClaudeAgent extends BaseAgent {
    * @returns {Promise<string|null>} The OAuth token or null
    */
   async _getAuthToken() {
-    const creds = readCredentials();
+    const creds = readCredentials(this.configPath);
     if (!creds) {
       logger.agent(this.name, 'No OAuth token found in any credential source');
       return null;
@@ -133,7 +136,7 @@ class ClaudeAgent extends BaseAgent {
    * @returns {Promise<string|null>}
    */
   async _refreshAndGetToken() {
-    const creds = readCredentials();
+    const creds = readCredentials(this.configPath);
     if (!creds?.refreshToken) {
       logger.agent(this.name, 'No refresh token available');
       return null;
@@ -148,7 +151,7 @@ class ClaudeAgent extends BaseAgent {
     logger.agent(this.name, 'OAuth token refreshed successfully');
     if (creds.source === 'credentials_file') {
       try {
-        persistRefreshedTokens(refreshed);
+        persistRefreshedTokens(refreshed, this.configPath);
         logger.agent(this.name, 'Refreshed tokens persisted to credentials file');
       } catch (err) {
         logger.agent(this.name, 'Failed to persist refreshed tokens:', err.message);
@@ -182,6 +185,7 @@ class ClaudeAgent extends BaseAgent {
   getEnv() {
     const env = { ...process.env, TERM: 'dumb', NO_COLOR: '1' };
     delete env.CLAUDECODE; // Allow spawning inside a Claude Code session
+    if (this.configPath) env.CLAUDE_CONFIG_DIR = this.configPath;
     return env;
   }
 

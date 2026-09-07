@@ -1,4 +1,4 @@
-const { ActivityMonitor } = require('./activity-monitor.js');
+const { ActivityMonitor, getAgentLogDirectories } = require('./activity-monitor.js');
 
 /**
  * Manages auto-refresh behavior for AgentTank.
@@ -117,6 +117,10 @@ class AutoRefreshManager {
    */
   _startActivityBasedRefresh() {
     const agentNames = Array.from(this.agents.keys());
+    const logDirectories = {};
+    for (const [id, agent] of this.agents) {
+      logDirectories[id] = getAgentLogDirectories(agent.provider || agent.name, agent.configPath);
+    }
     const debounceMs = this.config.activityDebounce;
     const intervalSeconds = this.config.interval;
 
@@ -125,6 +129,7 @@ class AutoRefreshManager {
     this.activityMonitor = new ActivityMonitor({
       debounceInterval: debounceMs,
       agents: agentNames,
+      logDirectories,
       onActivity: (event) => {
         this._handleActivityDetected(event);
       },

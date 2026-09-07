@@ -370,6 +370,9 @@ describe('AgentTank', () => {
 
       expect(status.claude).toEqual({
         name: 'claude',
+        id: 'claude',
+        alias: null,
+        provider: 'claude',
         usage: null,
         metadata: null,
         lastUpdated: null,
@@ -426,6 +429,9 @@ describe('AgentTank', () => {
 
       expect(status).toEqual({
         name: 'agy',
+        id: 'agy',
+        alias: null,
+        provider: 'agy',
         usage: null,
         metadata: null,
         lastUpdated: null,

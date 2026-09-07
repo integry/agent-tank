@@ -8,8 +8,9 @@ class AgyAgent extends BaseAgent {
   // "Models & Quota" screen reported by recent Antigravity CLI builds.
   static QUOTA_HEADER = /Models?\s*&?\s*Quota/i;
 
-  constructor() {
+  constructor(options = {}) {
     super('agy', 'agy', ['--dangerously-skip-permissions']);
+    this.configPath = options.configPath || null;
     this._aboutSent = false;
   }
 
@@ -20,11 +21,13 @@ class AgyAgent extends BaseAgent {
   getEnv() {
     // Use xterm-256color for proper terminal support
     // Antigravity CLI needs good terminal emulation for its TUI
-    return {
+    const env = {
       ...process.env,
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
     };
+    if (this.configPath) env.GEMINI_CLI_HOME = this.configPath;
+    return env;
   }
 
   _hasReadyPrompt(output) {

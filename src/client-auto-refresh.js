@@ -139,13 +139,14 @@ ${metricExtractors}
         for (const [agentName, agentData] of Object.entries(status)) {
           if (!agentData.usage) continue;
 
+          const provider = agentData.provider || agentData.name || agentName;
           let metrics = [];
-          if (agentName === 'claude') {
-            metrics = extractClaudeMetrics(agentData.usage);
-          } else if (agentName === 'agy') {
-            metrics = extractAgyMetrics(agentData.usage);
-          } else if (agentName === 'codex') {
-            metrics = extractCodexMetrics(agentData.usage);
+          if (provider === 'claude') {
+            metrics = extractClaudeMetrics(agentData.usage, agentName);
+          } else if (provider === 'agy') {
+            metrics = extractAgyMetrics(agentData.usage, agentName);
+          } else if (provider === 'codex') {
+            metrics = extractCodexMetrics(agentData.usage, agentName);
           }
 
           // Update DOM for each metric
@@ -155,7 +156,8 @@ ${metricExtractors}
           }
 
           // Update agent card error state
-          const agentCard = document.querySelector(\`.agent-card.agent-\${agentName}\`);
+          const agentCard = Array.from(document.querySelectorAll('.agent-card'))
+            .find(card => card.dataset.agentId === agentName);
           if (agentCard) {
             if (agentData.error) {
               agentCard.classList.add('error');

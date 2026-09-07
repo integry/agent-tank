@@ -15,6 +15,7 @@ const { extractSnapshotMetrics } = require('./snapshot-metrics.js');
 const { attachPaceEvaluation } = require('./pace-attachment.js');
 const { KeepaliveManager } = require('./keepalive-manager.js');
 const { AutoRefreshManager } = require('./auto-refresh-manager.js');
+const { normalizeAgentSpecs } = require('./agent-config.js');
 
 // Load package.json for version info
 const pkg = require(path.join(__dirname, '..', 'package.json'));
@@ -250,13 +251,15 @@ class AgentTank {
       }
     }
 
+    const agentSpecs = normalizeAgentSpecs(agentNames);
+
     // Create agent instances
-    for (const name of agentNames) {
-      const agent = this.createAgent(name);
+    for (const spec of agentSpecs) {
+      const agent = this.createAgent(spec);
       if (agent) {
         agent.freshProcess = this.freshProcess;
-        this.agents.set(name, agent);
-        logger.agent(name, `Created agent${this.freshProcess ? ' (fresh process mode)' : ''}`);
+        this.agents.set(spec.id, agent);
+        logger.agent(spec.provider, `Created agent ${spec.id}${this.freshProcess ? ' (fresh process mode)' : ''}`);
       }
     }
 
@@ -324,18 +327,31 @@ class AgentTank {
     }
   }
 
-  createAgent(name) {
-    switch (name) {
+  createAgent(input) {
+    const spec = typeof input === 'string'
+      ? { provider: input, id: input, alias: null, configPath: null }
+      : input;
+    let agent;
+    switch (spec.provider) {
       case 'claude':
-        return new ClaudeAgent({ useApi: this.claudeApi });
+        agent = new ClaudeAgent({ useApi: this.claudeApi, configPath: spec.configPath });
+        break;
       case 'agy':
-        return new AgyAgent();
+        agent = new AgyAgent({ configPath: spec.configPath });
+        break;
       case 'codex':
-        return new CodexAgent();
+        agent = new CodexAgent({ configPath: spec.configPath });
+        break;
       default:
-        logger.warn(`Unknown agent: ${name}`);
+        logger.warn(`Unknown agent: ${spec.provider}`);
         return null;
     }
+
+    agent.provider = spec.provider;
+    agent.id = spec.id;
+    agent.alias = spec.alias;
+    agent.configPath = spec.configPath;
+    return agent;
   }
 
   async refreshAll() {
@@ -344,7 +360,7 @@ class AgentTank {
     }
 
     logger.info('🔄 Refreshing all agents...');
-    const agentNames = Array.from(this.agents.keys());
+    const providers = [...new Set(Array.from(this.agents.values(), agent => agent.provider))];
 
     // Fetch PTY agent data and public status concurrently
     const [, publicStatusResult] = await Promise.all([
@@ -359,7 +375,7 @@ class AgentTank {
         )
       ),
       // Public API status polling
-      fetchPublicStatus(agentNames).catch(err => {
+      fetchPublicStatus(providers).catch(err => {
         logger.error('Error fetching public status:', err.message);
         return {};
       }),
@@ -371,8 +387,8 @@ class AgentTank {
     // Record usage snapshots and attach pace evaluations
     for (const [name, agent] of this.agents) {
       if (agent.usage) {
-        this._recordSnapshot(name, agent.usage);
-        attachPaceEvaluation(name, agent.usage);
+        this._recordSnapshot(name, agent.provider, agent.usage);
+        attachPaceEvaluation(agent.provider, agent.usage);
       }
     }
 
@@ -380,12 +396,12 @@ class AgentTank {
   }
 
   /** Record a usage snapshot to the history store. @private */
-  _recordSnapshot(agentName, usage) {
+  _recordSnapshot(agentId, provider, usage) {
     try {
-      const snapshot = extractSnapshotMetrics(agentName, usage);
-      if (snapshot) this.historyStore.addSnapshot(agentName, snapshot);
+      const snapshot = extractSnapshotMetrics(provider, usage);
+      if (snapshot) this.historyStore.addSnapshot(agentId, snapshot);
     } catch (err) {
-      console.error(`[${agentName}] Error recording snapshot:`, err.message);
+      console.error(`[${agentId}] Error recording snapshot:`, err.message);
     }
   }
 
@@ -402,8 +418,8 @@ class AgentTank {
 
     // Record snapshot and attach pace evaluation for single agent refresh
     if (agent.usage) {
-      this._recordSnapshot(name, agent.usage);
-      attachPaceEvaluation(name, agent.usage);
+      this._recordSnapshot(name, agent.provider, agent.usage);
+      attachPaceEvaluation(agent.provider, agent.usage);
     }
   }
 
@@ -457,14 +473,25 @@ class AgentTank {
   getStatus() {
     const status = {};
     for (const [name, agent] of this.agents) {
-      status[name] = { ...agent.getStatus(), publicStatus: this.publicStatus[name] || null };
+      status[name] = {
+        ...agent.getStatus(),
+        id: name,
+        alias: agent.alias,
+        provider: agent.provider,
+        publicStatus: this.publicStatus[agent.provider] || null,
+      };
     }
     return status;
   }
 
   getAgentStatus(name) {
     const agent = this.agents.get(name);
-    return agent ? agent.getStatus() : null;
+    return agent ? {
+      ...agent.getStatus(),
+      id: name,
+      alias: agent.alias,
+      provider: agent.provider,
+    } : null;
   }
 
   authenticate(req, url) {

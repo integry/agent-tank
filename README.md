@@ -237,6 +237,7 @@ Options:
   --claude              Enable Claude monitoring
   --agy                 Enable Antigravity monitoring
   --codex               Enable Codex monitoring
+  --agent <spec>        Add an account as provider[:alias][=config-path] (repeatable)
   --port <port>         HTTP server port (default: 3456)
   --host <host>         Bind address (default: 127.0.0.1 + Docker bridge when available)
   --docker              Enable Docker bridge bind when --host is omitted (default: true)
@@ -293,11 +294,32 @@ three exceptions: `--no-background`, `--once`, and `--json` suppress
 
 ### Config File
 
+Use the `agents` array to monitor multiple accounts, including multiple accounts
+from the same provider. Each entry accepts a `provider`, an optional unique `id`
+and display `alias`, and an optional `configPath` directory:
+
 ```json
 {
-  "claude": true,
-  "agy": true,
-  "codex": false,
+  "agents": [
+    {
+      "provider": "codex",
+      "id": "work",
+      "alias": "Work",
+      "configPath": "/srv/accounts/codex-work"
+    },
+    {
+      "provider": "codex",
+      "id": "personal",
+      "alias": "Personal",
+      "configPath": "/srv/accounts/codex-personal"
+    },
+    {
+      "provider": "claude",
+      "id": "client-a",
+      "alias": "Client A",
+      "configPath": "./accounts/claude-client-a"
+    }
+  ],
   "port": 8080,
   "dockerAccess": true,
   "claudeApi": false,
@@ -318,11 +340,31 @@ three exceptions: `--no-background`, `--once`, and `--json` suppress
 }
 ```
 
+Relative account paths are resolved relative to the JSON config file, and `~/`
+paths are expanded to the current user's home directory. The path
+is passed to the provider CLI as its config home: `CLAUDE_CONFIG_DIR` for Claude,
+`CODEX_HOME` for Codex, and `GEMINI_CLI_HOME` for Antigravity. Legacy top-level
+settings such as `"claude": true` remain supported for single default accounts.
+
 Run with:
 
 ```bash
 agent-tank -c config.json
 ```
+
+The same setup can be supplied directly on the command line. Repeat `--agent`
+once per account:
+
+```bash
+agent-tank \
+  --agent codex:work=/srv/accounts/codex-work \
+  --agent codex:personal=/srv/accounts/codex-personal
+```
+
+The `id` (or CLI alias after `:`) is the key returned by `/status` and is used
+by account-specific status, history, and refresh endpoints. IDs may contain
+letters, numbers, dots, underscores, and hyphens. If both `id` and `alias` are
+set in JSON, `id` is the API key and `alias` is the dashboard label.
 
 ## Antigravity
 
@@ -345,12 +387,12 @@ agent-tank --agy --once --json
 |---|---|---|
 | GET | `/` | HTML status page |
 | GET | `/status` | JSON status for all agents |
-| GET | `/status/:agent` | JSON status for one agent |
+| GET | `/status/:id` | JSON status for one configured account |
 | GET | `/config` | Auto-refresh and history config |
 | GET | `/history` | History summary |
-| GET | `/history/:agent` | History for one agent |
+| GET | `/history/:id` | History for one configured account |
 | POST | `/refresh` | Refresh all agents |
-| POST | `/refresh/:agent` | Refresh one agent |
+| POST | `/refresh/:id` | Refresh one configured account |
 
 ### Example `GET /status`
 
@@ -358,6 +400,9 @@ agent-tank --agy --once --json
 {
   "claude": {
     "name": "claude",
+    "id": "claude",
+    "alias": null,
+    "provider": "claude",
     "usage": {
       "session": {
         "label": "Current session",
@@ -570,7 +615,11 @@ codex --version
 const { AgentTank } = require('agent-tank');
 
 const watcher = new AgentTank({
-  agents: ['claude', 'agy'],
+  agents: [
+    { provider: 'codex', id: 'work', configPath: '/srv/accounts/codex-work' },
+    { provider: 'codex', id: 'personal', configPath: '/srv/accounts/codex-personal' },
+    'agy'
+  ],
   port: 3456,
   autoDiscover: true
 });
@@ -580,7 +629,7 @@ await watcher.start();
 const status = watcher.getStatus();
 console.log(status);
 
-await watcher.refreshAgent('claude');
+await watcher.refreshAgent('work');
 
 watcher.stop();
 ```

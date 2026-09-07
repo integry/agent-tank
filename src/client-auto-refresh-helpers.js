@@ -49,7 +49,7 @@ const timeHelpers = `
 
 const metricExtractors = `
     // Extract metrics from Claude usage data
-    function extractClaudeMetrics(usage) {
+    function extractClaudeMetrics(usage, agentId = 'claude') {
       const metrics = [];
       const sections = [
         { data: usage.session, label: 'Session', cycle: 'session' },
@@ -59,10 +59,10 @@ const metricExtractors = `
       ];
       for (const { data, label, cycle } of sections) {
         if (data) {
-          const metricId = \`claude-\${label.toLowerCase().replace(/[^a-z0-9]/g, '-')}\`;
+          const metricId = \`\${agentId}-\${label.toLowerCase().replace(/[^a-z0-9]/g, '-')}\`;
           metrics.push({
             metricId,
-            agent: 'claude',
+            agent: agentId,
             label,
             percent: data.percent ?? 0,
             resetsIn: data.resetsIn || '',
@@ -75,15 +75,15 @@ const metricExtractors = `
     }
 
     // Extract metrics from Antigravity usage data
-    function extractAgyMetrics(usage) {
+    function extractAgyMetrics(usage, agentId = 'agy') {
       const metrics = [];
       if (usage.models && usage.models.length > 0) {
         for (const model of usage.models) {
           const modelName = model.model;
-          const metricId = \`agy-\${modelName.toLowerCase().replace(/[^a-z0-9]/g, '-')}\`;
+          const metricId = \`\${agentId}-\${modelName.toLowerCase().replace(/[^a-z0-9]/g, '-')}\`;
           metrics.push({
             metricId,
-            agent: 'agy',
+            agent: agentId,
             label: modelName,
             percent: model.percentUsed ?? 0,
             resetsIn: model.resetsIn || '',
@@ -96,7 +96,7 @@ const metricExtractors = `
     }
 
     // Extract metrics from Codex usage data
-    function extractCodexMetrics(usage) {
+    function extractCodexMetrics(usage, agentId = 'codex') {
       const metrics = [];
       const models = [];
       if (usage.fiveHour || usage.weekly) {
@@ -109,8 +109,8 @@ const metricExtractors = `
         const modelSlug = ml.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
         if (ml.fiveHour) {
           metrics.push({
-            metricId: \`codex-\${modelSlug}-5h\`,
-            agent: 'codex',
+            metricId: \`\${agentId}-\${modelSlug}-5h\`,
+            agent: agentId,
             label: '5h limit',
             modelName: ml.name,
             percent: ml.fiveHour.percentUsed ?? 0,
@@ -121,8 +121,8 @@ const metricExtractors = `
         }
         if (ml.weekly) {
           metrics.push({
-            metricId: \`codex-\${modelSlug}-weekly\`,
-            agent: 'codex',
+            metricId: \`\${agentId}-\${modelSlug}-weekly\`,
+            agent: agentId,
             label: 'Weekly',
             modelName: ml.name,
             percent: ml.weekly.percentUsed ?? 0,

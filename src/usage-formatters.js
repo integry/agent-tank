@@ -122,7 +122,7 @@ function usageItem(label, value, suffix, options = {}) {
   `;
 }
 
-function formatClaudeUsage(usage) {
+function formatClaudeUsage(usage, agentId = 'claude') {
   let html = '';
   const sections = [
     { data: usage.session, label: 'Session', cycle: 'session' },
@@ -140,7 +140,7 @@ function formatClaudeUsage(usage) {
       const paceData = data.pace || null;
 
       html += '<div class="model-container">';
-      html += usageItem(label, percent, '% used', { isZero, agentName: 'claude', resetsIn });
+      html += usageItem(label, percent, '% used', { isZero, agentName: agentId, resetsIn });
       html += resetInfoItem(data.resetsIn, data.resetsAt, cycle, { isZero, paceData });
       html += '</div>';
     }
@@ -159,7 +159,7 @@ function formatClaudeUsage(usage) {
       ? `$${extra.spent.toFixed(2)} / $${extra.budget.toFixed(2)}`
       : '';
     html += '<div class="model-container">';
-    html += usageItem('Extra', percent, '% used', { isZero, agentName: 'claude', resetsIn });
+    html += usageItem('Extra', percent, '% used', { isZero, agentName: agentId, resetsIn });
     if (spentLabel) {
       html += `<div class="usage-item reset-info"><span class="usage-label">↳ Budget</span><span class="usage-value">${spentLabel}</span></div>`;
     }
@@ -169,7 +169,7 @@ function formatClaudeUsage(usage) {
   return html;
 }
 
-function formatAgyUsage(usage) {
+function formatAgyUsage(usage, agentId = 'agy') {
   let html = '';
   if (usage.models && usage.models.length > 0) {
     for (const model of usage.models) {
@@ -182,7 +182,7 @@ function formatAgyUsage(usage) {
       const paceData = model.pace || null;
 
       html += '<div class="model-container">';
-      html += usageItem(modelName, percent, '% used', { isZero, isModelName: true, agentName: 'agy', resetsIn });
+      html += usageItem(modelName, percent, '% used', { isZero, isModelName: true, agentName: agentId, resetsIn });
       html += resetInfoItem(model.resetsIn, null, 'sessionAgy', { isZero, paceData });
       html += '</div>';
     }
@@ -190,7 +190,7 @@ function formatAgyUsage(usage) {
   return html;
 }
 
-function formatCodexUsage(usage) {
+function formatCodexUsage(usage, agentId = 'codex') {
   let html = '';
   const models = [];
   if (usage.fiveHour || usage.weekly) {
@@ -213,7 +213,7 @@ function formatCodexUsage(usage) {
       const paceData = ml.fiveHour.pace || null;
 
       html += '<div class="model-container nested-container">';
-      html += usageItem('5h limit', fiveHourPercent, '% used', { isZero, isNestedMetric: true, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-5h` });
+      html += usageItem('5h limit', fiveHourPercent, '% used', { isZero, isNestedMetric: true, agentName: agentId, resetsIn, metricId: `${agentId}-${modelSlug}-5h` });
       html += resetInfoItem(ml.fiveHour.resetsIn, ml.fiveHour.resetsAt, 'fiveHour', { isZero, paceData });
       html += '</div>';
     }
@@ -226,7 +226,7 @@ function formatCodexUsage(usage) {
       const paceData = ml.weekly.pace || null;
 
       html += '<div class="model-container nested-container">';
-      html += usageItem('Weekly', weeklyPercent, '% used', { isZero, isNestedMetric: true, agentName: 'codex', resetsIn, metricId: `codex-${modelSlug}-weekly` });
+      html += usageItem('Weekly', weeklyPercent, '% used', { isZero, isNestedMetric: true, agentName: agentId, resetsIn, metricId: `${agentId}-${modelSlug}-weekly` });
       html += resetInfoItem(ml.weekly.resetsIn, ml.weekly.resetsAt, 'weekly', { isZero, paceData });
       html += '</div>';
     }
@@ -234,14 +234,14 @@ function formatCodexUsage(usage) {
   return html;
 }
 
-function formatUsage(agentName, usage) {
+function formatUsage(agentName, usage, options = {}) {
   if (!usage) {
     return '<p class="usage-item">No data available</p>';
   }
 
   const formatters = { claude: formatClaudeUsage, agy: formatAgyUsage, codex: formatCodexUsage };
   const formatter = formatters[agentName];
-  const html = formatter ? formatter(usage) : '';
+  const html = formatter ? formatter(usage, options.agentId || agentName) : '';
 
   return html || '<p class="usage-item">No usage data</p>';
 }

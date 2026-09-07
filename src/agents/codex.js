@@ -1,3 +1,5 @@
+/* eslint-disable max-lines -- Codex JSON-RPC and PTY integrations share one provider implementation. */
+
 const { BaseAgent } = require('./base.js');
 const logger = require('../logger.js');
 const { JsonRpcClient } = require('../json-rpc-client.js');
@@ -16,13 +18,20 @@ const { pingKeepalive } = require('./keepalive-helper.js');
 const { version: packageVersion } = require('../../package.json');
 
 class CodexAgent extends BaseAgent {
-  constructor() {
+  constructor(options = {}) {
     super('codex', 'codex');
+    this.configPath = options.configPath || null;
     this._rpcClient = null;
     this._rpcSupported = null; // null = unknown, true/false = tested
   }
 
   getTimeout() { return 25000; }
+
+  getEnv() {
+    const env = { ...process.env, TERM: 'xterm-256color' };
+    if (this.configPath) env.CODEX_HOME = this.configPath;
+    return env;
+  }
 
   /**
    * Override runCommand to attempt JSON-RPC first, then fall back to PTY
@@ -58,6 +67,7 @@ class CodexAgent extends BaseAgent {
 
     this._rpcClient = new JsonRpcClient('codex', ['app-server'], {
       cwd: '/tmp',
+      env: this.getEnv(),
       timeout: this.getTimeout(),
     });
 
@@ -164,7 +174,7 @@ class CodexAgent extends BaseAgent {
           cols: 120,
           rows: 40,
           cwd: '/tmp',
-          env: { ...process.env, TERM: 'xterm-256color' },
+          env: this.getEnv(),
         });
         if (typeof this.shell.pid === 'number') {
           logger.agent(this.name, 'Persistent process pid:', logger.dim(String(this.shell.pid)));
@@ -382,7 +392,7 @@ class CodexAgent extends BaseAgent {
       name: this.name,
       command: this.command,
       args: this.args,
-      env: { ...process.env, TERM: 'xterm-256color' },
+      env: this.getEnv(),
       termName: 'xterm-256color',
       isReady: (output) => this.isReadyForStatus(output),
       sendCommand: (shell) => setTimeout(() => shell.write('/status\r'), 100),

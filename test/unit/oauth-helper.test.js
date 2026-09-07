@@ -92,6 +92,20 @@ describe('oauth-helper', () => {
 
       fs.rmSync(tmpDir, { recursive: true });
     });
+
+    it('reads credentials from a custom Claude config directory', () => {
+      delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      const configDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'oauth-custom-'));
+      fs.writeFileSync(path.join(configDir, '.credentials.json'), JSON.stringify({
+        claudeAiOauth: { accessToken: 'custom-token' }
+      }));
+
+      const creds = readCredentials(configDir);
+
+      expect(creds.accessToken).toBe('custom-token');
+      expect(creds.source).toBe('credentials_file');
+      fs.rmSync(configDir, { recursive: true });
+    });
   });
 
   describe('isTokenExpired', () => {
@@ -270,6 +284,24 @@ describe('oauth-helper', () => {
       })).toThrow();
 
       process.env.HOME = origHome;
+    });
+
+    it('persists refreshed tokens in a custom Claude config directory', () => {
+      const configDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'oauth-custom-'));
+      const credPath = path.join(configDir, '.credentials.json');
+      fs.writeFileSync(credPath, JSON.stringify({
+        claudeAiOauth: { accessToken: 'old-token', refreshToken: 'old-refresh' }
+      }));
+
+      persistRefreshedTokens({
+        accessToken: 'new-token',
+        refreshToken: 'new-refresh',
+        expiresAt: 9999999999999,
+      }, configDir);
+
+      const updated = JSON.parse(fs.readFileSync(credPath, 'utf8'));
+      expect(updated.claudeAiOauth.accessToken).toBe('new-token');
+      fs.rmSync(configDir, { recursive: true });
     });
   });
 });

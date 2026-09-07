@@ -29,6 +29,11 @@ const DEFAULT_LOG_DIRECTORIES = {
   ],
 };
 
+function getAgentLogDirectories(provider, configPath = null) {
+  if (configPath) return [configPath];
+  return DEFAULT_LOG_DIRECTORIES[provider] || [];
+}
+
 function normalizeFilename(filename) {
   return String(filename || '').replace(/\\/g, '/');
 }
@@ -320,4 +325,4 @@ class ActivityMonitor {
   }
 }
 
-module.exports = { ActivityMonitor, DEFAULT_LOG_DIRECTORIES };
+module.exports = { ActivityMonitor, DEFAULT_LOG_DIRECTORIES, getAgentLogDirectories };

@@ -107,7 +107,7 @@ const clientScript = faviconScript + `
       }
 
       try {
-        await fetch('/refresh/' + agent, { method: 'POST' });
+        await fetch('/refresh/' + encodeURIComponent(agent), { method: 'POST' });
         // Use XHR update instead of page reload
         await performAutoRefresh();
         if (isIconBtn) {

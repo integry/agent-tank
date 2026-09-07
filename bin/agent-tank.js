@@ -10,12 +10,14 @@ const {
   spawnBackgroundProcess,
   warnAboutRunningProcesses,
 } = require('../src/cli-background.js');
+const { normalizeAgentSpecs, parseAgentOption } = require('../src/agent-config.js');
 const pkg = require('../package.json');
 
 const options = {
   claude: { type: 'boolean', default: false },
   agy: { type: 'boolean', default: false },
   codex: { type: 'boolean', default: false },
+  agent: { type: 'string', multiple: true, default: [] },
   'claude-api': { type: 'boolean', default: false },
   port: { type: 'string', default: '3456' },
   host: { type: 'string' },
@@ -76,6 +78,7 @@ Options:
   --claude              Enable Claude monitoring
   --agy                 Enable Antigravity monitoring
   --codex               Enable Codex monitoring
+  --agent <spec>        Add an account as provider[:alias][=config-path] (repeatable)
   --claude-api          Use direct Anthropic API for Claude usage (faster, 60s refresh)
   --port <port>         HTTP server port (default: 3456)
   --host <host>         Bind address (default: 127.0.0.1 + Docker bridge when available)
@@ -131,6 +134,7 @@ Examples:
   agent-tank                          # Auto-discover and monitor all available
   agent-tank --background             # Start in the background and print the PID
   agent-tank --claude --agy           # Monitor specific agents
+  agent-tank --agent codex:work=/srv/codex-work --agent codex:personal=/srv/codex-personal
   agent-tank --port 8080              # Use custom port
   agent-tank --host 0.0.0.0           # Expose on all interfaces
   agent-tank --no-docker              # Bind localhost only when host is omitted
@@ -152,12 +156,12 @@ Examples:
 HTTP Endpoints:
   GET /              Status page (HTML)
   GET /status        All agent statuses (JSON)
-  GET /status/:agent Status for specific agent (JSON)
+  GET /status/:id    Status for a specific agent account (JSON)
   GET /config        Auto-refresh and history configuration (JSON)
   GET /history       Usage history statistics (JSON)
-  GET /history/:agent Usage history for specific agent (JSON)
+  GET /history/:id   Usage history for a specific agent account (JSON)
   POST /refresh      Trigger refresh for all agents
-  POST /refresh/:agent Trigger refresh for specific agent
+  POST /refresh/:id  Trigger refresh for a specific agent account
 `);
 }
 
@@ -207,9 +211,12 @@ async function main() {
 
   // Load config file if specified
   let config = {};
+  let configBaseDir = process.cwd();
   if (values.config) {
     try {
-      config = require(require('path').resolve(values.config));
+      const configPath = require('path').resolve(values.config);
+      config = require(configPath);
+      configBaseDir = require('path').dirname(configPath);
     } catch (err) {
       exitWithCode(1, `Failed to load config file: ${err.message}`);
       return;
@@ -217,10 +224,21 @@ async function main() {
   }
 
   // Merge CLI options with config (env vars > CLI flags > config file)
-  const agents = [];
-  if (values.claude || config.claude) agents.push('claude');
-  if (values.agy || config.agy) agents.push('agy');
-  if (values.codex || config.codex) agents.push('codex');
+  let agents;
+  try {
+    const configAgents = config.agents == null
+      ? []
+      : normalizeAgentSpecs(config.agents, { baseDir: configBaseDir });
+    const cliAgents = normalizeAgentSpecs(values.agent.map(parseAgentOption));
+    const legacyAgents = [];
+    if (values.claude || config.claude) legacyAgents.push('claude');
+    if (values.agy || config.agy) legacyAgents.push('agy');
+    if (values.codex || config.codex) legacyAgents.push('codex');
+    agents = normalizeAgentSpecs([...configAgents, ...cliAgents, ...legacyAgents]);
+  } catch (err) {
+    exitWithCode(1, `Invalid agent configuration: ${err.message}`);
+    return;
+  }
 
   const auth = {
     user: process.env.AGENT_TANK_USER || values['auth-user'] || config.auth?.user,

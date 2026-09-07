@@ -91,7 +91,7 @@ function readSecretToolCredentials() {
  * Read OAuth credentials from all available sources in priority order.
  * @returns {{ accessToken: string, refreshToken?: string, expiresAt?: number, source: string }|null}
  */
-function readCredentials() {
+function readCredentials(configPath = null) {
   // 1. Environment variable (no refresh possible)
   if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
     return { accessToken: process.env.CLAUDE_CODE_OAUTH_TOKEN, source: 'env' };
@@ -99,9 +99,15 @@ function readCredentials() {
 
   // 2. Credentials file
   const homeDir = process.env.HOME || process.env.USERPROFILE || '';
-  const credentialsPath = path.join(homeDir, '.claude', '.credentials.json');
+  const credentialsPath = configPath
+    ? path.join(configPath, '.credentials.json')
+    : path.join(homeDir, '.claude', '.credentials.json');
   const fileCreds = readCredentialsFile(credentialsPath);
   if (fileCreds) return { ...fileCreds, source: 'credentials_file' };
+
+  // Keychain helpers only know the default Claude account. Falling through here
+  // would silently read the wrong account for a custom CLAUDE_CONFIG_DIR.
+  if (configPath) return null;
 
   // 3. macOS Keychain
   const keychainCreds = readKeychainCredentials();
@@ -185,9 +191,11 @@ function refreshOAuthToken(refreshToken) {
  * Persist refreshed tokens back to the credentials file.
  * @param {{ accessToken: string, refreshToken: string, expiresAt: number|null }} tokens
  */
-function persistRefreshedTokens(tokens) {
+function persistRefreshedTokens(tokens, configPath = null) {
   const homeDir = process.env.HOME || process.env.USERPROFILE || '';
-  const credentialsPath = path.join(homeDir, '.claude', '.credentials.json');
+  const credentialsPath = configPath
+    ? path.join(configPath, '.credentials.json')
+    : path.join(homeDir, '.claude', '.credentials.json');
   const raw = fs.readFileSync(credentialsPath, 'utf8');
   const credentials = JSON.parse(raw);
   credentials.claudeAiOauth = {

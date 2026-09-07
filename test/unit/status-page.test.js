@@ -66,4 +66,34 @@ describe('statusPage', () => {
     expect(html).toContain('3h 45m');
     expect(html).not.toContain('reset-info-wrapper" style="display:none"');
   });
+
+  it('renders separate cards and metric ids for multiple accounts of one provider', () => {
+    const usage = {
+      model: 'gpt-5.4',
+      fiveHour: { percentUsed: 10, resetsIn: '4h' },
+    };
+    const baseStatus = {
+      name: 'codex',
+      usage,
+      metadata: null,
+      lastUpdated: null,
+      error: null,
+      auth: null,
+      isRefreshing: false,
+      publicStatus: null,
+      provider: 'codex',
+    };
+
+    const html = statusPage({
+      work: { ...baseStatus, id: 'work', alias: 'work' },
+      personal: { ...baseStatus, id: 'personal', alias: 'personal' },
+    });
+
+    expect(html).toContain('<span>Codex · work</span>');
+    expect(html).toContain('<span>Codex · personal</span>');
+    expect(html).toContain('data-agent-id="work"');
+    expect(html).toContain('data-agent-id="personal"');
+    expect(html).toContain('data-metric-id="work-gpt-5-4-5h"');
+    expect(html).toContain('data-metric-id="personal-gpt-5-4-5h"');
+  });
 });

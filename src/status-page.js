@@ -71,20 +71,25 @@ function renderCardFooter(data) {
 }
 
 function renderAgentCard([name, data]) {
-  const usageHtml = formatUsage(name, data.usage);
+  const provider = data.provider || data.name || name;
+  const usageHtml = formatUsage(provider, data.usage, { agentId: name });
   const statusClass = data.error ? 'error' : data.isRefreshing ? 'refreshing' : 'ok';
-  const icon = agentIcons[name] || '';
-  const displayName = getAgentDisplayName(name);
+  const icon = agentIcons[provider] || '';
+  const providerName = getAgentDisplayName(provider);
+  const displayName = data.alias && data.alias !== provider
+    ? `${providerName} · ${data.alias}`
+    : providerName;
   const statusBadgeHtml = renderPublicStatusBadge(data.publicStatus);
   const footerHtml = renderCardFooter(data);
+  const refreshArgument = escapeHtml(JSON.stringify(name));
 
   return `
-      <div class="agent-card ${statusClass} agent-${name}">
+      <div class="agent-card ${statusClass} agent-${escapeHtml(provider)}" data-agent-id="${escapeHtml(name)}">
         <h2 class="agent-heading">
           ${icon}
-          <span>${displayName}</span>
+          <span>${escapeHtml(displayName)}</span>
           ${statusBadgeHtml}
-          <button class="refresh-icon-btn" onclick="refresh('${name}', event)" ${data.isRefreshing ? 'disabled' : ''} title="Refresh ${displayName}">
+          <button class="refresh-icon-btn" onclick="refresh(${refreshArgument}, event)" ${data.isRefreshing ? 'disabled' : ''} title="Refresh ${escapeHtml(displayName)}">
             ${refreshIcon}
           </button>
         </h2>
