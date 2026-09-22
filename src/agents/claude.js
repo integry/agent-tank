@@ -4,7 +4,10 @@ const { BaseAgent } = require('./base.js');
 const logger = require('../logger.js');
 const { pingKeepalive } = require('./keepalive-helper.js');
 const { parseApiResponse } = require('./api-response-parser.js');
-const { parsePtyOutput } = require('./pty-output-parser.js');
+const { parsePtyOutput, FABLE_SECTION_START } = require('./pty-output-parser.js');
+
+// Matches the Fable allowance header alone, before its "N% used" row has rendered.
+const FABLE_SECTION_HEADER = new RegExp(FABLE_SECTION_START, 'i');
 const https = require('https');
 const {
   readCredentials, isTokenExpired, refreshOAuthToken, persistRefreshedTokens,
@@ -213,12 +216,15 @@ class ClaudeAgent extends BaseAgent {
     const hasSessionData = parsed.session && typeof parsed.session.percent === 'number';
     const hasLegacyWeekly = parsed.weekly && typeof parsed.weekly.percent === 'number';
     const hasAllModelsWeekly = parsed.weeklyAll && typeof parsed.weeklyAll.percent === 'number';
-    const hasSonnetWeekly = parsed.weeklySonnet && typeof parsed.weeklySonnet.percent === 'number';
     const hasFableWeekly = parsed.weeklyFable && typeof parsed.weeklyFable.percent === 'number';
 
+    // Only Max accounts get a Fable allowance row, so never block on it unless the
+    // dialog has actually started drawing one — otherwise Pro accounts would wait
+    // out the full command timeout for a section that is never coming.
+    if (hasAllModelsWeekly && FABLE_SECTION_HEADER.test(clean) && !hasFableWeekly) return false;
+
     // Newer Claude builds often emit usable session/weekly data before the UI fully settles.
-    // For the all-model weekly format, wait for a per-model section (Sonnet or Fable) too.
-    return Boolean(hasSessionData && (hasLegacyWeekly || (hasAllModelsWeekly && (hasSonnetWeekly || hasFableWeekly))));
+    return Boolean(hasSessionData && (hasLegacyWeekly || hasAllModelsWeekly));
   }
 
   sendCommands(shell, _output) {

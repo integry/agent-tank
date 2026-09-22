@@ -102,25 +102,6 @@ function parseWeeklyAllModels(apiResponse, now) {
 }
 
 /**
- * Parse weekly Sonnet only limit from API response
- * @param {Object} apiResponse - Raw API response
- * @param {Date} now - Current date/time
- * @returns {Object|null} Parsed weekly Sonnet data
- */
-function parseWeeklySonnet(apiResponse, now) {
-  const ws = apiResponse.weeklySonnet || apiResponse.weeklySonnetOnly;
-  if (!ws) return null;
-
-  const percent = ws.percentUsed ?? (ws.used && ws.limit ? Math.round((ws.used / ws.limit) * 100) : null);
-
-  if (percent === null) return null;
-
-  const resetInfo = parseResetTimestamp(ws.resetsAt, now);
-  const weeklySonnet = { label: 'Current week (Sonnet only)', percent, ...resetInfo };
-  return addPaceData(weeklySonnet, 'weekly');
-}
-
-/**
  * Parse weekly Fable allowance from API response
  * @param {Object} apiResponse - Raw API response
  * @param {Date} now - Current date/time
@@ -193,8 +174,8 @@ function parseFlatPercentageFields(apiResponse, usage, now) {
 
 /**
  * Normalize the OAuth usage API response to the parser's expected schema.
- * The API returns: five_hour, seven_day, seven_day_sonnet, seven_day_fable, extra_usage
- * The parser expects: sessionLimit, weeklyAllModels, weeklySonnet, weeklyFable, extraUsage
+ * The API returns: five_hour, seven_day, seven_day_fable, extra_usage
+ * The parser expects: sessionLimit, weeklyAllModels, weeklyFable, extraUsage
  * @param {Object} raw - Raw API response
  * @returns {Object} Normalized response
  */
@@ -211,12 +192,6 @@ function normalizeOAuthResponse(raw) {
     norm.weeklyAllModels = {
       percentUsed: Math.round(raw.seven_day.utilization),
       resetsAt: raw.seven_day.resets_at,
-    };
-  }
-  if (raw.seven_day_sonnet) {
-    norm.weeklySonnet = {
-      percentUsed: Math.round(raw.seven_day_sonnet.utilization),
-      resetsAt: raw.seven_day_sonnet.resets_at,
     };
   }
   if (raw.seven_day_fable) {
@@ -244,7 +219,7 @@ function normalizeOAuthResponse(raw) {
  * @returns {Object} The parsed usage object matching the PTY format
  */
 function parseApiResponse(apiResponse) {
-  const usage = { session: null, weeklyAll: null, weeklySonnet: null, weeklyFable: null };
+  const usage = { session: null, weeklyAll: null, weeklyFable: null };
 
   if (!apiResponse) return usage;
 
@@ -261,7 +236,6 @@ function parseApiResponse(apiResponse) {
   // Parse each section
   usage.session = parseSessionLimit(normalized, now);
   usage.weeklyAll = parseWeeklyAllModels(normalized, now);
-  usage.weeklySonnet = parseWeeklySonnet(normalized, now);
   usage.weeklyFable = parseWeeklyFable(normalized, now);
 
   const extraUsage = parseExtraUsage(normalized, now);

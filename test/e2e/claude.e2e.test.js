@@ -160,8 +160,7 @@ describeIfClaude('ClaudeAgent E2E', () => {
       const hasSessionOrWeekly = (
         usage.session !== undefined ||
         usage.weekly !== undefined ||
-        usage.weeklyAll !== undefined ||
-        usage.weeklySonnet !== undefined
+        usage.weeklyAll !== undefined
       );
       expect(hasSessionOrWeekly).toBe(true);
 
@@ -232,21 +231,13 @@ describeIfClaude('ClaudeAgent E2E', () => {
 
       const usage = agent.usage;
 
-      // Check for new format (all models and Sonnet only)
+      // Check for new format (all models and the Fable allowance)
       if (usage?.weeklyAll) {
         expect(usage.weeklyAll).toHaveProperty('label');
         expect(usage.weeklyAll).toHaveProperty('percent');
         expect(usage.weeklyAll.label).toBe('Current week (all models)');
         expect(typeof usage.weeklyAll.percent).toBe('number');
         console.log('Weekly (all models) data validated:', usage.weeklyAll);
-      }
-
-      if (usage?.weeklySonnet) {
-        expect(usage.weeklySonnet).toHaveProperty('label');
-        expect(usage.weeklySonnet).toHaveProperty('percent');
-        expect(usage.weeklySonnet.label).toBe('Current week (Sonnet only)');
-        expect(typeof usage.weeklySonnet.percent).toBe('number');
-        console.log('Weekly (Sonnet only) data validated:', usage.weeklySonnet);
       }
 
       if (usage?.weeklyFable) {

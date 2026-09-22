@@ -54,7 +54,6 @@ const metricExtractors = `
       const sections = [
         { data: usage.session, label: 'Session', cycle: 'session' },
         { data: usage.weeklyAll, label: 'Weekly (all)', cycle: 'weekly' },
-        { data: usage.weeklySonnet, label: 'Weekly (Sonnet)', cycle: 'weekly' },
         { data: usage.weeklyFable, label: 'Weekly (Fable)', cycle: 'weekly' },
         { data: usage.weekly, label: 'Weekly', cycle: 'weekly' }
       ];

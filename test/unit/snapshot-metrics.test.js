@@ -6,14 +6,12 @@ describe('snapshot-metrics', () => {
       const usage = {
         session: { percent: 10 },
         weeklyAll: { percent: 56 },
-        weeklySonnet: null,
         weeklyFable: { percent: 82 },
       };
 
       expect(extractClaudeMetrics(usage)).toEqual({
         session: 10,
         weeklyAll: 56,
-        weeklySonnet: null,
         weeklyFable: 82,
         weekly: null,
         extraUsage: null,

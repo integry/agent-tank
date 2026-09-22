@@ -13,7 +13,6 @@ function extractClaudeMetrics(usage) {
   return {
     session: usage.session?.percent ?? null,
     weeklyAll: usage.weeklyAll?.percent ?? null,
-    weeklySonnet: usage.weeklySonnet?.percent ?? null,
     weeklyFable: usage.weeklyFable?.percent ?? null,
     weekly: usage.weekly?.percent ?? null,
     extraUsage: usage.extraUsage?.percent ?? null

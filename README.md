@@ -170,7 +170,7 @@ agent-tank --refresh-cooldown 60
 
 | Agent | Method | Metrics |
 |---|---|---|
-| Claude | PTY `/usage` or Anthropic OAuth API | Current session, weekly all-models, weekly Sonnet-only, weekly Fable allowance |
+| Claude | PTY `/usage` or Anthropic OAuth API | Current session, weekly all-models, weekly Fable allowance (Max accounts only) |
 | Antigravity | PTY `/usage` | Per-model quota availability and reset windows when reported |
 | Codex | JSON-RPC preferred, PTY fallback | 5-hour limits, weekly limits, model/account info |
 
