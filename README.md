@@ -170,7 +170,7 @@ agent-tank --refresh-cooldown 60
 
 | Agent | Method | Metrics |
 |---|---|---|
-| Claude | PTY `/usage` or Anthropic OAuth API | Current session, weekly all-models, weekly Sonnet-only |
+| Claude | PTY `/usage` or Anthropic OAuth API | Current session, weekly all-models, weekly Sonnet-only, weekly Fable allowance |
 | Antigravity | PTY `/usage` | Per-model quota availability and reset windows when reported |
 | Codex | JSON-RPC preferred, PTY fallback | 5-hour limits, weekly limits, model/account info |
 
@@ -414,6 +414,13 @@ agent-tank --agy --once --json
       "weeklyAll": {
         "label": "Current week (all models)",
         "percent": 31,
+        "resetsAt": "Mar 13, 3am (Europe/London)",
+        "resetsIn": "4d 5h",
+        "resetsInSeconds": 364364
+      },
+      "weeklyFable": {
+        "label": "Current week (Fable)",
+        "percent": 82,
         "resetsAt": "Mar 13, 3am (Europe/London)",
         "resetsIn": "4d 5h",
         "resetsInSeconds": 364364

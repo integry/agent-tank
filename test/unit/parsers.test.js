@@ -423,7 +423,8 @@ describe('ClaudeAgent', () => {
       expect(result).toEqual({
         session: null,
         weeklyAll: null,
-        weeklySonnet: null
+        weeklySonnet: null,
+        weeklyFable: null
       });
     });
 
@@ -594,6 +595,170 @@ describe('ClaudeAgent', () => {
       expect(result.weeklyAll.resetsAt).toBe('Jun 10, 6pm (Europe/Berlin)');
       expect(result.weeklySonnet.percent).toBe(15);
       expect(agent.hasCompleteOutput(output)).toBe(true);
+    });
+
+    describe('Fable allowance', () => {
+      it('parses the Fable section as a separate weekly entry', () => {
+        const output = `
+          Current session
+          45% used
+          Resets 3:00pm (America/New_York)
+
+          Current week (all models)
+          25% used
+          Resets Jan 15, 2pm (America/New_York)
+
+          Current week (Sonnet only)
+          10% used
+          Resets Jan 15, 2pm (America/New_York)
+
+          Current week (Fable)
+          62% used
+          Resets Jan 16, 9am (America/New_York)
+
+          Usage credits are off · Esc to cancel
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.session.percent).toBe(45);
+        expect(result.weeklyAll.percent).toBe(25);
+        expect(result.weeklySonnet.percent).toBe(10);
+        expect(result.weeklyFable).toEqual(expect.objectContaining({
+          label: 'Current week (Fable)',
+          percent: 62,
+          resetsAt: 'Jan 16, 9am (America/New_York)',
+        }));
+        expect(result.weeklyFable.resetsInSeconds).toBeGreaterThan(0);
+        expect(result.weeklyFable.pace).toBeDefined();
+      });
+
+      it('keeps the weekly entries separate when Fable precedes Sonnet', () => {
+        const output = `
+          Current session
+          5% used
+          Current week (all models)
+          Resets Jan 15, 2pm (America/New_York)
+          Current week (Fable)
+          70% used
+          Current week (Sonnet only)
+          20% used
+          Esc to cancel
+        `;
+
+        const result = agent.parseOutput(output);
+
+        // The all-models section has no percent, so it must not borrow Fable's.
+        expect(result.weeklyAll).toBeNull();
+        expect(result.weeklyFable.percent).toBe(70);
+        expect(result.weeklySonnet.percent).toBe(20);
+      });
+
+      it('parses real Claude 2.1.273 output with a corrupted Fable header after a rate-limited retry', () => {
+        // Captured from a live `claude` /usage session: the per-model breakdown was
+        // rate limited, then rendered after pressing "r" with dropped characters.
+        const output = [
+          'Currentsession', '█████10%used', 'Resets5:10pm(UTC)',
+          'Currentweek(allmodels)', '████████████████████████████▍56%used', 'ResetsSep23,4pm(UTC)',
+          "What'scontributingtoyourlimitsusage?",
+          'Approximate,basedonlocalsessionsonthismachine—doesnotincludeotherdevicesorclaude.ai',
+          'Scanninglocalsessions…', 'Refreshing…', 'Esctocancel',
+          'Pr-model breakdownunavailable(ratelimited—tryagaininamoment)', 'r to retry · Esctocancel',
+          'Rfreshing…', 'Esc to cancel', '▉8',
+          'Curnt week(Fable)', '█████████████████████████████████████████82%used', 'ResesSep 23,4pm(UTC)',
+          'Usagecredits', 'Usagecreditsareoff·/usage-creditstoturnthemon', 'Esctocancel',
+        ].join('\n');
+
+        const result = agent.parseOutput(output);
+
+        expect(result.session.percent).toBe(10);
+        expect(result.weeklyAll.percent).toBe(56);
+        expect(result.weeklySonnet).toBeNull();
+        expect(result.weeklyFable.label).toBe('Current week (Fable)');
+        expect(result.weeklyFable.percent).toBe(82);
+        expect(result.weeklyFable.resetsAt).toBe('Sep 23,4pm (UTC)');
+        expect(result.extraUsage).toBeUndefined();
+      });
+
+      it('treats a Fable section as a complete per-model breakdown', () => {
+        const withoutFable = `
+          Current session
+          10% used
+          Current week (all models)
+          56% used
+        `;
+        const withFable = `${withoutFable}
+          Curnt week(Fable)
+          82%used
+        `;
+
+        expect(agent.hasCompleteOutput(withoutFable)).toBe(false);
+        expect(agent.hasCompleteOutput(withFable)).toBe(true);
+      });
+
+      it('parses a standalone "Fable allowance" header', () => {
+        const output = `
+          Current session
+          12% used
+          Current week (all models)
+          30% used
+          Fable allowance
+          40% used
+          Resets Feb 2, 1pm (UTC)
+          Esc to cancel
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.weeklyAll.percent).toBe(30);
+        expect(result.weeklyFable.percent).toBe(40);
+        expect(result.weeklyFable.resetsAt).toBe('Feb 2, 1pm (UTC)');
+      });
+
+      it('ignores Fable model tips that are not an allowance section', () => {
+        const output = `
+          /usage Fable5.1writesbettercodeandreportsprogressonlongtasks.Switchanytimewith/model.
+          Current session
+          12% used
+          Current week (all models)
+          30% used
+          Esc to cancel
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.weeklyFable).toBeNull();
+      });
+
+      it('does not fall back to the legacy weekly entry when only Fable is present', () => {
+        const output = `
+          Current session
+          12% used
+          Current week (Fable)
+          40% used
+          Esc to cancel
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.weeklyFable.percent).toBe(40);
+        expect(result.weekly).toBeUndefined();
+      });
+
+      it('returns null when the Fable section has no percentage', () => {
+        const output = `
+          Current session
+          12% used
+          Current week (all models)
+          30% used
+          Current week (Fable)
+          Loading…
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.weeklyFable).toBeNull();
+      });
     });
   });
 
@@ -2295,6 +2460,38 @@ describe('ClaudeAgent API Mode', () => {
       expect(result.extraUsage.budget).toBe(42.50);
     });
 
+    it('normalizes the OAuth seven_day_fable allowance into weeklyFable', () => {
+      const fableReset = new Date(Date.now() + 172800000).toISOString();
+      const apiResponse = {
+        five_hour: { utilization: 10.0, resets_at: new Date(Date.now() + 3600000).toISOString() },
+        seven_day: { utilization: 56.4, resets_at: new Date(Date.now() + 604800000).toISOString() },
+        seven_day_sonnet: null,
+        seven_day_fable: { utilization: 81.6, resets_at: fableReset },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.weeklyAll.percent).toBe(56);
+      expect(result.weeklySonnet).toBeNull();
+      expect(result.weeklyFable).toEqual(expect.objectContaining({
+        label: 'Current week (Fable)',
+        percent: 82,
+        resetsAt: fableReset,
+      }));
+      expect(result.weeklyFable.resetsInSeconds).toBeGreaterThan(0);
+      expect(result.weeklyFable.pace).toBeDefined();
+    });
+
+    it('parses a pre-normalized weeklyFable entry with used/limit', () => {
+      const result = agent._parseApiResponse({
+        weeklyAllModels: { percentUsed: 20 },
+        weeklyFable: { used: 30, limit: 120 },
+      });
+
+      expect(result.weeklyFable.percent).toBe(25);
+      expect(result.weeklyFable.resetsAt).toBeNull();
+    });
+
     it('handles OAuth response with null sonnet and no extra usage', () => {
       const apiResponse = {
         five_hour: { utilization: 50.0, resets_at: new Date(Date.now() + 3600000).toISOString() },
@@ -2308,6 +2505,7 @@ describe('ClaudeAgent API Mode', () => {
       expect(result.session.percent).toBe(50);
       expect(result.weeklyAll.percent).toBe(20);
       expect(result.weeklySonnet).toBeNull();
+      expect(result.weeklyFable).toBeNull();
       expect(result.extraUsage).toBeUndefined();
     });
   });

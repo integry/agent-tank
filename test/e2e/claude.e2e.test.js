@@ -249,6 +249,14 @@ describeIfClaude('ClaudeAgent E2E', () => {
         console.log('Weekly (Sonnet only) data validated:', usage.weeklySonnet);
       }
 
+      if (usage?.weeklyFable) {
+        expect(usage.weeklyFable).toHaveProperty('label');
+        expect(usage.weeklyFable).toHaveProperty('percent');
+        expect(usage.weeklyFable.label).toBe('Current week (Fable)');
+        expect(typeof usage.weeklyFable.percent).toBe('number');
+        console.log('Weekly (Fable) data validated:', usage.weeklyFable);
+      }
+
       // Check for legacy format
       if (usage?.weekly) {
         expect(usage.weekly).toHaveProperty('label');

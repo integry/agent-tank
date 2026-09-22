@@ -6,6 +6,11 @@
 const { calculatePace } = require('../pace-evaluator.js');
 const { CYCLE_DURATIONS } = require('../usage-formatters.js');
 
+// Header of the Fable allowance section: "Current week (Fable)" or a standalone
+// "Fable allowance" label. PTY redraws often drop letters ("Curnt week(Fable)"),
+// so the "Current" word is matched loosely.
+const FABLE_SECTION_START = '(?:C\\w*\\s*week\\s*\\(?\\s*Fable[^)%\\n]*\\)?|Fable\\s*allowance)';
+
 /**
  * Convert 12-hour time to 24-hour
  * @param {string} hourRaw - Hour value as string
@@ -248,7 +253,7 @@ function addPaceData(sectionData, cycleType) {
  * @returns {Object} Parsed usage object
  */
 function parsePtyOutput(clean) {
-  const usage = { session: null, weeklyAll: null, weeklySonnet: null };
+  const usage = { session: null, weeklyAll: null, weeklySonnet: null, weeklyFable: null };
 
   // Parse session. The "Current session" label is frequently corrupted while
   // Claude's /usage dialog is still rendering (e.g. "Curretsession"), even
@@ -270,17 +275,24 @@ function parsePtyOutput(clean) {
   }
 
   // Parse weekly (all models)
-  const weeklyAllData = parseUsageSection(extractSection(clean, 'Current\\s*week\\s*\\(?\\s*all\\s*models\\s*\\)?', 'Current\\s*week\\s*\\(?\\s*Son'));
+  const weeklyAllData = parseUsageSection(extractSection(clean, 'Current\\s*week\\s*\\(?\\s*all\\s*models\\s*\\)?', `Current\\s*week\\s*\\(?\\s*Son|${FABLE_SECTION_START}`));
   if (weeklyAllData) {
     usage.weeklyAll = { label: 'Current week (all models)', ...weeklyAllData };
     addPaceData(usage.weeklyAll, 'weekly');
   }
 
   // Parse weekly (Sonnet only)
-  const weeklySonnetData = parseUsageSection(extractSection(clean, 'Current\\s*week\\s*\\(?\\s*Son\\w*\\s*\\w*ly\\s*\\)?', 'Extra\\s*usage|esc\\s*to\\s*cancel|Current\\s*week\\s*\\('));
+  const weeklySonnetData = parseUsageSection(extractSection(clean, 'Current\\s*week\\s*\\(?\\s*Son\\w*\\s*\\w*ly\\s*\\)?', `Extra\\s*usage|esc\\s*to\\s*cancel|Current\\s*week\\s*\\(|${FABLE_SECTION_START}`));
   if (weeklySonnetData) {
     usage.weeklySonnet = { label: 'Current week (Sonnet only)', ...weeklySonnetData };
     addPaceData(usage.weeklySonnet, 'weekly');
+  }
+
+  // Parse weekly Fable allowance (tracked separately from the all-models cap)
+  const weeklyFableData = parseUsageSection(extractSection(clean, FABLE_SECTION_START, 'Extra\\s*usage|Usage\\s*credits|esc\\s*to\\s*cancel|Current\\s*week\\s*\\('));
+  if (weeklyFableData) {
+    usage.weeklyFable = { label: 'Current week (Fable)', ...weeklyFableData };
+    addPaceData(usage.weeklyFable, 'weekly');
   }
 
   // Parse extra usage section
@@ -294,7 +306,7 @@ function parsePtyOutput(clean) {
   }
 
   // Legacy format fallback
-  if (!usage.weeklyAll && !usage.weeklySonnet) {
+  if (!usage.weeklyAll && !usage.weeklySonnet && !usage.weeklyFable) {
     const legacyWeekly = parseLegacyWeekly(clean);
     if (legacyWeekly) {
       usage.weekly = legacyWeekly;

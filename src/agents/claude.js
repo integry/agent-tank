@@ -214,10 +214,11 @@ class ClaudeAgent extends BaseAgent {
     const hasLegacyWeekly = parsed.weekly && typeof parsed.weekly.percent === 'number';
     const hasAllModelsWeekly = parsed.weeklyAll && typeof parsed.weeklyAll.percent === 'number';
     const hasSonnetWeekly = parsed.weeklySonnet && typeof parsed.weeklySonnet.percent === 'number';
+    const hasFableWeekly = parsed.weeklyFable && typeof parsed.weeklyFable.percent === 'number';
 
     // Newer Claude builds often emit usable session/weekly data before the UI fully settles.
-    // For the all-model weekly format, wait for the separate Sonnet section too.
-    return Boolean(hasSessionData && (hasLegacyWeekly || (hasAllModelsWeekly && hasSonnetWeekly)));
+    // For the all-model weekly format, wait for a per-model section (Sonnet or Fable) too.
+    return Boolean(hasSessionData && (hasLegacyWeekly || (hasAllModelsWeekly && (hasSonnetWeekly || hasFableWeekly))));
   }
 
   sendCommands(shell, _output) {
