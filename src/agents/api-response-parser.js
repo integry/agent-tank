@@ -130,7 +130,7 @@ function parseWeeklyFable(apiResponse, now) {
   const wf = apiResponse.weeklyFable;
   if (!wf) return null;
 
-  const percent = wf.percentUsed ?? (wf.used && wf.limit ? Math.round((wf.used / wf.limit) * 100) : null);
+  const percent = wf.percentUsed ?? (wf.used != null && wf.limit > 0 ? Math.round((wf.used / wf.limit) * 100) : null);
 
   if (percent === null) return null;
 

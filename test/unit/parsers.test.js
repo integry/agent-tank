@@ -2492,6 +2492,27 @@ describe('ClaudeAgent API Mode', () => {
       expect(result.weeklyFable.resetsAt).toBeNull();
     });
 
+    it('keeps a zero-used weeklyFable allowance as a 0% entry', () => {
+      const result = agent._parseApiResponse({
+        weeklyAllModels: { percentUsed: 20 },
+        weeklyFable: { used: 0, limit: 120 },
+      });
+
+      expect(result.weeklyFable).toEqual(expect.objectContaining({
+        label: 'Current week (Fable)',
+        percent: 0,
+      }));
+    });
+
+    it('returns null weeklyFable when the limit is not positive', () => {
+      const result = agent._parseApiResponse({
+        weeklyAllModels: { percentUsed: 20 },
+        weeklyFable: { used: 0, limit: 0 },
+      });
+
+      expect(result.weeklyFable).toBeNull();
+    });
+
     it('handles OAuth response with null sonnet and no extra usage', () => {
       const apiResponse = {
         five_hour: { utilization: 50.0, resets_at: new Date(Date.now() + 3600000).toISOString() },
