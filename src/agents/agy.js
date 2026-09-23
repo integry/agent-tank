@@ -216,7 +216,9 @@ class AgyAgent extends BaseAgent {
   // nulls when the limit is fully replenished ("Quota available") or the line
   // is something else entirely.
   _parseResetLine(line) {
-    const resetMatch = (line || '').match(AgyAgent.RESET_LINE);
+    // A redrawn frame can leave box borders on the line, so normalise before
+    // matching the countdown's leading keyword.
+    const resetMatch = this.stripBoxChars(line || '').match(AgyAgent.RESET_LINE);
     const resetsIn = resetMatch?.[1]?.trim() || null;
     const resetsInSeconds = resetsIn ? this.parseDurationToSeconds(resetsIn) : null;
     // The countdown goes stale as soon as it is stored, so also record the

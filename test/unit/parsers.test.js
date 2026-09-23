@@ -1058,6 +1058,21 @@ describe('AgyAgent', () => {
         expect(weekly.pace.isWarning).toBe(false);
       });
 
+      it('reads the countdown through leftover box borders', () => {
+        const output = `
+          Models & Quota
+
+          Five Hour Limit Remaining
+          [\u2588\u2588\u2588\u2588\u2588] 90.31%
+          \u2502 Refreshes in 58m
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.models[0].resetsIn).toBe('58m');
+        expect(result.models[0].resetsInSeconds).toBe(58 * 60);
+      });
+
       it('still parses the older "Resets in" wording', () => {
         const output = `
           Model Quota
