@@ -8,6 +8,12 @@ class AgyAgent extends BaseAgent {
   // "Models & Quota" screen reported by recent Antigravity CLI builds.
   static QUOTA_HEADER = /Models?\s*&?\s*Quota/i;
 
+  // Antigravity words its countdown line differently across builds: older
+  // screens say "Resets in 3h 15m", the grouped "Models & Quota" screen says
+  // "Refreshes in 160h 12m". A fully replenished limit renders "Quota
+  // available" instead, which carries no countdown and yields a null reset.
+  static RESET_LINE = /^(?:resets?|refresh(?:es)?|renew(?:s|als)?)\s*(?:in|at)?\s*([0-9dhm\s]+)?/i;
+
   constructor(options = {}) {
     super('agy', 'agy', ['--dangerously-skip-permissions']);
     this.configPath = options.configPath || null;
@@ -206,9 +212,33 @@ class AgyAgent extends BaseAgent {
       .join(' ');
   }
 
+  // Read the countdown line that follows a limit's percentage bar. Returns
+  // nulls when the limit is fully replenished ("Quota available") or the line
+  // is something else entirely.
+  _parseResetLine(line) {
+    const resetMatch = (line || '').match(AgyAgent.RESET_LINE);
+    const resetsIn = resetMatch?.[1]?.trim() || null;
+    const resetsInSeconds = resetsIn ? this.parseDurationToSeconds(resetsIn) : null;
+    // The countdown goes stale as soon as it is stored, so also record the
+    // absolute instant it refers to.
+    const resetsAt = resetsInSeconds == null
+      ? null
+      : new Date(Date.now() + resetsInSeconds * 1000).toISOString();
+    return { resetsIn, resetsInSeconds, resetsAt };
+  }
+
+  // Map an Antigravity limit label to the cycle its countdown belongs to, so
+  // pace math compares usage against the right window. A weekly limit reports
+  // "Refreshes in 160h 12m", which is nonsense against a 24h cycle.
+  _cycleTypeFor(label) {
+    if (/\bweek(?:ly)?\b/i.test(label)) return 'weekly';
+    if (/\b(?:five|5)[\s-]?hour\b/i.test(label)) return 'fiveHour';
+    return 'sessionAgy';
+  }
+
   // Calculate pace data for a model entry when reset timing is available.
-  _addPaceData(entry, resetsInSeconds) {
-    const cycleDuration = CYCLE_DURATIONS.sessionAgy;
+  _addPaceData(entry, resetsInSeconds, cycleType = 'sessionAgy') {
+    const cycleDuration = CYCLE_DURATIONS[cycleType];
     if (!cycleDuration || resetsInSeconds == null) return;
     const paceData = calculatePace({ usagePercent: entry.percentUsed, resetsInSeconds, cycleDurationSeconds: cycleDuration });
     if (paceData) entry.pace = paceData;
@@ -268,6 +298,11 @@ class AgyAgent extends BaseAgent {
       if (!/[A-Za-z]/.test(line) || /\d+\s*%/.test(line)) {
         continue;
       }
+      // A countdown line ("Refreshes in 58m") belongs to the entry above it and
+      // is never a model label of its own.
+      if (AgyAgent.RESET_LINE.test(line)) {
+        continue;
+      }
 
       const percentLine = lines[i + 1] || '';
       const percentMatch = percentLine.match(/(\d+(?:\.\d+)?)\s*%/);
@@ -277,10 +312,7 @@ class AgyAgent extends BaseAgent {
 
       const usageLeft = parseFloat(percentMatch[1]);
       const percentUsed = Number((100 - usageLeft).toFixed(1));
-      const resetLine = lines[i + 2] || '';
-      const resetMatch = resetLine.match(/(?:resets?|available)\s*(?:in|at)?\s*([0-9dhm\s]+)?/i);
-      const resetsIn = resetMatch?.[1]?.trim() || null;
-      const resetsInSeconds = resetsIn ? this.parseDurationToSeconds(resetsIn) : null;
+      const reset = this._parseResetLine(lines[i + 2]);
 
       // Qualify shared limit labels with their group so entries from different
       // groups stay distinct; per-model labels are already unique on their own.
@@ -290,9 +322,10 @@ class AgyAgent extends BaseAgent {
         : line;
 
       if (!usage.models.find(m => m.model === modelName)) {
-        const modelEntry = { model: modelName, usageLeft, percentUsed, resetsIn, resetsInSeconds };
+        const cycle = this._cycleTypeFor(line);
+        const modelEntry = { model: modelName, usageLeft, percentUsed, ...reset, cycle };
         if (currentGroup) modelEntry.group = currentGroup;
-        this._addPaceData(modelEntry, resetsInSeconds);
+        this._addPaceData(modelEntry, reset.resetsInSeconds, cycle);
         usage.models.push(modelEntry);
       }
     }

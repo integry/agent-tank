@@ -80,6 +80,57 @@ describe('UsageFormatters', () => {
       expect(html).toContain('Gemini 3.5 Flash (Medium)');
       expect(html).not.toContain('gemini 3.5 flash (medium)');
     });
+
+    it('renders the countdown and its absolute timestamp for grouped limits', () => {
+      const html = formatAgyUsage({
+        models: [
+          {
+            model: 'Gemini \u00b7 Weekly Limit Remaining',
+            percentUsed: 2.3,
+            resetsIn: '160h 12m',
+            resetsInSeconds: 576720,
+            resetsAt: '2026-09-30T03:06:00.000Z',
+            cycle: 'weekly',
+          },
+        ],
+      });
+
+      expect(html).toContain('160h 12m');
+      expect(html).toContain('title="2026-09-30T03:06:00.000Z"');
+    });
+
+    it('measures each limit against its own cycle when sizing the time bar', () => {
+      const weekly = formatAgyUsage({
+        models: [
+          {
+            model: 'Weekly Limit Remaining',
+            percentUsed: 2.3,
+            resetsIn: '160h 12m',
+            resetsInSeconds: 576720,
+            cycle: 'weekly',
+          },
+        ],
+      });
+
+      // ~4.6% of a 7-day cycle has elapsed. Against the 24h default the
+      // countdown overruns the cycle and the bar pins to 0%.
+      expect(weekly).toMatch(/time-progress-fill" style="width: 4\.6\d*%/);
+    });
+
+    it('falls back to the 24h cycle for entries without a cycle field', () => {
+      const html = formatAgyUsage({
+        models: [
+          {
+            model: 'Gemini 3.5 Flash (Medium)',
+            percentUsed: 50,
+            resetsIn: '12h',
+            resetsInSeconds: 43200,
+          },
+        ],
+      });
+
+      expect(html).toMatch(/time-progress-fill" style="width: 50%/);
+    });
   });
 
   describe('resetInfoItem with pace data', () => {

@@ -958,6 +958,122 @@ describe('AgyAgent', () => {
         expect(names.some(n => /Account|within this group|Scroll/i.test(n))).toBe(false);
       });
     });
+
+    describe('"Refreshes in" reset wording', () => {
+      // Recent Antigravity builds label the countdown "Refreshes in" rather
+      // than "Resets in", which previously left every reset field null.
+      const refreshOutput = `
+        \u2514 Models & Quota
+
+        Account: user@example.com
+
+        GEMINI MODELS
+        Models within this group: Gemini Flash, Gemini Pro
+
+        Weekly Limit Remaining
+        [\u2588\u2588\u2588\u2588\u2588] 97.68%
+        Refreshes in 160h 12m
+
+        Five Hour Limit Remaining
+        [\u2588\u2588\u2588\u2588\u2588] 90.31%
+        Refreshes in 58m
+
+
+        CLAUDE AND GPT MODELS
+        Models within this group: Claude Opus, Claude Sonnet, GPT-OSS
+
+        Weekly Limit Remaining
+        [\u2588\u2588\u2588\u2588\u2588] 100.00%
+        Quota available
+
+        Five Hour Limit Remaining
+        [\u2588\u2588\u2588\u2588\u2588] 100.00%
+        Quota available
+      `;
+
+      it('captures the countdown shown next to each limit', () => {
+        const result = agent.parseOutput(refreshOutput);
+
+        const weekly = result.models.find(m => m.model === 'Gemini \u00b7 Weekly Limit Remaining');
+        expect(weekly.resetsIn).toBe('160h 12m');
+        expect(weekly.resetsInSeconds).toBe(160 * 60 * 60 + 12 * 60);
+
+        const fiveHour = result.models.find(m => m.model === 'Gemini \u00b7 Five Hour Limit Remaining');
+        expect(fiveHour.resetsIn).toBe('58m');
+        expect(fiveHour.resetsInSeconds).toBe(58 * 60);
+      });
+
+      it('leaves reset fields null when the limit reads "Quota available"', () => {
+        const result = agent.parseOutput(refreshOutput);
+
+        const claudeWeekly = result.models.find(m => m.model === 'Claude and GPT \u00b7 Weekly Limit Remaining');
+        expect(claudeWeekly.resetsIn).toBeNull();
+        expect(claudeWeekly.resetsInSeconds).toBeNull();
+        expect(claudeWeekly.resetsAt).toBeNull();
+      });
+
+      it('derives an absolute resetsAt timestamp from the countdown', () => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-09-23T10:54:00.000Z'));
+        try {
+          const result = agent.parseOutput(refreshOutput);
+
+          const fiveHour = result.models.find(m => m.model === 'Gemini \u00b7 Five Hour Limit Remaining');
+          expect(fiveHour.resetsAt).toBe('2026-09-23T11:52:00.000Z');
+
+          const weekly = result.models.find(m => m.model === 'Gemini \u00b7 Weekly Limit Remaining');
+          expect(weekly.resetsAt).toBe('2026-09-30T03:06:00.000Z');
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('does not emit the countdown line as its own entry', () => {
+        const result = agent.parseOutput(refreshOutput);
+
+        expect(result.models).toHaveLength(4);
+        expect(result.models.some(m => /Refreshes/i.test(m.model))).toBe(false);
+      });
+
+      it('tags each entry with the cycle its countdown belongs to', () => {
+        const result = agent.parseOutput(refreshOutput);
+
+        expect(result.models.map(m => m.cycle)).toEqual([
+          'weekly',
+          'fiveHour',
+          'weekly',
+          'fiveHour',
+        ]);
+      });
+
+      it('paces a weekly limit against the weekly cycle, not a 24h one', () => {
+        const result = agent.parseOutput(refreshOutput);
+
+        // 160h 12m left of a 7-day cycle means ~4.6% elapsed, so 2.3% used is
+        // comfortably on pace. Against a 24h cycle the countdown would exceed
+        // the cycle and report an infinite pace warning.
+        const weekly = result.models.find(m => m.model === 'Gemini \u00b7 Weekly Limit Remaining');
+        expect(weekly.pace.elapsedPercent).toBeCloseTo(4.64, 1);
+        expect(weekly.pace.paceRatio).toBeLessThan(1);
+        expect(weekly.pace.isWarning).toBe(false);
+      });
+
+      it('still parses the older "Resets in" wording', () => {
+        const output = `
+          Model Quota
+
+          Gemini 3.5 Flash (Medium)
+          \u2588\u2588\u2588\u2588\u2588 50%
+          Resets in 5h 45m
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.models[0].resetsIn).toBe('5h 45m');
+        expect(result.models[0].resetsInSeconds).toBe(5 * 60 * 60 + 45 * 60);
+        expect(result.models[0].cycle).toBe('sessionAgy');
+      });
+    });
   });
 
   describe('parseDurationToSeconds', () => {
@@ -984,6 +1100,11 @@ describe('AgyAgent', () => {
     it('parses days, hours, and minutes', () => {
       const result = agent.parseDurationToSeconds('1d 12h 30m');
       expect(result).toBe(1 * 24 * 60 * 60 + 12 * 60 * 60 + 30 * 60);
+    });
+
+    it('parses hour counts larger than a day', () => {
+      const result = agent.parseDurationToSeconds('160h 12m');
+      expect(result).toBe(160 * 60 * 60 + 12 * 60);
     });
 
     it('returns null for null input', () => {

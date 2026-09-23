@@ -219,7 +219,16 @@ describeIfAgy('AgyAgent E2E', () => {
           if (modelEntry.resetsInSeconds !== null) {
             expect(typeof modelEntry.resetsInSeconds).toBe('number');
             expect(modelEntry.resetsInSeconds).toBeGreaterThan(0);
+
+            // A countdown must come with the absolute instant it refers to.
+            expect(typeof modelEntry.resetsAt).toBe('string');
+            expect(Number.isNaN(Date.parse(modelEntry.resetsAt))).toBe(false);
+          } else {
+            expect(modelEntry.resetsAt).toBeNull();
           }
+
+          // Each limit reports which cycle its countdown belongs to.
+          expect(['weekly', 'fiveHour', 'sessionAgy']).toContain(modelEntry.cycle);
 
           console.log('Model entry validated:', modelEntry);
         }
