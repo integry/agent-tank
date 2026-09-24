@@ -4,7 +4,12 @@ const { BaseAgent } = require('./base.js');
 const logger = require('../logger.js');
 const { pingKeepalive } = require('./keepalive-helper.js');
 const { parseApiResponse } = require('./api-response-parser.js');
-const { parsePtyOutput } = require('./pty-output-parser.js');
+const { parsePtyOutput, FABLE_SECTION_START } = require('./pty-output-parser.js');
+
+// Matches the Fable allowance header alone, before its "N% used" row has rendered.
+const FABLE_SECTION_HEADER = new RegExp(FABLE_SECTION_START, 'i');
+const USAGE_SETTLE_TIMEOUT_MS = 2500;
+const USAGE_SETTLE_POLL_MS = 50;
 const https = require('https');
 const {
   readCredentials, isTokenExpired, refreshOAuthToken, persistRefreshedTokens,
@@ -213,11 +218,15 @@ class ClaudeAgent extends BaseAgent {
     const hasSessionData = parsed.session && typeof parsed.session.percent === 'number';
     const hasLegacyWeekly = parsed.weekly && typeof parsed.weekly.percent === 'number';
     const hasAllModelsWeekly = parsed.weeklyAll && typeof parsed.weeklyAll.percent === 'number';
-    const hasSonnetWeekly = parsed.weeklySonnet && typeof parsed.weeklySonnet.percent === 'number';
+    const hasFableWeekly = parsed.weeklyFable && typeof parsed.weeklyFable.percent === 'number';
+
+    // Only Max accounts get a Fable allowance row, so never block on it unless the
+    // dialog has actually started drawing one — otherwise Pro accounts would wait
+    // out the full command timeout for a section that is never coming.
+    if (hasAllModelsWeekly && FABLE_SECTION_HEADER.test(clean) && !hasFableWeekly) return false;
 
     // Newer Claude builds often emit usable session/weekly data before the UI fully settles.
-    // For the all-model weekly format, wait for the separate Sonnet section too.
-    return Boolean(hasSessionData && (hasLegacyWeekly || (hasAllModelsWeekly && hasSonnetWeekly)));
+    return Boolean(hasSessionData && (hasLegacyWeekly || hasAllModelsWeekly));
   }
 
   sendCommands(shell, _output) {
@@ -237,9 +246,38 @@ class ClaudeAgent extends BaseAgent {
     setTimeout(() => writeIfActive('\r'), 900);
   }
 
-  // After getting /usage output, dismiss dialog so next refresh starts with clean prompt
+  _isUsageDialogSettled(output) {
+    const clean = this.stripAnsi(output);
+    const usage = parsePtyOutput(clean);
+    if (!usage.weeklyAll || usage.weeklyFable) return true;
+
+    // A visible Fable header without its percentage is still mid-render.
+    if (FABLE_SECTION_HEADER.test(clean)) return false;
+
+    // Claude renders the usage footer after its asynchronous local-session scan.
+    // Reaching it without a Fable row means this account has no Fable allowance.
+    const weeklyIndex = clean.search(/Current\s*week\s*\(?\s*all\s*models/i);
+    const afterWeekly = weeklyIndex === -1 ? clean : clean.slice(weeklyIndex);
+    return /Usage\s*credits\s+are|Extra\s+usage/i.test(afterWeekly);
+  }
+
+  async _waitForUsageDialogSettlement(initialOutput) {
+    const deadline = Date.now() + USAGE_SETTLE_TIMEOUT_MS;
+    let latestOutput = this.output || initialOutput;
+
+    while (!this._isUsageDialogSettled(latestOutput) && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, USAGE_SETTLE_POLL_MS));
+      latestOutput = this.output || latestOutput;
+    }
+
+    return latestOutput;
+  }
+
+  // After getting /usage output, let Claude finish its asynchronous allowance
+  // rows, then dismiss the dialog so the next refresh starts with a clean prompt.
   async sendCommandAndWait() {
-    const result = await super.sendCommandAndWait();
+    let result = await super.sendCommandAndWait();
+    result = await this._waitForUsageDialogSettlement(result);
     if (this.shell) { this.shell.write('\x1b'); await new Promise(r => setTimeout(r, 1000)); this.output = ''; }
     return result;
   }
