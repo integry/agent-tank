@@ -620,6 +620,49 @@ describe('ClaudeAgent', () => {
         expect(agent.hasCompleteOutput(withFable)).toBe(true);
       });
 
+      it('waits for the asynchronous Fable row before dismissing the usage dialog', async () => {
+        const partialOutput = `
+          Current session
+          5% used
+          Current week (all models)
+          17% used
+          Scanning local sessions…
+          Refreshing…
+          Esc to cancel
+        `;
+        const settledOutput = `${partialOutput}
+          Current week (Fable)
+          1% used
+          Resets Sep 30, 5pm (Europe/London)
+          Usage credits
+          Usage credits are off
+        `;
+
+        expect(agent._isUsageDialogSettled(partialOutput)).toBe(false);
+
+        agent.output = partialOutput;
+        const waitPromise = agent._waitForUsageDialogSettlement(partialOutput);
+        setTimeout(() => { agent.output = settledOutput; }, 10);
+        const result = await waitPromise;
+
+        expect(agent.parseOutput(result).weeklyFable).toEqual(expect.objectContaining({
+          percent: 1,
+          resetsAt: 'Sep 30, 5pm (Europe/London)',
+        }));
+      });
+
+      it('settles at the final footer when an account has no Fable allowance', () => {
+        const output = `
+          Current session
+          5% used
+          Current week (all models)
+          17% used
+          Usage credits are off
+        `;
+
+        expect(agent._isUsageDialogSettled(output)).toBe(true);
+      });
+
       it('does not wait on a Fable model tip that is not an allowance row', () => {
         const output = `
           /usage Fable5.1writesbettercodeandreportsprogressonlongtasks.Switchanytimewith/model.
