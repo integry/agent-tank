@@ -36,7 +36,7 @@ function attachClaudePace(usage) {
   const sections = [
     { data: usage.session, cycle: 'session' },
     { data: usage.weeklyAll, cycle: 'weekly' },
-    { data: usage.weeklySonnet, cycle: 'weekly' },
+    { data: usage.weeklyFable, cycle: 'weekly' },
     { data: usage.weekly, cycle: 'weekly' },
     { data: usage.extraUsage, cycle: 'weekly' }
   ];

@@ -234,14 +234,15 @@ describe('UsageFormatters', () => {
       const usage = {
         session: { percent: 30, resetsIn: '3h 30m' },
         weeklyAll: { percent: 40, resetsIn: '5d' },
-        weeklySonnet: { percent: 25, resetsIn: '5d' }
+        weeklyFable: { percent: 82, resetsIn: '1d 2h' }
       };
 
       const result = formatClaudeUsage(usage);
 
       expect(result).toContain('Session');
       expect(result).toContain('Weekly (all)');
-      expect(result).toContain('Weekly (Sonnet)');
+      expect(result).toContain('Weekly (Fable)');
+      expect(result).toContain('data-percent="82"');
     });
   });
 

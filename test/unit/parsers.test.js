@@ -255,10 +255,6 @@ describe('ClaudeAgent', () => {
         Current week (all models)
         25% used
         Resets Jan 15, 2pm (America/New_York)
-
-        Current week (Sonnet only)
-        10% used
-        Resets Jan 15, 2pm (America/New_York)
       `;
 
       const result = agent.parseOutput(output);
@@ -276,8 +272,7 @@ describe('ClaudeAgent', () => {
       const output =
         '❯ /usage SettingsStatusConfigUsage Stats Session Total cost: $0.00 ' +
         'Curretsession ███████████ 39%used Reses 12:39pm (Europe/Berlin) ' +
-        'Currentweek(allmodels) ██████ 12%used ResetsJun17,5:59pm(Europe/Berlin) ' +
-        'Currentweek(Sonnetonly) 0%used';
+        'Currentweek(allmodels) ██████ 12%used ResetsJun17,5:59pm(Europe/Berlin)';
 
       const result = agent.parseOutput(output);
 
@@ -303,10 +298,6 @@ describe('ClaudeAgent', () => {
         Current week (all models)
         60% used
         Resets Jan 20, 9am (America/New_York)
-
-        Current week (Sonnet only)
-        40% used
-        Resets Jan 20, 9am (America/New_York)
       `;
 
       const result = agent.parseOutput(output);
@@ -314,28 +305,6 @@ describe('ClaudeAgent', () => {
       expect(result.weeklyAll).not.toBeNull();
       expect(result.weeklyAll.percent).toBe(60);
       expect(result.weeklyAll.label).toBe('Current week (all models)');
-    });
-
-    it('parses weekly Sonnet only section', () => {
-      const output = `
-        Current session
-        20% used
-        Resets 6:00pm (America/New_York)
-
-        Current week (all models)
-        50% used
-        Resets Jan 22, 1pm (America/New_York)
-
-        Current week (Sonnet only)
-        75% used
-        Resets Jan 22, 1pm (America/New_York)
-      `;
-
-      const result = agent.parseOutput(output);
-
-      expect(result.weeklySonnet).not.toBeNull();
-      expect(result.weeklySonnet.percent).toBe(75);
-      expect(result.weeklySonnet.label).toBe('Current week (Sonnet only)');
     });
 
     it('parses extra usage section with budget info', () => {
@@ -346,10 +315,6 @@ describe('ClaudeAgent', () => {
 
         Current week (all models)
         30% used
-        Resets Feb 1, 8am (America/New_York)
-
-        Current week (Sonnet only)
-        20% used
         Resets Feb 1, 8am (America/New_York)
 
         Extra usage
@@ -393,10 +358,6 @@ describe('ClaudeAgent', () => {
         \x1B[1;32mCurrent week (all models)\x1B[0m
         \x1B[33m40% used\x1B[0m
         Resets Jan 25, 11am (America/New_York)
-
-        \x1B[1;32mCurrent week (Sonnet only)\x1B[0m
-        \x1B[33m30% used\x1B[0m
-        Resets Jan 25, 11am (America/New_York)
       `;
 
       const result = agent.parseOutput(output);
@@ -404,7 +365,6 @@ describe('ClaudeAgent', () => {
       expect(result.session).not.toBeNull();
       expect(result.session.percent).toBe(25);
       expect(result.weeklyAll.percent).toBe(40);
-      expect(result.weeklySonnet.percent).toBe(30);
     });
 
     it('returns null for session when no session data present', () => {
@@ -423,7 +383,7 @@ describe('ClaudeAgent', () => {
       expect(result).toEqual({
         session: null,
         weeklyAll: null,
-        weeklySonnet: null
+        weeklyFable: null
       });
     });
 
@@ -436,17 +396,12 @@ describe('ClaudeAgent', () => {
         Current week (all models)
         0% used
         Resets Jan 30, 3pm (America/New_York)
-
-        Current week (Sonnet only)
-        0% used
-        Resets Jan 30, 3pm (America/New_York)
       `;
 
       const result = agent.parseOutput(output);
 
       expect(result.session.percent).toBe(0);
       expect(result.weeklyAll.percent).toBe(0);
-      expect(result.weeklySonnet.percent).toBe(0);
     });
 
     it('handles 100% usage', () => {
@@ -458,17 +413,12 @@ describe('ClaudeAgent', () => {
         Current week (all models)
         100% used
         Resets Feb 5, 6am (America/New_York)
-
-        Current week (Sonnet only)
-        100% used
-        Resets Feb 5, 6am (America/New_York)
       `;
 
       const result = agent.parseOutput(output);
 
       expect(result.session.percent).toBe(100);
       expect(result.weeklyAll.percent).toBe(100);
-      expect(result.weeklySonnet.percent).toBe(100);
     });
 
     it('includes pace data in session section', () => {
@@ -479,10 +429,6 @@ describe('ClaudeAgent', () => {
 
         Current week (all models)
         25% used
-        Resets Jan 15, 2pm (America/New_York)
-
-        Current week (Sonnet only)
-        10% used
         Resets Jan 15, 2pm (America/New_York)
       `;
 
@@ -507,10 +453,6 @@ describe('ClaudeAgent', () => {
         Current week (all models)
         60% used
         Resets Jan 20, 9am (America/New_York)
-
-        Current week (Sonnet only)
-        40% used
-        Resets Jan 20, 9am (America/New_York)
       `;
 
       const result = agent.parseOutput(output);
@@ -519,11 +461,6 @@ describe('ClaudeAgent', () => {
       if (result.weeklyAll && result.weeklyAll.resetsInSeconds !== null) {
         expect(result.weeklyAll.pace).toBeDefined();
         expect(typeof result.weeklyAll.pace.paceRatio).toBe('number');
-      }
-
-      if (result.weeklySonnet && result.weeklySonnet.resetsInSeconds !== null) {
-        expect(result.weeklySonnet.pace).toBeDefined();
-        expect(typeof result.weeklySonnet.pace.paceRatio).toBe('number');
       }
     });
 
@@ -537,15 +474,12 @@ describe('ClaudeAgent', () => {
         Current week (all models)
         7% used
         Apr 17, 11am (Europe/Berlin)
-
-        Current week (Sonnet only)
-        0% used
       `;
 
       expect(agent.hasCompleteOutput(output)).toBe(true);
     });
 
-    it('treats Claude output as complete when session and weekly-all are parseable even without sonnet reset details', () => {
+    it('treats Claude output as complete when session and weekly-all are parseable even without weekly reset details', () => {
       const output = `
         ⎿ Status dialog dismissed
         Current session
@@ -555,15 +489,12 @@ describe('ClaudeAgent', () => {
         Current week (all models)
         7% used
         Apr 17, 11am (Europe/Berlin)
-
-        Current week (Sonnet only)
-        0% used
       `;
 
       expect(agent.hasCompleteOutput(output)).toBe(true);
     });
 
-    it('waits for weekly Sonnet usage when weekly-all is present', () => {
+    it('completes without a per-model section (Pro accounts have no Fable allowance)', () => {
       const output = `
         Current session
         0% used
@@ -574,7 +505,7 @@ describe('ClaudeAgent', () => {
         Resets Jun 10, 6pm (Europe/Berlin)
       `;
 
-      expect(agent.hasCompleteOutput(output)).toBe(false);
+      expect(agent.hasCompleteOutput(output)).toBe(true);
     });
 
     it('parses compact Claude 2.1 usage screen output', () => {
@@ -582,7 +513,6 @@ describe('ClaudeAgent', () => {
         SettingsStatusConfigUsage Stats Session Totalcost:$0.0000
         Currentsession ██4%used Resets2:50pm(Europe/Berlin)
         Currentweek(allmodels) ███████▌15%used ResetsJun10,6pm(Europe/Berlin)
-        Current week (Sonet nly) ███████▌15%usd ResetsJun10,6pm(Europe/Berlin)
         Usagecreditsareoff · Esc to cancel
       `;
 
@@ -592,8 +522,222 @@ describe('ClaudeAgent', () => {
       expect(result.session.resetsAt).toBe('2:50pm (Europe/Berlin)');
       expect(result.weeklyAll.percent).toBe(15);
       expect(result.weeklyAll.resetsAt).toBe('Jun 10, 6pm (Europe/Berlin)');
-      expect(result.weeklySonnet.percent).toBe(15);
       expect(agent.hasCompleteOutput(output)).toBe(true);
+    });
+
+    describe('Fable allowance', () => {
+      it('parses the Fable section as a separate weekly entry', () => {
+        const output = `
+          Current session
+          45% used
+          Resets 3:00pm (America/New_York)
+
+          Current week (all models)
+          25% used
+          Resets Jan 15, 2pm (America/New_York)
+
+          Current week (Fable)
+          62% used
+          Resets Jan 16, 9am (America/New_York)
+
+          Usage credits are off · Esc to cancel
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.session.percent).toBe(45);
+        expect(result.weeklyAll.percent).toBe(25);
+        expect(result.weeklyFable).toEqual(expect.objectContaining({
+          label: 'Current week (Fable)',
+          percent: 62,
+          resetsAt: 'Jan 16, 9am (America/New_York)',
+        }));
+        expect(result.weeklyFable.resetsInSeconds).toBeGreaterThan(0);
+        expect(result.weeklyFable.pace).toBeDefined();
+      });
+
+      it('does not let the all-models section borrow the Fable percentage', () => {
+        const output = `
+          Current session
+          5% used
+          Current week (all models)
+          Resets Jan 15, 2pm (America/New_York)
+          Current week (Fable)
+          70% used
+          Esc to cancel
+        `;
+
+        const result = agent.parseOutput(output);
+
+        // The all-models section has no percent, so it must not borrow Fable's.
+        expect(result.weeklyAll).toBeNull();
+        expect(result.weeklyFable.percent).toBe(70);
+      });
+
+      it('parses real Claude 2.1.273 output with a corrupted Fable header after a rate-limited retry', () => {
+        // Captured from a live `claude` /usage session: the per-model breakdown was
+        // rate limited, then rendered after pressing "r" with dropped characters.
+        const output = [
+          'Currentsession', '█████10%used', 'Resets5:10pm(UTC)',
+          'Currentweek(allmodels)', '████████████████████████████▍56%used', 'ResetsSep23,4pm(UTC)',
+          "What'scontributingtoyourlimitsusage?",
+          'Approximate,basedonlocalsessionsonthismachine—doesnotincludeotherdevicesorclaude.ai',
+          'Scanninglocalsessions…', 'Refreshing…', 'Esctocancel',
+          'Pr-model breakdownunavailable(ratelimited—tryagaininamoment)', 'r to retry · Esctocancel',
+          'Rfreshing…', 'Esc to cancel', '▉8',
+          'Curnt week(Fable)', '█████████████████████████████████████████82%used', 'ResesSep 23,4pm(UTC)',
+          'Usagecredits', 'Usagecreditsareoff·/usage-creditstoturnthemon', 'Esctocancel',
+        ].join('\n');
+
+        const result = agent.parseOutput(output);
+
+        expect(result.session.percent).toBe(10);
+        expect(result.weeklyAll.percent).toBe(56);
+        expect(result.weeklyFable.label).toBe('Current week (Fable)');
+        expect(result.weeklyFable.percent).toBe(82);
+        expect(result.weeklyFable.resetsAt).toBe('Sep 23,4pm (UTC)');
+        expect(result.extraUsage).toBeUndefined();
+      });
+
+      it('finishes a Fable row that has started rendering before completing', () => {
+        const withoutFable = `
+          Current session
+          10% used
+          Current week (all models)
+          56% used
+        `;
+        const fableHeaderOnly = `${withoutFable}
+          Curnt week(Fable)
+        `;
+        const withFable = `${fableHeaderOnly}
+          82%used
+        `;
+
+        // No Fable row at all (Pro account): nothing to wait for.
+        expect(agent.hasCompleteOutput(withoutFable)).toBe(true);
+        // The header is drawn but its percentage is not, so the row is still mid-render.
+        expect(agent.hasCompleteOutput(fableHeaderOnly)).toBe(false);
+        expect(agent.hasCompleteOutput(withFable)).toBe(true);
+      });
+
+      it('waits for the asynchronous Fable row before dismissing the usage dialog', async () => {
+        const partialOutput = `
+          Current session
+          5% used
+          Current week (all models)
+          17% used
+          Scanning local sessions…
+          Refreshing…
+          Esc to cancel
+        `;
+        const settledOutput = `${partialOutput}
+          Current week (Fable)
+          1% used
+          Resets Sep 30, 5pm (Europe/London)
+          Usage credits
+          Usage credits are off
+        `;
+
+        expect(agent._isUsageDialogSettled(partialOutput)).toBe(false);
+
+        agent.output = partialOutput;
+        const waitPromise = agent._waitForUsageDialogSettlement(partialOutput);
+        setTimeout(() => { agent.output = settledOutput; }, 10);
+        const result = await waitPromise;
+
+        expect(agent.parseOutput(result).weeklyFable).toEqual(expect.objectContaining({
+          percent: 1,
+          resetsAt: 'Sep 30, 5pm (Europe/London)',
+        }));
+      });
+
+      it('settles at the final footer when an account has no Fable allowance', () => {
+        const output = `
+          Current session
+          5% used
+          Current week (all models)
+          17% used
+          Usage credits are off
+        `;
+
+        expect(agent._isUsageDialogSettled(output)).toBe(true);
+      });
+
+      it('does not wait on a Fable model tip that is not an allowance row', () => {
+        const output = `
+          /usage Fable5.1writesbettercodeandreportsprogressonlongtasks.Switchanytimewith/model.
+          Current session
+          10% used
+          Current week (all models)
+          56% used
+        `;
+
+        expect(agent.hasCompleteOutput(output)).toBe(true);
+      });
+
+      it('parses a standalone "Fable allowance" header', () => {
+        const output = `
+          Current session
+          12% used
+          Current week (all models)
+          30% used
+          Fable allowance
+          40% used
+          Resets Feb 2, 1pm (UTC)
+          Esc to cancel
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.weeklyAll.percent).toBe(30);
+        expect(result.weeklyFable.percent).toBe(40);
+        expect(result.weeklyFable.resetsAt).toBe('Feb 2, 1pm (UTC)');
+      });
+
+      it('ignores Fable model tips that are not an allowance section', () => {
+        const output = `
+          /usage Fable5.1writesbettercodeandreportsprogressonlongtasks.Switchanytimewith/model.
+          Current session
+          12% used
+          Current week (all models)
+          30% used
+          Esc to cancel
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.weeklyFable).toBeNull();
+      });
+
+      it('does not fall back to the legacy weekly entry when only Fable is present', () => {
+        const output = `
+          Current session
+          12% used
+          Current week (Fable)
+          40% used
+          Esc to cancel
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.weeklyFable.percent).toBe(40);
+        expect(result.weekly).toBeUndefined();
+      });
+
+      it('returns null when the Fable section has no percentage', () => {
+        const output = `
+          Current session
+          12% used
+          Current week (all models)
+          30% used
+          Current week (Fable)
+          Loading…
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.weeklyFable).toBeNull();
+      });
     });
   });
 
@@ -1750,7 +1894,6 @@ describe('Graceful Degradation', () => {
 
       expect(result.session).toBeNull();
       expect(result.weeklyAll).toBeNull();
-      expect(result.weeklySonnet).toBeNull();
     });
 
     it('handles partial data (session only)', () => {
@@ -1776,10 +1919,6 @@ describe('Graceful Degradation', () => {
 
         Current week (all models)
         25% used
-        Resets Jan 15, 2pm (America/New_York)
-
-        Current week (Sonnet only)
-        10% used
         Resets Jan 15, 2pm (America/New_York)
       `;
 
@@ -2017,7 +2156,6 @@ describe('ClaudeAgent API Mode', () => {
 
       expect(result.session).toBeNull();
       expect(result.weeklyAll).toBeNull();
-      expect(result.weeklySonnet).toBeNull();
     });
 
     it('returns empty usage object for undefined response', () => {
@@ -2025,7 +2163,6 @@ describe('ClaudeAgent API Mode', () => {
 
       expect(result.session).toBeNull();
       expect(result.weeklyAll).toBeNull();
-      expect(result.weeklySonnet).toBeNull();
     });
 
     it('parses session limit from API response', () => {
@@ -2057,21 +2194,6 @@ describe('ClaudeAgent API Mode', () => {
       expect(result.weeklyAll).not.toBeNull();
       expect(result.weeklyAll.percent).toBe(60);
       expect(result.weeklyAll.label).toBe('Current week (all models)');
-    });
-
-    it('parses weekly Sonnet only limit from API response', () => {
-      const apiResponse = {
-        weeklySonnet: {
-          percentUsed: 30,
-          resetsAt: new Date(Date.now() + 172800000).toISOString(), // 2 days from now
-        },
-      };
-
-      const result = agent._parseApiResponse(apiResponse);
-
-      expect(result.weeklySonnet).not.toBeNull();
-      expect(result.weeklySonnet.percent).toBe(30);
-      expect(result.weeklySonnet.label).toBe('Current week (Sonnet only)');
     });
 
     it('parses extra usage from API response', () => {
@@ -2198,10 +2320,6 @@ describe('ClaudeAgent API Mode', () => {
           percentUsed: 60,
           resetsAt: new Date(Date.now() + 259200000).toISOString(),
         },
-        weeklySonnet: {
-          percentUsed: 30,
-          resetsAt: new Date(Date.now() + 259200000).toISOString(),
-        },
         extraUsage: {
           percentUsed: 20,
           spent: 10.00,
@@ -2217,9 +2335,6 @@ describe('ClaudeAgent API Mode', () => {
 
       expect(result.weeklyAll).not.toBeNull();
       expect(result.weeklyAll.percent).toBe(60);
-
-      expect(result.weeklySonnet).not.toBeNull();
-      expect(result.weeklySonnet.percent).toBe(30);
 
       expect(result.extraUsage).toBeDefined();
       expect(result.extraUsage.percent).toBe(20);
@@ -2241,20 +2356,6 @@ describe('ClaudeAgent API Mode', () => {
       expect(result.weeklyAll.percent).toBe(55);
     });
 
-    it('handles weeklySonnetOnly as alias for weeklySonnet', () => {
-      const apiResponse = {
-        weeklySonnetOnly: {
-          percentUsed: 25,
-          resetsAt: new Date(Date.now() + 172800000).toISOString(),
-        },
-      };
-
-      const result = agent._parseApiResponse(apiResponse);
-
-      expect(result.weeklySonnet).not.toBeNull();
-      expect(result.weeklySonnet.percent).toBe(25);
-    });
-
     it('normalizes OAuth API response format (five_hour/seven_day)', () => {
       const apiResponse = {
         five_hour: {
@@ -2264,10 +2365,6 @@ describe('ClaudeAgent API Mode', () => {
         seven_day: {
           utilization: 9.0,
           resets_at: new Date(Date.now() + 604800000).toISOString(),
-        },
-        seven_day_sonnet: {
-          utilization: 15.0,
-          resets_at: new Date(Date.now() + 172800000).toISOString(),
         },
         extra_usage: {
           is_enabled: true,
@@ -2286,20 +2383,67 @@ describe('ClaudeAgent API Mode', () => {
       expect(result.weeklyAll).not.toBeNull();
       expect(result.weeklyAll.percent).toBe(9);
 
-      expect(result.weeklySonnet).not.toBeNull();
-      expect(result.weeklySonnet.percent).toBe(15);
-
       expect(result.extraUsage).not.toBeNull();
       expect(result.extraUsage.percent).toBe(55);
       expect(result.extraUsage.spent).toBe(23.32);
       expect(result.extraUsage.budget).toBe(42.50);
     });
 
-    it('handles OAuth response with null sonnet and no extra usage', () => {
+    it('normalizes the OAuth seven_day_fable allowance into weeklyFable', () => {
+      const fableReset = new Date(Date.now() + 172800000).toISOString();
+      const apiResponse = {
+        five_hour: { utilization: 10.0, resets_at: new Date(Date.now() + 3600000).toISOString() },
+        seven_day: { utilization: 56.4, resets_at: new Date(Date.now() + 604800000).toISOString() },
+        seven_day_fable: { utilization: 81.6, resets_at: fableReset },
+      };
+
+      const result = agent._parseApiResponse(apiResponse);
+
+      expect(result.weeklyAll.percent).toBe(56);
+      expect(result.weeklyFable).toEqual(expect.objectContaining({
+        label: 'Current week (Fable)',
+        percent: 82,
+        resetsAt: fableReset,
+      }));
+      expect(result.weeklyFable.resetsInSeconds).toBeGreaterThan(0);
+      expect(result.weeklyFable.pace).toBeDefined();
+    });
+
+    it('parses a pre-normalized weeklyFable entry with used/limit', () => {
+      const result = agent._parseApiResponse({
+        weeklyAllModels: { percentUsed: 20 },
+        weeklyFable: { used: 30, limit: 120 },
+      });
+
+      expect(result.weeklyFable.percent).toBe(25);
+      expect(result.weeklyFable.resetsAt).toBeNull();
+    });
+
+    it('keeps a zero-used weeklyFable allowance as a 0% entry', () => {
+      const result = agent._parseApiResponse({
+        weeklyAllModels: { percentUsed: 20 },
+        weeklyFable: { used: 0, limit: 120 },
+      });
+
+      expect(result.weeklyFable).toEqual(expect.objectContaining({
+        label: 'Current week (Fable)',
+        percent: 0,
+      }));
+    });
+
+    it('returns null weeklyFable when the limit is not positive', () => {
+      const result = agent._parseApiResponse({
+        weeklyAllModels: { percentUsed: 20 },
+        weeklyFable: { used: 0, limit: 0 },
+      });
+
+      expect(result.weeklyFable).toBeNull();
+    });
+
+    it('handles OAuth response with no Fable allowance and no extra usage', () => {
       const apiResponse = {
         five_hour: { utilization: 50.0, resets_at: new Date(Date.now() + 3600000).toISOString() },
         seven_day: { utilization: 20.0, resets_at: new Date(Date.now() + 604800000).toISOString() },
-        seven_day_sonnet: null,
         extra_usage: { is_enabled: false },
       };
 
@@ -2307,7 +2451,7 @@ describe('ClaudeAgent API Mode', () => {
 
       expect(result.session.percent).toBe(50);
       expect(result.weeklyAll.percent).toBe(20);
-      expect(result.weeklySonnet).toBeNull();
+      expect(result.weeklyFable).toBeNull();
       expect(result.extraUsage).toBeUndefined();
     });
   });
@@ -2368,10 +2512,6 @@ describe('ClaudeAgent API Mode', () => {
 
         Current week (all models)
         30% used
-        Resets Jan 15, 2pm (America/New_York)
-
-        Current week (Sonnet only)
-        20% used
         Resets Jan 15, 2pm (America/New_York)
       `;
 

@@ -175,7 +175,7 @@ describe('BaseAgent', () => {
       agent._metadataFetched = true; // skip the /status metadata fetch path
     });
 
-    it('keeps fresh session/weekly data and omits only the rate-limited Sonnet section', async () => {
+    it('keeps fresh session/weekly data and omits only the rate-limited per-model section', async () => {
       agent.runCommand = jest.fn().mockResolvedValue([
         'Current session',
         '40% used',
@@ -185,7 +185,7 @@ describe('BaseAgent', () => {
         '12% used',
         'Resets Jun 17, 6pm (America/New_York)',
         '',
-        'Current week (Sonnet only)',
+        'Current week (Fable)',
         'Per-model breakdown unavailable (rate limited — try again in a moment)',
       ].join('\n'));
 
@@ -196,8 +196,8 @@ describe('BaseAgent', () => {
       // ...session and weekly data are kept...
       expect(agent.usage.session.percent).toBe(40);
       expect(agent.usage.weeklyAll.percent).toBe(12);
-      // ...and the rate-limited Sonnet section is omitted (null).
-      expect(agent.usage.weeklySonnet).toBeNull();
+      // ...and the rate-limited Fable section is omitted (null).
+      expect(agent.usage.weeklyFable).toBeNull();
     });
 
     it('surfaces a rate-limit error only when no usable data came back', async () => {

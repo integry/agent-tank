@@ -161,7 +161,7 @@ class BaseAgent {
   // Decide what to do with freshly parsed usage, given the raw (cleaned) output.
   // Prefers fresh data; treats rate-limit notices as an error only when no
   // usable data came back (a partial rate limit — e.g. Claude's per-model /
-  // Sonnet breakdown — still yields session/weekly data, and the rate-limited
+  // Fable breakdown — still yields session/weekly data, and the rate-limited
   // section simply parses to null and is omitted by the formatter).
   _applyParsedUsage(parsed, cleanOutput) {
     const hasData = parsed && Object.values(parsed).some(v =>
