@@ -88,7 +88,7 @@ const metricExtractors = `
             percent: model.percentUsed ?? 0,
             resetsIn: model.resetsIn || '',
             resetsAt: model.resetsAt || '',
-            cycle: 'sessionAgy'
+            cycle: model.cycle || 'sessionAgy'
           });
         }
       }

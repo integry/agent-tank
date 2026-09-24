@@ -379,6 +379,25 @@ agent-tank --agy
 agent-tank --agy --once --json
 ```
 
+Each entry in `usage.models` reports the quota left, the countdown Antigravity
+displays (`Resets in` on older builds, `Refreshes in` on the grouped
+`Models & Quota` screen), the absolute instant that countdown points at, and the
+cycle the limit belongs to. A limit showing `Quota available` has no pending
+reset, so its reset fields are `null`.
+
+```json
+{
+  "model": "Gemini · Five Hour Limit Remaining",
+  "usageLeft": 90.31,
+  "percentUsed": 9.7,
+  "resetsIn": "58m",
+  "resetsInSeconds": 3480,
+  "resetsAt": "2026-09-23T11:52:00.000Z",
+  "cycle": "fiveHour",
+  "group": "Gemini"
+}
+```
+
 ## HTTP API
 
 ### Endpoints

@@ -54,7 +54,7 @@ function attachAgyPace(usage) {
   if (!usage.models || !Array.isArray(usage.models)) return;
 
   for (const model of usage.models) {
-    attachPaceToData(model, 'percentUsed', 'sessionAgy');
+    attachPaceToData(model, 'percentUsed', model.cycle || 'sessionAgy');
   }
 }
 

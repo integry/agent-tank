@@ -183,7 +183,9 @@ function formatAgyUsage(usage, agentId = 'agy') {
 
       html += '<div class="model-container">';
       html += usageItem(modelName, percent, '% used', { isZero, isModelName: true, agentName: agentId, resetsIn });
-      html += resetInfoItem(model.resetsIn, null, 'sessionAgy', { isZero, paceData });
+      // Weekly and five-hour limits share this list, so each entry carries the
+      // cycle its countdown belongs to; older payloads have no cycle field.
+      html += resetInfoItem(model.resetsIn, model.resetsAt || null, model.cycle || 'sessionAgy', { isZero, paceData });
       html += '</div>';
     }
   }
