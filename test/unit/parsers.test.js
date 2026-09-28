@@ -264,25 +264,59 @@ describe('ClaudeAgent', () => {
       });
     });
 
-    it('still parses line-oriented legacy status output', () => {
-      const output = [
-        'Claude Code: 2.0.76',
-        'Session ID: abcdef12-3456-7890-abcd-ef1234567890',
-        'Working directory: /tmp/project',
-        'Organization: Example Org',
-        'Email: user@example.com',
-        'Model: claude-sonnet-4-5',
-      ].join('\n');
+    it.each(['? for shortcuts', '❯ ', '> ', 'esc to close'])(
+      'still parses line-oriented legacy status output before %s', (prompt) => {
+        const output = [
+          'Claude Code: 2.0.76',
+          'Session ID: abcdef12-3456-7890-abcd-ef1234567890',
+          'Working directory: /tmp/project',
+          'Organization: Example Org',
+          'Email: user@example.com',
+          'Model: claude-sonnet-4-5',
+          '',
+          prompt,
+        ].join('\n');
 
-      expect(agent._parseStatusOutput(output)).toEqual({
-        sessionId: 'abcdef12-3456-7890-abcd-ef1234567890',
-        cwd: '/tmp/project',
-        organization: 'Example Org',
-        email: 'user@example.com',
-        model: 'claude-sonnet-4-5',
-        version: '2.0.76',
-      });
-    });
+        expect(agent._hasCompleteStatusOutput(output)).toBe(true);
+        expect(agent._parseStatusOutput(output)).toEqual({
+          sessionId: 'abcdef12-3456-7890-abcd-ef1234567890',
+          cwd: '/tmp/project',
+          organization: 'Example Org',
+          email: 'user@example.com',
+          model: 'claude-sonnet-4-5',
+          version: '2.0.76',
+        });
+      }
+    );
+
+    it.each(['\n', '│', '│\n│'])(
+      'preserves metadata before unknown fields separated by %j', (boundary) => {
+        const output = [
+          'Claude Code: 2.0.76',
+          'Memory: project',
+          'Session ID: abcdef12-3456-7890-abcd-ef1234567890',
+          'IDE: connected',
+          'Working directory: /tmp/project',
+          'Plugins: enabled',
+          'Organization: Example Org',
+          'Memory: project',
+          'Email: user@example.com',
+          'IDE: connected',
+          'Model: claude-sonnet-4-5',
+          '? for shortcuts',
+        ].join(boundary);
+
+        expect(agent._hasCompleteStatusOutput(output)).toBe(true);
+        expect(agent._parseStatusOutput(output)).toEqual({
+          sessionId: 'abcdef12-3456-7890-abcd-ef1234567890',
+          cwd: '/tmp/project',
+          organization: 'Example Org',
+          email: 'user@example.com',
+          model: 'claude-sonnet-4-5',
+          version: '2.0.76',
+        });
+      }
+    );
   });
 
   describe('parseOutput', () => {
@@ -892,6 +926,46 @@ describe('ClaudeAgent', () => {
       await jest.advanceTimersByTimeAsync(1100);
 
       await expect(resultPromise).resolves.toContain('Current session');
+    });
+
+    it.each([2450, 2550, 2650, 2750, 2850, 3150])(
+      'preserves output arriving at %ims and stops pending retry input', async (arrivalTime) => {
+        const shell = { write: jest.fn() };
+        agent.shell = shell;
+        agent.processReady = true;
+        const output = 'Current session\n5% used\nCurrent week (all models)\n20% used\nUsage credits are off';
+
+        const resultPromise = agent.sendCommandAndWait();
+        await jest.advanceTimersByTimeAsync(arrivalTime);
+        const commandWrites = shell.write.mock.calls.filter(([value]) => value !== '\x1b');
+        agent.output = output;
+        agent._onDataCallback();
+        await jest.advanceTimersByTimeAsync(2000);
+
+        await expect(resultPromise).resolves.toBe(output);
+        expect(shell.write.mock.calls.filter(([value]) => value !== '\x1b')).toEqual(commandWrites);
+      }
+    );
+
+    it.each([
+      [100, 'shell'], [250, 'shell'],
+      [100, 'command'], [250, 'command'],
+    ])('stops retry work when the %s ms delay changes the %s owner', (delay, owner) => {
+      const shell = { write: jest.fn() };
+      agent.shell = shell;
+      agent._commandInFlight = true;
+      agent._onDataCallback = jest.fn();
+      agent._retryStalledUsageCommand();
+      jest.advanceTimersByTime(delay);
+
+      if (owner === 'shell') agent.shell = { write: jest.fn() };
+      else agent._onDataCallback = jest.fn();
+      agent.output = 'Output belonging to the replacement';
+      jest.advanceTimersByTime(1000);
+
+      expect(agent.output).toBe('Output belonging to the replacement');
+      expect(shell.write.mock.calls).toEqual([['\x1b']]);
+      if (owner === 'shell') expect(agent.shell.write).not.toHaveBeenCalled();
     });
 
     it('does not let keepalive interrupt an active usage command', async () => {

@@ -235,12 +235,12 @@ class ClaudeAgent extends BaseAgent {
     return Boolean(hasSessionData && (hasLegacyWeekly || hasAllModelsWeekly));
   }
 
-  sendCommands(shell, _output) {
+  sendCommands(shell, _output, canWrite = () => true) {
     logger.agent(this.name, 'Sending /usage command...');
     // Claude keeps slash-command suggestions open for /usage on newer builds.
     // Confirm the command selection, then submit the actual command execution.
     const writeIfActive = (value) => {
-      if (!shell) return;
+      if (!shell || !canWrite()) return;
       try {
         shell.write(value);
       } catch (_err) {
@@ -281,7 +281,12 @@ class ClaudeAgent extends BaseAgent {
 
   _retryStalledUsageCommand() {
     const shell = this.shell;
-    if (!shell || !this._commandInFlight || this.hasCompleteOutput(this.output)) return;
+    const commandCallback = this._onDataCallback;
+    // The PTY can complete this command during either the reset delay or the
+    // delayed submission. Only the original, still-incomplete waiter may retry.
+    const canRetry = () => shell && this.shell === shell && this._commandInFlight &&
+      this._onDataCallback === commandCallback && !this.hasCompleteOutput(this.output);
+    if (!canRetry()) return;
 
     logger.agent(this.name, 'No usage rows after 2.5s; resetting prompt and retrying /usage...');
     try {
@@ -292,9 +297,9 @@ class ClaudeAgent extends BaseAgent {
     }
 
     setTimeout(() => {
-      if (this.shell !== shell || !this._commandInFlight) return;
+      if (!canRetry()) return;
       this.output = '';
-      this.sendCommands(shell, '');
+      this.sendCommands(shell, '', canRetry);
     }, USAGE_COMMAND_RESET_MS);
   }
 
@@ -428,7 +433,8 @@ class ClaudeAgent extends BaseAgent {
 
     // Claude 2.1.284 redraws the /status table in-place. Once terminal control
     // sequences are removed, several fields can share one logical line, so a
-    // newline-only value boundary consumes every field that follows it.
+    // newline-only value boundary consumes every field that follows it. Keep
+    // line and box boundaries too, including before prompts or unknown labels.
     const fieldStart = [
       'Version', 'Claude\\s*Code', 'Session\\s*name', 'Session\\s*ID', 'Session\\s*kind',
       'Peer\\s*address', 'Working\\s*directory', 'Cwd', 'Current\\s*directory', 'Directory',
@@ -438,7 +444,7 @@ class ClaudeAgent extends BaseAgent {
     ].join('|');
     const readField = (labels) => {
       const match = clean.match(new RegExp(
-        `(?:${labels})\\s*:\\s*(.*?)(?=\\s*(?:(?:${fieldStart})\\s*:|Esc\\s*to\\s*cancel)|$)`,
+        `(?:${labels})\\s*:\\s*(.*?)(?=\\s*(?:(?:${fieldStart})\\s*:|Esc\\s*to\\s*cancel)|[\\r\\n│]|$)`,
         'i'
       ));
       return match ? this.stripBoxChars(match[1]).trim() : null;
