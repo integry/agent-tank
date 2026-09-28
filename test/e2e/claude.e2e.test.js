@@ -459,8 +459,8 @@ describeIfClaude('ClaudeAgent E2E', () => {
 
     it('has correct minimum refresh interval', () => {
       const agent = new ClaudeAgent();
-      // Claude API is rate limited - 5 minute minimum
-      expect(agent.minRefreshInterval).toBe(300);
+      // PTY polling uses a 10 minute minimum; direct API mode uses 60 seconds.
+      expect(agent.minRefreshInterval).toBe(600);
     });
 
     it('uses correct environment settings', () => {

@@ -425,17 +425,53 @@ class ClaudeAgent extends BaseAgent {
   _parseStatusOutput(output) {
     const clean = this.stripAnsi(output);
     const metadata = {};
-    const patterns = [
-      ['sessionId', /Session(?:\s+ID)?:\s*([a-f0-9-]+)/i],
-      ['cwd', /(?:Working directory|Cwd|Current directory|Directory):\s*([^\n│]+)/i],
-      ['organization', /(?:Organization|Org):\s*([^\n│]+)/i],
-      ['email', /(?:Email|Account|User|Logged in as):\s*(\S+@\S+)/i],
-      ['model', /(?:Model|Using model):\s*(claude[-\w.]+)/i],
-      ['version', /(?:Version|Claude Code):\s*v?([\d.]+)/i],
-    ];
-    for (const [key, regex] of patterns) {
-      const match = clean.match(regex);
-      if (match) metadata[key] = this.stripBoxChars(match[1]);
+
+    // Claude 2.1.284 redraws the /status table in-place. Once terminal control
+    // sequences are removed, several fields can share one logical line, so a
+    // newline-only value boundary consumes every field that follows it.
+    const fieldStart = [
+      'Version', 'Claude\\s*Code', 'Session\\s*name', 'Session\\s*ID', 'Session\\s*kind',
+      'Peer\\s*address', 'Working\\s*directory', 'Cwd', 'Current\\s*directory', 'Directory',
+      'Login\\s*method', 'Organization', 'Org', 'Email', 'Account', 'User', 'Logged\\s*in\\s*as',
+      'Cloud\\s*sessions', 'Model', 'Using\\s*model', 'MCP\\s*servers', 'Setting\\s*sources',
+      'Auto\\s*mode\\s*server',
+    ].join('|');
+    const readField = (labels) => {
+      const match = clean.match(new RegExp(
+        `(?:${labels})\\s*:\\s*(.*?)(?=\\s*(?:(?:${fieldStart})\\s*:|Esc\\s*to\\s*cancel)|$)`,
+        'i'
+      ));
+      return match ? this.stripBoxChars(match[1]).trim() : null;
+    };
+
+    const sessionId = readField('Session(?:\\s*ID)?');
+    if (sessionId) {
+      const match = sessionId.match(/[a-f0-9-]+/i);
+      if (match) metadata.sessionId = match[0];
+    }
+
+    const cwd = readField('Working\\s*directory|Cwd|Current\\s*directory|Directory');
+    if (cwd) metadata.cwd = cwd;
+
+    const organization = readField('Organization|Org');
+    if (organization) metadata.organization = organization;
+
+    const email = readField('Email|Account|User|Logged\\s*in\\s*as');
+    if (email) {
+      const match = email.match(/\S+@\S+/);
+      if (match) metadata.email = match[0];
+    }
+
+    const model = readField('Model|Using\\s*model');
+    if (model) {
+      const claudeModel = model.match(/claude[-\w.]+/i);
+      metadata.model = claudeModel ? claudeModel[0] : model.replace(/\[\d+m/g, '').trim();
+    }
+
+    const version = readField('Version|Claude\\s*Code');
+    if (version) {
+      const match = version.match(/v?([\d.]+)/i);
+      if (match) metadata.version = match[1];
     }
     return Object.keys(metadata).length > 0 ? metadata : null;
   }

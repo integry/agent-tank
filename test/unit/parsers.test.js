@@ -245,6 +245,46 @@ describe('ClaudeAgent', () => {
     agent = new ClaudeAgent();
   });
 
+  describe('/status metadata', () => {
+    it('bounds fields in Claude 2.1.284 in-place redraw output', () => {
+      const output =
+        'Status Version: 2.1.284 Sessionname:/rename SessionID:9d27e74f-d021-4c96-9d79-f2abaacdda8b ' +
+        'Sessionkind:interactive Peer address:uds:/run/user/0/cc.sock cwd:/tmp ' +
+        "Loginmethod:ClaudeMaxaccount Organization:Example Org Email:user@example.com " +
+        'Cloudsessions:GitHubconnected Model:opus[1m](claude-opus-5-5[1m]) ' +
+        'MCPservers:1pending Settingsources:Usersettings Automodeserver:Enabled Esctocancel';
+
+      expect(agent._parseStatusOutput(output)).toEqual({
+        sessionId: '9d27e74f-d021-4c96-9d79-f2abaacdda8b',
+        cwd: '/tmp',
+        organization: 'Example Org',
+        email: 'user@example.com',
+        model: 'claude-opus-5-5',
+        version: '2.1.284',
+      });
+    });
+
+    it('still parses line-oriented legacy status output', () => {
+      const output = [
+        'Claude Code: 2.0.76',
+        'Session ID: abcdef12-3456-7890-abcd-ef1234567890',
+        'Working directory: /tmp/project',
+        'Organization: Example Org',
+        'Email: user@example.com',
+        'Model: claude-sonnet-4-5',
+      ].join('\n');
+
+      expect(agent._parseStatusOutput(output)).toEqual({
+        sessionId: 'abcdef12-3456-7890-abcd-ef1234567890',
+        cwd: '/tmp/project',
+        organization: 'Example Org',
+        email: 'user@example.com',
+        model: 'claude-sonnet-4-5',
+        version: '2.0.76',
+      });
+    });
+  });
+
   describe('parseOutput', () => {
     it('parses session usage with percentage and reset time', () => {
       const output = `
@@ -1376,6 +1416,41 @@ describe('CodexAgent', () => {
 
   beforeEach(() => {
     agent = new CodexAgent();
+  });
+
+  describe('prompt handling', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('confirms and submits /status for Codex 0.158 slash-command menus', () => {
+      const shell = { write: jest.fn() };
+
+      agent.sendCommands(shell, '');
+      jest.advanceTimersByTime(1000);
+
+      expect(shell.write.mock.calls).toEqual([
+        ['/status'],
+        ['\r'],
+        ['\r'],
+      ]);
+    });
+
+    it('accepts a complete weekly-only status response', () => {
+      const output = 'Weekly limit: [███████████████░░░░░] 73% left (resets 19:06 on 3 Oct)';
+
+      expect(agent.hasCompleteOutput(output)).toBe(true);
+    });
+
+    it('waits until the weekly status row has fully rendered', () => {
+      const output = 'Weekly limit: [███████████████░░░░░] loading';
+
+      expect(agent.hasCompleteOutput(output)).toBe(false);
+    });
   });
 
   describe('parseOutput', () => {
