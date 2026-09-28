@@ -904,12 +904,17 @@ describe('ClaudeAgent', () => {
       ]);
     });
 
-    it('resets the prompt and retries when the first /usage command is swallowed', async () => {
+    it.each([
+      ['empty output', ''],
+      ['terminal control bytes', '\x1b[?25l\x1b[0m'],
+      ['loading headers', 'Current session\nLoading…\nCurrent week (all models)\nLoading…'],
+    ])('resets the prompt and retries when /usage returns only %s', async (_label, output) => {
       const shell = { write: jest.fn() };
       agent.shell = shell;
       agent.processReady = true;
 
       const resultPromise = agent.sendCommandAndWait();
+      agent.output = output;
       await jest.advanceTimersByTimeAsync(2800);
 
       expect(shell.write.mock.calls.filter(([value]) => value === '/usage')).toHaveLength(2);
@@ -946,6 +951,59 @@ describe('ClaudeAgent', () => {
         expect(shell.write.mock.calls.filter(([value]) => value !== '\x1b')).toEqual(commandWrites);
       }
     );
+
+    it.each([2450, 2550, 2650, 2750, 2850, 3150, 3550])(
+      'preserves a pending Fable dialog arriving at %ims through retry delays', async (arrivalTime) => {
+        const shell = { write: jest.fn() };
+        agent.shell = shell;
+        agent.processReady = true;
+        const partialOutput = 'Current session\n5% used\nCurrent week (all models)\n20% used\nCurrent week (Fable)\nLoading…';
+
+        const resultPromise = agent.sendCommandAndWait();
+        await jest.advanceTimersByTimeAsync(arrivalTime);
+        const writesBeforeArrival = shell.write.mock.calls.slice();
+        agent.output = partialOutput;
+        agent._onDataCallback();
+        expect(agent.hasCompleteOutput(partialOutput)).toBe(false);
+        await jest.advanceTimersByTimeAsync(2000);
+
+        expect(shell.write.mock.calls).toEqual(writesBeforeArrival);
+        expect(agent.output).toBe(partialOutput);
+        expect(agent._commandInFlight).toBe(true);
+
+        const completeOutput = `${partialOutput}\n30% used\nUsage credits are off`;
+        agent.output = completeOutput;
+        agent._onDataCallback();
+        await jest.advanceTimersByTimeAsync(1100);
+
+        await expect(resultPromise).resolves.toBe(completeOutput);
+        expect(agent.parseOutput(await resultPromise)).toMatchObject({
+          session: { percent: 5 },
+          weeklyAll: { percent: 20 },
+          weeklyFable: { percent: 30 },
+        });
+      }
+    );
+
+    it.each([
+      'Current session\n0% used',
+      'Current week (all models)\n0% used',
+      'Current week\n0% used',
+      'Current week (Fable)\n0% used',
+    ])('does not retry when the only parseable row is %s', (output) => {
+      const shell = { write: jest.fn() };
+      agent.shell = shell;
+      agent._commandInFlight = true;
+      agent._onDataCallback = jest.fn();
+      agent.output = output;
+      expect(agent.hasCompleteOutput(output)).toBe(false);
+
+      agent._retryStalledUsageCommand();
+      jest.advanceTimersByTime(1500);
+
+      expect(shell.write).not.toHaveBeenCalled();
+      expect(agent.output).toBe(output);
+    });
 
     it.each([
       [100, 'shell'], [250, 'shell'],

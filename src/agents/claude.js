@@ -279,13 +279,21 @@ class ClaudeAgent extends BaseAgent {
     return latestOutput;
   }
 
+  _hasParseableUsageRows(output) {
+    const parsed = parsePtyOutput(this.stripAnsi(output));
+    return [parsed.session, parsed.weekly, parsed.weeklyAll, parsed.weeklyFable]
+      .some(row => row && typeof row.percent === 'number');
+  }
+
   _retryStalledUsageCommand() {
     const shell = this.shell;
     const commandCallback = this._onDataCallback;
-    // The PTY can complete this command during either the reset delay or the
-    // delayed submission. Only the original, still-incomplete waiter may retry.
+    // Rows can arrive during either the reset delay or delayed submission while
+    // the Fable allowance is still rendering. Retry only the original waiter
+    // with no parseable rows, and continue to respect completed error responses.
     const canRetry = () => shell && this.shell === shell && this._commandInFlight &&
-      this._onDataCallback === commandCallback && !this.hasCompleteOutput(this.output);
+      this._onDataCallback === commandCallback && !this._hasParseableUsageRows(this.output) &&
+      !this.hasCompleteOutput(this.output);
     if (!canRetry()) return;
 
     logger.agent(this.name, 'No usage rows after 2.5s; resetting prompt and retrying /usage...');
