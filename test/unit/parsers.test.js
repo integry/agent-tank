@@ -16,7 +16,7 @@ const { BaseAgent } = require('../../src/agents/base.js');
 const { ClaudeAgent } = require('../../src/agents/claude.js');
 const { AgyAgent } = require('../../src/agents/agy.js');
 const { CodexAgent } = require('../../src/agents/codex.js');
-const { parseResetTime, formatDuration } = require('../../src/agents/pty-output-parser.js');
+const { parsePtyOutput, parseResetTime, formatDuration } = require('../../src/agents/pty-output-parser.js');
 
 describe('BaseAgent', () => {
   let agent;
@@ -421,6 +421,21 @@ describe('ClaudeAgent', () => {
       expect(result.weekly).not.toBeNull();
       expect(result.weekly.percent).toBe(55);
       expect(result.weekly.label).toBe('Current week');
+    });
+
+    it('parses a standalone legacy weekly row without reset details', () => {
+      expect(parsePtyOutput('Current week\n0% used')).toEqual({
+        session: null,
+        weeklyAll: null,
+        weeklyFable: null,
+        weekly: {
+          label: 'Current week',
+          percent: 0,
+          resetsAt: null,
+          resetsIn: null,
+          resetsInSeconds: null,
+        },
+      });
     });
 
     it('handles ANSI-formatted output correctly', () => {
