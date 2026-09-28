@@ -829,6 +829,41 @@ describe('ClaudeAgent', () => {
         ['\r'],
       ]);
     });
+
+    it('resets the prompt and retries when the first /usage command is swallowed', async () => {
+      const shell = { write: jest.fn() };
+      agent.shell = shell;
+      agent.processReady = true;
+
+      const resultPromise = agent.sendCommandAndWait();
+      await jest.advanceTimersByTimeAsync(2800);
+
+      expect(shell.write.mock.calls.filter(([value]) => value === '/usage')).toHaveLength(2);
+      expect(shell.write).toHaveBeenCalledWith('\x1b');
+
+      agent.output = `
+        Current session
+        5% used
+        Current week (all models)
+        20% used
+        Usage credits are off
+      `;
+      agent._onDataCallback();
+      await jest.advanceTimersByTimeAsync(1100);
+
+      await expect(resultPromise).resolves.toContain('Current session');
+    });
+
+    it('does not let keepalive interrupt an active usage command', async () => {
+      const shell = { write: jest.fn() };
+      agent.shell = shell;
+      agent.processReady = true;
+      agent._commandInFlight = true;
+
+      await expect(agent.keepalive()).resolves.toBe(true);
+
+      expect(shell.write).not.toHaveBeenCalled();
+    });
   });
 });
 

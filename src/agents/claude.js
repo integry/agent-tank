@@ -10,6 +10,12 @@ const { parsePtyOutput, FABLE_SECTION_START } = require('./pty-output-parser.js'
 const FABLE_SECTION_HEADER = new RegExp(FABLE_SECTION_START, 'i');
 const USAGE_SETTLE_TIMEOUT_MS = 2500;
 const USAGE_SETTLE_POLL_MS = 50;
+// A healthy Claude /usage dialog starts returning its core rows almost
+// immediately. Persistent PTYs occasionally swallow the slash command and emit
+// only terminal-mode control bytes; retry once instead of waiting 30 seconds
+// for the generic command timeout to tear down the process.
+const USAGE_COMMAND_RETRY_MS = 2500;
+const USAGE_COMMAND_RESET_MS = 200;
 const https = require('https');
 const {
   readCredentials, isTokenExpired, refreshOAuthToken, persistRefreshedTokens,
@@ -273,10 +279,35 @@ class ClaudeAgent extends BaseAgent {
     return latestOutput;
   }
 
+  _retryStalledUsageCommand() {
+    const shell = this.shell;
+    if (!shell || !this._commandInFlight || this.hasCompleteOutput(this.output)) return;
+
+    logger.agent(this.name, 'No usage rows after 2.5s; resetting prompt and retrying /usage...');
+    try {
+      // Dismiss a half-open dialog or suggestion menu before resubmitting.
+      shell.write('\x1b');
+    } catch (_err) {
+      return;
+    }
+
+    setTimeout(() => {
+      if (this.shell !== shell || !this._commandInFlight) return;
+      this.output = '';
+      this.sendCommands(shell, '');
+    }, USAGE_COMMAND_RESET_MS);
+  }
+
   // After getting /usage output, let Claude finish its asynchronous allowance
   // rows, then dismiss the dialog so the next refresh starts with a clean prompt.
   async sendCommandAndWait() {
-    let result = await super.sendCommandAndWait();
+    const retryTimer = setTimeout(() => this._retryStalledUsageCommand(), USAGE_COMMAND_RETRY_MS);
+    let result;
+    try {
+      result = await super.sendCommandAndWait();
+    } finally {
+      clearTimeout(retryTimer);
+    }
     result = await this._waitForUsageDialogSettlement(result);
     if (this.shell) { this.shell.write('\x1b'); await new Promise(r => setTimeout(r, 1000)); this.output = ''; }
     return result;
@@ -412,6 +443,10 @@ class ClaudeAgent extends BaseAgent {
   /** Lightweight keepalive to prevent session expiration. @returns {Promise<boolean>} True if keepalive succeeded */
   async keepalive() {
     if (this.freshProcess) { console.log(`[${this.name}] Keepalive skipped (fresh process mode)`); return true; }
+    if (this.isRefreshing || this._commandInFlight) {
+      console.log(`[${this.name}] Keepalive skipped (command in flight)`);
+      return true;
+    }
     if (!this.shell || !this.processReady) { console.log(`[${this.name}] Keepalive: spawning process...`); await this.spawnProcess(); }
     if (this.shell) { console.log(`[${this.name}] Keepalive: sending ping...`); this.shell.write('\x1b'); return true; }
     return false;
