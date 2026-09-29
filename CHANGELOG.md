@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.11] - 2026-09-29
+
+### Verified
+
+Verified with the following agent versions (versions checked on 2026-09-29):
+
+- Claude Code `2.1.284`
+- Antigravity CLI (`agy`) `1.2.12`
+- Codex CLI `0.158.0`
+
+### Added
+
+- Monitor multiple accounts from the same provider using the repeatable `--agent provider[:alias][=config-path]` flag or the config file's `agents` array, with separate config directories, dashboard labels, history, and refresh endpoints
+- Parse Codex model-specific rate-limit buckets alongside the main five-hour and weekly limits
+- Include absolute `resetsAt` timestamps and limit `cycle` identifiers in Antigravity usage entries
+
+### Changed
+
+- Replace Claude's `weeklySonnet` usage field with `weeklyFable` in PTY and OAuth API parsing, dashboard display, history, and pace calculations; API consumers using `weeklySonnet` must update to the new field
+
+### Fixed
+
+- Initialize the Codex app-server JSON-RPC connection and parse its current rate-limit response, including used percentages, window durations, and Unix reset timestamps
+- Preserve Claude Fable allowances at zero usage and wait for delayed allowance rows before dismissing the usage dialog, while allowing accounts without Fable to complete
+- Parse Antigravity's `Refreshes in` reset countdowns, including lines with leftover terminal box borders, and use the correct weekly or five-hour window for pace calculations
+
 ## [0.9.10] - 2026-06-15
 
 ### Fixed
