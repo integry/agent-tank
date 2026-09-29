@@ -10,6 +10,12 @@ const { parsePtyOutput, FABLE_SECTION_START } = require('./pty-output-parser.js'
 const FABLE_SECTION_HEADER = new RegExp(FABLE_SECTION_START, 'i');
 const USAGE_SETTLE_TIMEOUT_MS = 2500;
 const USAGE_SETTLE_POLL_MS = 50;
+// A healthy Claude /usage dialog starts returning its core rows almost
+// immediately. Persistent PTYs occasionally swallow the slash command and emit
+// only terminal-mode control bytes; retry once instead of waiting 30 seconds
+// for the generic command timeout to tear down the process.
+const USAGE_COMMAND_RETRY_MS = 2500;
+const USAGE_COMMAND_RESET_MS = 200;
 const https = require('https');
 const {
   readCredentials, isTokenExpired, refreshOAuthToken, persistRefreshedTokens,
@@ -229,12 +235,12 @@ class ClaudeAgent extends BaseAgent {
     return Boolean(hasSessionData && (hasLegacyWeekly || hasAllModelsWeekly));
   }
 
-  sendCommands(shell, _output) {
+  sendCommands(shell, _output, canWrite = () => true) {
     logger.agent(this.name, 'Sending /usage command...');
     // Claude keeps slash-command suggestions open for /usage on newer builds.
     // Confirm the command selection, then submit the actual command execution.
     const writeIfActive = (value) => {
-      if (!shell) return;
+      if (!shell || !canWrite()) return;
       try {
         shell.write(value);
       } catch (_err) {
@@ -273,10 +279,48 @@ class ClaudeAgent extends BaseAgent {
     return latestOutput;
   }
 
+  _hasParseableUsageRows(output) {
+    const parsed = parsePtyOutput(this.stripAnsi(output));
+    return [parsed.session, parsed.weekly, parsed.weeklyAll, parsed.weeklyFable]
+      .some(row => row && typeof row.percent === 'number');
+  }
+
+  _retryStalledUsageCommand() {
+    const shell = this.shell;
+    const commandCallback = this._onDataCallback;
+    // Rows can arrive during either the reset delay or delayed submission while
+    // the Fable allowance is still rendering. Retry only the original waiter
+    // with no parseable rows, and continue to respect completed error responses.
+    const canRetry = () => shell && this.shell === shell && this._commandInFlight &&
+      this._onDataCallback === commandCallback && !this._hasParseableUsageRows(this.output) &&
+      !this.hasCompleteOutput(this.output);
+    if (!canRetry()) return;
+
+    logger.agent(this.name, 'No usage rows after 2.5s; resetting prompt and retrying /usage...');
+    try {
+      // Dismiss a half-open dialog or suggestion menu before resubmitting.
+      shell.write('\x1b');
+    } catch (_err) {
+      return;
+    }
+
+    setTimeout(() => {
+      if (!canRetry()) return;
+      this.output = '';
+      this.sendCommands(shell, '', canRetry);
+    }, USAGE_COMMAND_RESET_MS);
+  }
+
   // After getting /usage output, let Claude finish its asynchronous allowance
   // rows, then dismiss the dialog so the next refresh starts with a clean prompt.
   async sendCommandAndWait() {
-    let result = await super.sendCommandAndWait();
+    const retryTimer = setTimeout(() => this._retryStalledUsageCommand(), USAGE_COMMAND_RETRY_MS);
+    let result;
+    try {
+      result = await super.sendCommandAndWait();
+    } finally {
+      clearTimeout(retryTimer);
+    }
     result = await this._waitForUsageDialogSettlement(result);
     if (this.shell) { this.shell.write('\x1b'); await new Promise(r => setTimeout(r, 1000)); this.output = ''; }
     return result;
@@ -394,17 +438,54 @@ class ClaudeAgent extends BaseAgent {
   _parseStatusOutput(output) {
     const clean = this.stripAnsi(output);
     const metadata = {};
-    const patterns = [
-      ['sessionId', /Session(?:\s+ID)?:\s*([a-f0-9-]+)/i],
-      ['cwd', /(?:Working directory|Cwd|Current directory|Directory):\s*([^\n│]+)/i],
-      ['organization', /(?:Organization|Org):\s*([^\n│]+)/i],
-      ['email', /(?:Email|Account|User|Logged in as):\s*(\S+@\S+)/i],
-      ['model', /(?:Model|Using model):\s*(claude[-\w.]+)/i],
-      ['version', /(?:Version|Claude Code):\s*v?([\d.]+)/i],
-    ];
-    for (const [key, regex] of patterns) {
-      const match = clean.match(regex);
-      if (match) metadata[key] = this.stripBoxChars(match[1]);
+
+    // Claude 2.1.284 redraws the /status table in-place. Once terminal control
+    // sequences are removed, several fields can share one logical line, so a
+    // newline-only value boundary consumes every field that follows it. Keep
+    // line and box boundaries too, including before prompts or unknown labels.
+    const fieldStart = [
+      'Version', 'Claude\\s*Code', 'Session\\s*name', 'Session\\s*ID', 'Session\\s*kind',
+      'Peer\\s*address', 'Working\\s*directory', 'Cwd', 'Current\\s*directory', 'Directory',
+      'Login\\s*method', 'Organization', 'Org', 'Email', 'Account', 'User', 'Logged\\s*in\\s*as',
+      'Cloud\\s*sessions', 'Model', 'Using\\s*model', 'MCP\\s*servers', 'Setting\\s*sources',
+      'Auto\\s*mode\\s*server',
+    ].join('|');
+    const readField = (labels) => {
+      const match = clean.match(new RegExp(
+        `(?:${labels})\\s*:\\s*(.*?)(?=\\s*(?:(?:${fieldStart})\\s*:|Esc\\s*to\\s*cancel)|[\\r\\n│]|$)`,
+        'i'
+      ));
+      return match ? this.stripBoxChars(match[1]).trim() : null;
+    };
+
+    const sessionId = readField('Session(?:\\s*ID)?');
+    if (sessionId) {
+      const match = sessionId.match(/[a-f0-9-]+/i);
+      if (match) metadata.sessionId = match[0];
+    }
+
+    const cwd = readField('Working\\s*directory|Cwd|Current\\s*directory|Directory');
+    if (cwd) metadata.cwd = cwd;
+
+    const organization = readField('Organization|Org');
+    if (organization) metadata.organization = organization;
+
+    const email = readField('Email|Account|User|Logged\\s*in\\s*as');
+    if (email) {
+      const match = email.match(/\S+@\S+/);
+      if (match) metadata.email = match[0];
+    }
+
+    const model = readField('Model|Using\\s*model');
+    if (model) {
+      const claudeModel = model.match(/claude[-\w.]+/i);
+      metadata.model = claudeModel ? claudeModel[0] : model.replace(/\[\d+m/g, '').trim();
+    }
+
+    const version = readField('Version|Claude\\s*Code');
+    if (version) {
+      const match = version.match(/v?([\d.]+)/i);
+      if (match) metadata.version = match[1];
     }
     return Object.keys(metadata).length > 0 ? metadata : null;
   }
@@ -412,6 +493,10 @@ class ClaudeAgent extends BaseAgent {
   /** Lightweight keepalive to prevent session expiration. @returns {Promise<boolean>} True if keepalive succeeded */
   async keepalive() {
     if (this.freshProcess) { console.log(`[${this.name}] Keepalive skipped (fresh process mode)`); return true; }
+    if (this.isRefreshing || this._commandInFlight) {
+      console.log(`[${this.name}] Keepalive skipped (command in flight)`);
+      return true;
+    }
     if (!this.shell || !this.processReady) { console.log(`[${this.name}] Keepalive: spawning process...`); await this.spawnProcess(); }
     if (this.shell) { console.log(`[${this.name}] Keepalive: sending ping...`); this.shell.write('\x1b'); return true; }
     return false;

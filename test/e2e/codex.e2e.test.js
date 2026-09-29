@@ -268,8 +268,8 @@ describeIfCodex('CodexAgent E2E', () => {
         // Label should be 'Weekly limit'
         expect(weekly.label).toBe('Weekly limit');
 
-        // resetsAt should be a string
-        expect(typeof weekly.resetsAt).toBe('string');
+        // PTY output keeps the display string; JSON-RPC returns an epoch timestamp.
+        expect(['string', 'number']).toContain(typeof weekly.resetsAt);
 
         console.log('Weekly limit validated:', weekly);
       } else {

@@ -132,7 +132,14 @@ class CodexAgent extends BaseAgent {
     return output.includes('? for shortcuts') || output.includes('To get started') ||
            output.includes('% left') || /›\s*\S/.test(this.stripAnsi(output));
   }
-  sendCommands(shell, _output) { logger.agent(this.name, 'Sending /status command...'); setTimeout(() => { if (shell) shell.write('/status\r'); }, 100); }
+  sendCommands(shell, _output) {
+    logger.agent(this.name, 'Sending /status command...');
+    // Codex 0.158 keeps the slash-command picker open after the first Enter.
+    // Confirm the picker entry, then submit the selected command.
+    setTimeout(() => { if (shell) shell.write('/status'); }, 100);
+    setTimeout(() => { if (shell) shell.write('\r'); }, 500);
+    setTimeout(() => { if (shell) shell.write('\r'); }, 900);
+  }
 
   _handleAdditionalPrompts(shell, _data, output) {
     if (!shell) return;
@@ -264,8 +271,7 @@ class CodexAgent extends BaseAgent {
         if (!this.hasCompleteOutput(this.output) && this.shell) {
           logger.agent(this.name, 'Retrying /status...');
           this.output = '';
-          this.shell.write('/status');
-          setTimeout(() => { if (this.shell) this.shell.write('\r'); }, 200);
+          this.sendCommands(this.shell, '');
         }
       }, 5000);
 
@@ -284,8 +290,15 @@ class CodexAgent extends BaseAgent {
   }
 
   hasCompleteOutput(output) {
-    if (output.includes('5h limit') && output.includes('Weekly limit')) return true;
-    return false;
+    const clean = this.stripAnsi(output);
+    if (clean.includes('5h limit') && clean.includes('Weekly limit')) return true;
+
+    const hasWeekly = /Weekly limit:\s*\[.*?\]\s*\d+%\s*left\s*\(resets\s*[^)]+\)/i.test(clean);
+    if (!hasWeekly) return false;
+
+    // Pro accounts can expose only the weekly window (secondary is null in the
+    // equivalent JSON-RPC response), so waiting for a 5h row always times out.
+    return true;
   }
 
   parseResetTime(resetStr) {

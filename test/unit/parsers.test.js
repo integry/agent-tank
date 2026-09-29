@@ -16,7 +16,7 @@ const { BaseAgent } = require('../../src/agents/base.js');
 const { ClaudeAgent } = require('../../src/agents/claude.js');
 const { AgyAgent } = require('../../src/agents/agy.js');
 const { CodexAgent } = require('../../src/agents/codex.js');
-const { parseResetTime, formatDuration } = require('../../src/agents/pty-output-parser.js');
+const { parsePtyOutput, parseResetTime, formatDuration } = require('../../src/agents/pty-output-parser.js');
 
 describe('BaseAgent', () => {
   let agent;
@@ -245,6 +245,80 @@ describe('ClaudeAgent', () => {
     agent = new ClaudeAgent();
   });
 
+  describe('/status metadata', () => {
+    it('bounds fields in Claude 2.1.284 in-place redraw output', () => {
+      const output =
+        'Status Version: 2.1.284 Sessionname:/rename SessionID:9d27e74f-d021-4c96-9d79-f2abaacdda8b ' +
+        'Sessionkind:interactive Peer address:uds:/run/user/0/cc.sock cwd:/tmp ' +
+        "Loginmethod:ClaudeMaxaccount Organization:Example Org Email:user@example.com " +
+        'Cloudsessions:GitHubconnected Model:opus[1m](claude-opus-5-5[1m]) ' +
+        'MCPservers:1pending Settingsources:Usersettings Automodeserver:Enabled Esctocancel';
+
+      expect(agent._parseStatusOutput(output)).toEqual({
+        sessionId: '9d27e74f-d021-4c96-9d79-f2abaacdda8b',
+        cwd: '/tmp',
+        organization: 'Example Org',
+        email: 'user@example.com',
+        model: 'claude-opus-5-5',
+        version: '2.1.284',
+      });
+    });
+
+    it.each(['? for shortcuts', '❯ ', '> ', 'esc to close'])(
+      'still parses line-oriented legacy status output before %s', (prompt) => {
+        const output = [
+          'Claude Code: 2.0.76',
+          'Session ID: abcdef12-3456-7890-abcd-ef1234567890',
+          'Working directory: /tmp/project',
+          'Organization: Example Org',
+          'Email: user@example.com',
+          'Model: claude-sonnet-4-5',
+          '',
+          prompt,
+        ].join('\n');
+
+        expect(agent._hasCompleteStatusOutput(output)).toBe(true);
+        expect(agent._parseStatusOutput(output)).toEqual({
+          sessionId: 'abcdef12-3456-7890-abcd-ef1234567890',
+          cwd: '/tmp/project',
+          organization: 'Example Org',
+          email: 'user@example.com',
+          model: 'claude-sonnet-4-5',
+          version: '2.0.76',
+        });
+      }
+    );
+
+    it.each(['\n', '│', '│\n│'])(
+      'preserves metadata before unknown fields separated by %j', (boundary) => {
+        const output = [
+          'Claude Code: 2.0.76',
+          'Memory: project',
+          'Session ID: abcdef12-3456-7890-abcd-ef1234567890',
+          'IDE: connected',
+          'Working directory: /tmp/project',
+          'Plugins: enabled',
+          'Organization: Example Org',
+          'Memory: project',
+          'Email: user@example.com',
+          'IDE: connected',
+          'Model: claude-sonnet-4-5',
+          '? for shortcuts',
+        ].join(boundary);
+
+        expect(agent._hasCompleteStatusOutput(output)).toBe(true);
+        expect(agent._parseStatusOutput(output)).toEqual({
+          sessionId: 'abcdef12-3456-7890-abcd-ef1234567890',
+          cwd: '/tmp/project',
+          organization: 'Example Org',
+          email: 'user@example.com',
+          model: 'claude-sonnet-4-5',
+          version: '2.0.76',
+        });
+      }
+    );
+  });
+
   describe('parseOutput', () => {
     it('parses session usage with percentage and reset time', () => {
       const output = `
@@ -347,6 +421,21 @@ describe('ClaudeAgent', () => {
       expect(result.weekly).not.toBeNull();
       expect(result.weekly.percent).toBe(55);
       expect(result.weekly.label).toBe('Current week');
+    });
+
+    it('parses a standalone legacy weekly row without reset details', () => {
+      expect(parsePtyOutput('Current week\n0% used')).toEqual({
+        session: null,
+        weeklyAll: null,
+        weeklyFable: null,
+        weekly: {
+          label: 'Current week',
+          percent: 0,
+          resetsAt: null,
+          resetsIn: null,
+          resetsInSeconds: null,
+        },
+      });
     });
 
     it('handles ANSI-formatted output correctly', () => {
@@ -828,6 +917,139 @@ describe('ClaudeAgent', () => {
         ['\r'],
         ['\r'],
       ]);
+    });
+
+    it.each([
+      ['empty output', ''],
+      ['terminal control bytes', '\x1b[?25l\x1b[0m'],
+      ['loading headers', 'Current session\nLoading…\nCurrent week (all models)\nLoading…'],
+    ])('resets the prompt and retries when /usage returns only %s', async (_label, output) => {
+      const shell = { write: jest.fn() };
+      agent.shell = shell;
+      agent.processReady = true;
+
+      const resultPromise = agent.sendCommandAndWait();
+      agent.output = output;
+      await jest.advanceTimersByTimeAsync(2800);
+
+      expect(shell.write.mock.calls.filter(([value]) => value === '/usage')).toHaveLength(2);
+      expect(shell.write).toHaveBeenCalledWith('\x1b');
+
+      agent.output = `
+        Current session
+        5% used
+        Current week (all models)
+        20% used
+        Usage credits are off
+      `;
+      agent._onDataCallback();
+      await jest.advanceTimersByTimeAsync(1100);
+
+      await expect(resultPromise).resolves.toContain('Current session');
+    });
+
+    it.each([2450, 2550, 2650, 2750, 2850, 3150])(
+      'preserves output arriving at %ims and stops pending retry input', async (arrivalTime) => {
+        const shell = { write: jest.fn() };
+        agent.shell = shell;
+        agent.processReady = true;
+        const output = 'Current session\n5% used\nCurrent week (all models)\n20% used\nUsage credits are off';
+
+        const resultPromise = agent.sendCommandAndWait();
+        await jest.advanceTimersByTimeAsync(arrivalTime);
+        const commandWrites = shell.write.mock.calls.filter(([value]) => value !== '\x1b');
+        agent.output = output;
+        agent._onDataCallback();
+        await jest.advanceTimersByTimeAsync(2000);
+
+        await expect(resultPromise).resolves.toBe(output);
+        expect(shell.write.mock.calls.filter(([value]) => value !== '\x1b')).toEqual(commandWrites);
+      }
+    );
+
+    it.each([2450, 2550, 2650, 2750, 2850, 3150, 3550])(
+      'preserves a pending Fable dialog arriving at %ims through retry delays', async (arrivalTime) => {
+        const shell = { write: jest.fn() };
+        agent.shell = shell;
+        agent.processReady = true;
+        const partialOutput = 'Current session\n5% used\nCurrent week (all models)\n20% used\nCurrent week (Fable)\nLoading…';
+
+        const resultPromise = agent.sendCommandAndWait();
+        await jest.advanceTimersByTimeAsync(arrivalTime);
+        const writesBeforeArrival = shell.write.mock.calls.slice();
+        agent.output = partialOutput;
+        agent._onDataCallback();
+        expect(agent.hasCompleteOutput(partialOutput)).toBe(false);
+        await jest.advanceTimersByTimeAsync(2000);
+
+        expect(shell.write.mock.calls).toEqual(writesBeforeArrival);
+        expect(agent.output).toBe(partialOutput);
+        expect(agent._commandInFlight).toBe(true);
+
+        const completeOutput = `${partialOutput}\n30% used\nUsage credits are off`;
+        agent.output = completeOutput;
+        agent._onDataCallback();
+        await jest.advanceTimersByTimeAsync(1100);
+
+        await expect(resultPromise).resolves.toBe(completeOutput);
+        expect(agent.parseOutput(await resultPromise)).toMatchObject({
+          session: { percent: 5 },
+          weeklyAll: { percent: 20 },
+          weeklyFable: { percent: 30 },
+        });
+      }
+    );
+
+    it.each([
+      'Current session\n0% used',
+      'Current week (all models)\n0% used',
+      'Current week\n0% used',
+      'Current week (Fable)\n0% used',
+    ])('does not retry when the only parseable row is %s', (output) => {
+      const shell = { write: jest.fn() };
+      agent.shell = shell;
+      agent._commandInFlight = true;
+      agent._onDataCallback = jest.fn();
+      agent.output = output;
+      expect(agent.hasCompleteOutput(output)).toBe(false);
+
+      agent._retryStalledUsageCommand();
+      jest.advanceTimersByTime(1500);
+
+      expect(shell.write).not.toHaveBeenCalled();
+      expect(agent.output).toBe(output);
+    });
+
+    it.each([
+      [100, 'shell'], [250, 'shell'],
+      [100, 'command'], [250, 'command'],
+    ])('stops retry work when the %s ms delay changes the %s owner', (delay, owner) => {
+      const shell = { write: jest.fn() };
+      agent.shell = shell;
+      agent._commandInFlight = true;
+      agent._onDataCallback = jest.fn();
+      agent._retryStalledUsageCommand();
+      jest.advanceTimersByTime(delay);
+
+      if (owner === 'shell') agent.shell = { write: jest.fn() };
+      else agent._onDataCallback = jest.fn();
+      agent.output = 'Output belonging to the replacement';
+      jest.advanceTimersByTime(1000);
+
+      expect(agent.output).toBe('Output belonging to the replacement');
+      expect(shell.write.mock.calls).toEqual([['\x1b']]);
+      if (owner === 'shell') expect(agent.shell.write).not.toHaveBeenCalled();
+    });
+
+    it('does not let keepalive interrupt an active usage command', async () => {
+      const shell = { write: jest.fn() };
+      agent.shell = shell;
+      agent.processReady = true;
+      agent._commandInFlight = true;
+
+      await expect(agent.keepalive()).resolves.toBe(true);
+
+      expect(shell.write).not.toHaveBeenCalled();
     });
   });
 });
@@ -1341,6 +1563,41 @@ describe('CodexAgent', () => {
 
   beforeEach(() => {
     agent = new CodexAgent();
+  });
+
+  describe('prompt handling', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('confirms and submits /status for Codex 0.158 slash-command menus', () => {
+      const shell = { write: jest.fn() };
+
+      agent.sendCommands(shell, '');
+      jest.advanceTimersByTime(1000);
+
+      expect(shell.write.mock.calls).toEqual([
+        ['/status'],
+        ['\r'],
+        ['\r'],
+      ]);
+    });
+
+    it('accepts a complete weekly-only status response', () => {
+      const output = 'Weekly limit: [███████████████░░░░░] 73% left (resets 19:06 on 3 Oct)';
+
+      expect(agent.hasCompleteOutput(output)).toBe(true);
+    });
+
+    it('waits until the weekly status row has fully rendered', () => {
+      const output = 'Weekly limit: [███████████████░░░░░] loading';
+
+      expect(agent.hasCompleteOutput(output)).toBe(false);
+    });
   });
 
   describe('parseOutput', () => {
