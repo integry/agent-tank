@@ -27,6 +27,8 @@ Verified with the following agent versions (versions checked on 2026-09-29):
 
 ### Fixed
 
+- Recover swallowed Claude `/usage` commands without interrupting partially rendered usage or an active refresh, and parse metadata correctly from compact `/status` output
+- Submit Codex slash commands through the newer command picker and accept weekly-only usage output without waiting for a missing five-hour limit
 - Initialize the Codex app-server JSON-RPC connection and parse its current rate-limit response, including used percentages, window durations, and Unix reset timestamps
 - Preserve Claude Fable allowances at zero usage and wait for delayed allowance rows before dismissing the usage dialog, while allowing accounts without Fable to complete
 - Parse Antigravity's `Refreshes in` reset countdowns, including lines with leftover terminal box borders, and use the correct weekly or five-hour window for pace calculations
