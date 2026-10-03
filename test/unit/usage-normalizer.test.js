@@ -82,6 +82,12 @@ const agyStatus = {
         model: 'Claude and GPT · Five Hour Limit', usageLeft: 100, percentUsed: 0,
         resetsIn: null, resetsInSeconds: null, resetsAt: null, cycle: 'fiveHour', group: 'Claude and GPT',
       },
+      // Real Antigravity output: usageLeft is parsed verbatim while percentUsed
+      // is 100 - usageLeft rounded to one decimal, so the pair sums to 100.01.
+      {
+        model: 'Gemini 3 Pro', usageLeft: 90.31, percentUsed: 9.7,
+        resetsIn: '20h', resetsInSeconds: 72000, resetsAt: '2026-10-04T15:59:00.000Z', cycle: 'sessionAgy',
+      },
     ],
   },
   metadata: { cli: 'agy' },
@@ -196,6 +202,7 @@ describe('usage-normalizer', () => {
         ['five_hour', 'Gemini · Five Hour Limit'],
         ['weekly', 'Claude and GPT · Weekly Limit'],
         ['five_hour', 'Claude and GPT · Five Hour Limit'],
+        ['session', 'Gemini 3 Pro'],
       ]);
     });
 
@@ -218,6 +225,21 @@ describe('usage-normalizer', () => {
       expect(placeholder.resets_at).toBeNull();
       expect(placeholder.resets_in_seconds).toBeNull();
       expect(placeholder.pace).toBeNull();
+    });
+
+    it('keeps the reported decimal usageLeft and derives used_percent from it', () => {
+      const decimal = result.windows[4];
+      expect(decimal.remaining_percent).toBe(90.31);
+      expect(decimal.used_percent).toBe(9.69);
+      expect(decimal.used_percent + decimal.remaining_percent).toBe(100);
+    });
+
+    it('falls back to percentUsed when usageLeft is missing', () => {
+      const fallback = normalizeAgentStatus({
+        ...agyStatus,
+        usage: { models: [{ model: 'Gemini Pro', percentUsed: 12.5, resetsAt: null, resetsInSeconds: null, cycle: 'sessionAgy' }] },
+      }, { now: NOW });
+      expect(fallback.windows[0]).toMatchObject({ used_percent: 12.5, remaining_percent: 87.5 });
     });
 
     it('maps legacy per-model entries without a group cycle to session windows', () => {
@@ -277,6 +299,52 @@ describe('usage-normalizer', () => {
       expect(pty.windows[0].resets_at).toBe(new Date(LAST_UPDATED_MS + 600 * 1000).toISOString());
       expect(pty.windows[0].resets_in_seconds).toBe(540);
     });
+
+    it('keeps decimal PTY percentages complementary', () => {
+      // codex-pty-helpers computes percentUsed as 100 - percentLeft (9.689999...).
+      const pty = normalizeAgentStatus({
+        ...codexStatus,
+        usage: { fiveHour: null, weekly: { percentUsed: 100 - 90.31, percentLeft: 90.31, resetsAt: null, resetsInSeconds: null } },
+      }, { now: NOW });
+      expect(pty.windows[0]).toMatchObject({ used_percent: 9.69, remaining_percent: 90.31 });
+    });
+
+    it('derives remaining_percent from percentUsed when a payload reports an inconsistent pair', () => {
+      const rpc = normalizeAgentStatus({
+        ...codexStatus,
+        usage: { fiveHour: null, weekly: { percentUsed: 12.4, percentLeft: 88, resetsAt: null, resetsInSeconds: null } },
+      }, { now: NOW });
+      expect(rpc.windows[0]).toMatchObject({ used_percent: 12.4, remaining_percent: 87.6 });
+    });
+  });
+
+  describe('multiple accounts from the same provider', () => {
+    const work = { ...codexStatus, name: 'codex', alias: 'Work', metadata: { planType: 'pro' } };
+    const personal = {
+      ...codexStatus,
+      name: 'codex',
+      alias: 'Personal',
+      usage: { ...codexStatus.usage, weekly: { ...codexStatus.usage.weekly, percentUsed: 55, percentLeft: 45 } },
+    };
+    const { providers } = normalizeStatus({ work, personal }, { now: NOW });
+
+    it('uses the configured id from the status map key, not the provider name', () => {
+      expect(providers.map(p => [p.id, p.provider, p.plan])).toEqual([
+        ['work', 'codex', 'pro'],
+        ['personal', 'codex', 'plus'],
+      ]);
+    });
+
+    it('keeps each account\'s windows and raw payload separate', () => {
+      expect(providers.map(p => p.windows[0].used_percent)).toEqual([12, 55]);
+      expect(providers.map(p => p.raw.alias)).toEqual(['Work', 'Personal']);
+      expect(providers.map(p => p.raw.id)).toEqual(['work', 'personal']);
+    });
+
+    it('normalizes a single account under its configured id', () => {
+      const single = normalizeAgentStatus({ ...personal, id: 'personal' }, { now: NOW });
+      expect(single).toMatchObject({ id: 'personal', provider: 'codex' });
+    });
   });
 
   describe('canonical schema conformance', () => {
@@ -313,7 +381,8 @@ describe('usage-normalizer', () => {
         expect(typeof window.label).toBe('string');
         expect(typeof window.used_percent).toBe('number');
         expect(typeof window.remaining_percent).toBe('number');
-        expect(window.used_percent + window.remaining_percent).toBeCloseTo(100);
+        // The two percentages are complements; only float error is tolerated.
+        expect(window.used_percent + window.remaining_percent).toBeCloseTo(100, 10);
         if (window.resets_at === null) {
           expect(window.resets_in_seconds).toBeNull();
         } else {

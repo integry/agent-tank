@@ -122,14 +122,26 @@ function normalizePace(entry) {
 
 /**
  * Build a canonical window from already-extracted values.
+ *
+ * Only one percentage is authoritative: `usedPercent` when it is finite,
+ * otherwise `remainingPercent`. The other side is always derived as the
+ * complement of the rounded value, so `used_percent + remaining_percent` is
+ * 100 (within float precision of the two-decimal output) even when a vendor
+ * payload carries a separately rounded pair such as Antigravity's
+ * `usageLeft: 90.31` / `percentUsed: 9.7`.
+ *
  * @returns {CanonicalWindow|null} Null when no usage percentage is available
  */
 function buildWindow({ type, label, usedPercent, remainingPercent, resetsAt, resetsInSeconds, entry }, context) {
-  let used = isFiniteNumber(usedPercent) ? usedPercent : null;
-  let remaining = isFiniteNumber(remainingPercent) ? remainingPercent : null;
-  if (used === null && remaining === null) return null;
-  if (used === null) used = 100 - remaining;
-  if (remaining === null) remaining = 100 - used;
+  let used;
+  if (isFiniteNumber(usedPercent)) {
+    used = roundPercent(usedPercent);
+  } else if (isFiniteNumber(remainingPercent)) {
+    used = roundPercent(100 - remainingPercent);
+  } else {
+    return null;
+  }
+  const remaining = roundPercent(100 - used);
 
   const resetsAtIso = resolveResetsAt(resetsAt, resetsInSeconds, context.anchorMs);
   const resetsInSecondsOut = resetsAtIso === null
@@ -139,8 +151,8 @@ function buildWindow({ type, label, usedPercent, remainingPercent, resetsAt, res
   return {
     type,
     label,
-    used_percent: roundPercent(used),
-    remaining_percent: roundPercent(remaining),
+    used_percent: used,
+    remaining_percent: remaining,
     resets_at: resetsAtIso,
     resets_in_seconds: resetsInSecondsOut,
     pace: normalizePace(entry),
@@ -220,10 +232,12 @@ function normalizeAgyWindows(usage, context) {
   const windows = [];
   for (const entry of usage.models) {
     if (!entry) continue;
+    // Antigravity reports the remaining percentage; percentUsed is derived from
+    // it and rounded to one decimal, so usageLeft wins when it is present.
     const window = buildWindow({
       type: AGY_CYCLE_TYPES[entry.cycle] || 'session',
       label: entry.model || 'Model quota',
-      usedPercent: entry.percentUsed,
+      usedPercent: isFiniteNumber(entry.usageLeft) ? null : entry.percentUsed,
       remainingPercent: entry.usageLeft,
       resetsAt: entry.resetsAt,
       resetsInSeconds: entry.resetsInSeconds,
@@ -346,8 +360,10 @@ function normalizeAgentStatus(agentStatus, options = {}) {
  */
 function normalizeStatus(statusMap, options = {}) {
   const now = options.now ?? Date.now();
+  // The map key is the configured agent id (e.g. "work" for a second codex
+  // account), so it takes precedence over any id carried in the payload.
   const providers = Object.entries(statusMap || {}).map(([id, agentStatus]) =>
-    normalizeAgentStatus({ id, ...agentStatus }, { ...options, now })
+    normalizeAgentStatus({ ...agentStatus, id }, { ...options, now })
   );
   return { providers };
 }

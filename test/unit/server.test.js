@@ -105,4 +105,54 @@ describe('server request handler', () => {
     expect(json.success).toBe(true);
     expect(json.provider.id).toBe('claude');
   });
+
+  describe('multiple accounts from the same provider', () => {
+    function addCodexAccount(id, alias, percentUsed, planType) {
+      const agent = tank.createAgent({ provider: 'codex', id, alias, configPath: `/srv/accounts/codex-${id}` });
+      agent.usage = {
+        fiveHour: null,
+        weekly: { percentUsed, percentLeft: 100 - percentUsed, resetsAt: '2026-10-10T00:00:00Z', resetsInSeconds: 3600 },
+      };
+      agent.metadata = { planType };
+      agent.lastUpdated = new Date().toISOString();
+      tank.agents.set(id, agent);
+    }
+
+    beforeEach(() => {
+      tank.agents.clear();
+      addCodexAccount('work', 'Work', 70, 'pro');
+      addCodexAccount('personal', 'Personal', 15, 'plus');
+    });
+
+    it('GET /status keys each provider by its configured id, not the provider family', async () => {
+      const { json } = await invoke(handler, 'GET', '/status');
+
+      expect(json.providers.map(p => [p.id, p.provider, p.plan, p.windows[0].used_percent])).toEqual([
+        ['work', 'codex', 'pro', 70],
+        ['personal', 'codex', 'plus', 15],
+      ]);
+      expect(json.providers.map(p => p.raw.alias)).toEqual(['Work', 'Personal']);
+    });
+
+    it('GET /status/:id resolves each configured id independently', async () => {
+      const work = await invoke(handler, 'GET', '/status/work');
+      const personal = await invoke(handler, 'GET', '/status/personal');
+      const family = await invoke(handler, 'GET', '/status/codex');
+
+      expect(work.json).toMatchObject({ id: 'work', provider: 'codex', plan: 'pro' });
+      expect(personal.json).toMatchObject({ id: 'personal', provider: 'codex', plan: 'plus' });
+      expect(family.status).toBe(404);
+    });
+
+    it('POST /refresh/:id refreshes and returns only the configured account', async () => {
+      const refreshAgent = jest.spyOn(tank, 'refreshAgent').mockResolvedValue();
+
+      const { status, json } = await invoke(handler, 'POST', '/refresh/personal');
+
+      expect(status).toBe(200);
+      expect(refreshAgent).toHaveBeenCalledWith('personal');
+      expect(json.provider).toMatchObject({ id: 'personal', provider: 'codex' });
+      expect(json.provider.windows[0].used_percent).toBe(15);
+    });
+  });
 });

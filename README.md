@@ -417,7 +417,10 @@ reset, so its reset fields are `null`.
 
 Every provider returns the same canonical shape. Limits are a `windows` list
 (`type` is one of `session`, `five_hour`, `weekly`), all resets are ISO 8601,
-and `pace` is `null` when there is no pace signal. The untouched per-agent
+and `pace` is `null` when there is no pace signal. Percentages are rounded to
+two decimals, and `remaining_percent` is always `100 - used_percent`, so the two
+add up to 100 (Antigravity's reported remaining percentage is kept as-is and
+`used_percent` is derived from it). The untouched per-agent
 payload is kept under `raw` (abbreviated below). Antigravity limits reporting
 "Quota available" are kept with `resets_at`/`resets_in_seconds` set to `null`.
 
@@ -658,10 +661,20 @@ const watcher = new AgentTank({
 
 await watcher.start();
 
-const status = watcher.getStatus();
-console.log(status);
+// Canonical shape shared by every provider (same as GET /status)
+const { providers } = watcher.getNormalizedStatus();
+for (const { id, provider, windows } of providers) {
+  for (const w of windows) {
+    console.log(`${id} (${provider}) ${w.label}: ${w.used_percent}% used, resets ${w.resets_at}`);
+  }
+}
 
 await watcher.refreshAgent('work');
+// One configured account (same as GET /status/work), or null if unknown
+console.log(watcher.getNormalizedAgentStatus('work'));
+
+// Raw per-provider payloads are still available
+console.log(watcher.getStatus());
 
 watcher.stop();
 ```
