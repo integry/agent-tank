@@ -39,8 +39,8 @@ function createRequestHandler(tank) {
       }
 
       if (req.method === 'GET' && path === '/status') {
-        const status = tank.getStatus();
-        logger.server(`GET /status - returning status for ${Object.keys(status).length} agents`);
+        const status = tank.getNormalizedStatus();
+        logger.server(`GET /status - returning status for ${status.providers.length} agents`);
         res.setHeader('Content-Type', 'application/json');
         res.writeHead(200);
         res.end(JSON.stringify(status, null, 2));
@@ -64,7 +64,7 @@ function createRequestHandler(tank) {
 
       if (req.method === 'GET' && path.startsWith('/status/')) {
         const agentName = path.slice(8);
-        const status = tank.getAgentStatus(agentName);
+        const status = tank.getNormalizedAgentStatus(agentName);
         if (!status) {
           res.writeHead(404);
           res.end(JSON.stringify({ error: 'Agent not found' }));
@@ -80,7 +80,7 @@ function createRequestHandler(tank) {
         await tank.refreshAll();
         res.setHeader('Content-Type', 'application/json');
         res.writeHead(200);
-        res.end(JSON.stringify({ success: true, status: tank.getStatus() }));
+        res.end(JSON.stringify({ success: true, ...tank.getNormalizedStatus() }));
         return;
       }
 
@@ -90,7 +90,7 @@ function createRequestHandler(tank) {
           await tank.refreshAgent(agentName);
           res.setHeader('Content-Type', 'application/json');
           res.writeHead(200);
-          res.end(JSON.stringify({ success: true, status: tank.getAgentStatus(agentName) }));
+          res.end(JSON.stringify({ success: true, provider: tank.getNormalizedAgentStatus(agentName) }));
         } catch (err) {
           res.writeHead(404);
           res.end(JSON.stringify({ error: err.message }));
