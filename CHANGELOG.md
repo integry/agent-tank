@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `GET /status`, `GET /status/:id`, the `POST /refresh` endpoints, and `--once --json` now return a canonical usage shape shared by every provider: a `providers` array whose entries carry `id`, `provider`, `plan`, `status`, `last_updated`, and a `windows` list (`type`, `label`, `used_percent`, `remaining_percent`, ISO 8601 `resets_at`, `resets_in_seconds`, optional `pace`). The original per-provider payload is preserved under each provider's `raw` field.
+
 ## [0.9.11] - 2026-09-29
 
 ### Verified

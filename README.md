@@ -405,78 +405,84 @@ reset, so its reset fields are `null`.
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/` | HTML status page |
-| GET | `/status` | JSON status for all agents |
-| GET | `/status/:id` | JSON status for one configured account |
+| GET | `/status` | Canonical usage for all agents (`{ "providers": [...] }`) |
+| GET | `/status/:id` | Canonical usage for one configured account |
 | GET | `/config` | Auto-refresh and history config |
 | GET | `/history` | History summary |
 | GET | `/history/:id` | History for one configured account |
-| POST | `/refresh` | Refresh all agents |
-| POST | `/refresh/:id` | Refresh one configured account |
+| POST | `/refresh` | Refresh all agents; returns `{ "success": true, "providers": [...] }` |
+| POST | `/refresh/:id` | Refresh one configured account; returns `{ "success": true, "provider": {...} }` |
 
 ### Example `GET /status`
 
+Every provider returns the same canonical shape. Limits are a `windows` list
+(`type` is one of `session`, `five_hour`, `weekly`), all resets are ISO 8601,
+and `pace` is `null` when there is no pace signal. The untouched per-agent
+payload is kept under `raw` (abbreviated below). Antigravity limits reporting
+"Quota available" are kept with `resets_at`/`resets_in_seconds` set to `null`.
+
 ```json
 {
-  "claude": {
-    "name": "claude",
-    "id": "claude",
-    "alias": null,
-    "provider": "claude",
-    "usage": {
-      "session": {
-        "label": "Current session",
-        "percent": 42,
-        "resetsAt": "10pm (Europe/London)",
-        "resetsIn": "12m",
-        "resetsInSeconds": 764
-      },
-      "weeklyAll": {
-        "label": "Current week (all models)",
-        "percent": 31,
-        "resetsAt": "Mar 13, 3am (Europe/London)",
-        "resetsIn": "4d 5h",
-        "resetsInSeconds": 364364
-      },
-      "weeklyFable": {
-        "label": "Current week (Fable)",
-        "percent": 82,
-        "resetsAt": "Mar 13, 3am (Europe/London)",
-        "resetsIn": "4d 5h",
-        "resetsInSeconds": 364364
-      }
+  "providers": [
+    {
+      "id": "claude",
+      "provider": "claude",
+      "plan": "max",
+      "status": "ok",
+      "last_updated": "2026-10-03T19:59:00.000Z",
+      "error": null,
+      "windows": [
+        {
+          "type": "session",
+          "label": "Current session",
+          "used_percent": 42,
+          "remaining_percent": 58,
+          "resets_at": "2026-10-03T21:19:00.000Z",
+          "resets_in_seconds": 4740,
+          "pace": { "ratio": 0.8, "burning_fast": false }
+        },
+        {
+          "type": "weekly",
+          "label": "Current week (all models)",
+          "used_percent": 31,
+          "remaining_percent": 69,
+          "resets_at": "2026-10-08T01:00:00.000Z",
+          "resets_in_seconds": 363600,
+          "pace": { "ratio": 1.1, "burning_fast": true }
+        },
+        {
+          "type": "weekly",
+          "label": "Current week (Fable)",
+          "used_percent": 82,
+          "remaining_percent": 18,
+          "resets_at": "2026-10-08T01:00:00.000Z",
+          "resets_in_seconds": 363600,
+          "pace": { "ratio": 2.91, "burning_fast": true }
+        }
+      ],
+      "raw": { "name": "claude", "usage": { "session": { "percent": 42, "resetsAt": "12:20am (Europe/Berlin)" } } }
     },
-    "metadata": {
-      "email": "user@example.com",
-      "version": "2.1.71"
-    },
-    "lastUpdated": "2026-03-08T21:47:15.090Z",
-    "error": null,
-    "isRefreshing": false
-  },
-  "codex": {
-    "name": "codex",
-    "usage": {
-      "fiveHour": {
-        "percentUsed": 0,
-        "resetsAt": "02:44 on 9 Mar",
-        "resetsIn": "4h 56m",
-        "resetsInSeconds": 17807
-      },
-      "weekly": {
-        "percentUsed": 0,
-        "resetsAt": "21:44 on 15 Mar",
-        "resetsIn": "6d 23h",
-        "resetsInSeconds": 604607
-      }
-    },
-    "metadata": {
-      "email": "user@example.com",
-      "model": "gpt-5.3-codex"
-    },
-    "lastUpdated": "2026-03-08T21:47:12.648Z",
-    "error": null,
-    "isRefreshing": false
-  }
+    {
+      "id": "codex",
+      "provider": "codex",
+      "plan": "plus",
+      "status": "ok",
+      "last_updated": "2026-10-03T19:59:00.000Z",
+      "error": null,
+      "windows": [
+        {
+          "type": "weekly",
+          "label": "Weekly limit",
+          "used_percent": 12,
+          "remaining_percent": 88,
+          "resets_at": "2026-10-10T19:45:40.000Z",
+          "resets_in_seconds": 603940,
+          "pace": null
+        }
+      ],
+      "raw": { "name": "codex", "usage": { "fiveHour": null, "weekly": { "percentUsed": 12, "resetsAt": 1791661540 } } }
+    }
+  ]
 }
 ```
 
