@@ -426,7 +426,18 @@ payload is kept under `raw` (abbreviated below). Antigravity limits reporting
 
 - `model` names the model (or model group) a window is specific to, such as
   `"Fable"` or `"GPT-5.3-Codex-Spark"`, and is `null` for windows covering all
-  models. Use it to tell apart windows that share a `type`.
+  models. Use it to tell apart windows that share a `type`. Antigravity's
+  grouped limits use the group name, so `"Gemini · Weekly Limit Remaining"` and
+  `"Gemini · Five Hour Limit Remaining"` both have `model: "Gemini"` (the
+  qualified name stays in `label`).
+- `used_percent` and `remaining_percent` are clamped to the 0–100 range, even
+  if a vendor reports something like 102% used.
+- `status` is `"refreshing"` while a refresh is running and `"error"` when the
+  last refresh failed, even if `windows` still holds cached usage from an
+  earlier refresh. It is `"pending"` before the first refresh and `"ok"`
+  otherwise.
+- Claude's extra usage is a spend budget, not a rate-limit window, so it isn't
+  in `windows`. It is still available under `raw.usage.extraUsage`.
 - `last_updated` is when the usage in `windows` was captured. A refresh that
   fails but keeps the cached usage does not move it (or the reset times); the
   failure is reported through `status: "error"` and `error`.

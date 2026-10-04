@@ -62,8 +62,9 @@ function isFiniteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+// Clamped to [0, 100]: vendor glitches can report e.g. 102% used or -1% left.
 function roundPercent(value) {
-  return Math.round(value * 100) / 100;
+  return Math.round(Math.min(100, Math.max(0, value)) * 100) / 100;
 }
 
 function toTimestampMs(value) {
@@ -121,12 +122,10 @@ function normalizePace(entry) {
 /**
  * Build a canonical window from already-extracted values.
  *
- * Only one percentage is authoritative: `usedPercent` when it is finite,
- * otherwise `remainingPercent`. The other side is always derived as the
- * complement of the rounded value, so `used_percent + remaining_percent` is
- * 100 (within float precision of the two-decimal output) even when a vendor
- * payload carries a separately rounded pair such as Antigravity's
- * `usageLeft: 90.31` / `percentUsed: 9.7`.
+ * Only one percentage is authoritative: `usedPercent` when finite, otherwise
+ * `remainingPercent`. The other is the complement of the clamped, rounded value,
+ * so the pair sums to 100 even when a vendor reports a separately rounded pair
+ * such as Antigravity's `usageLeft: 90.31` / `percentUsed: 9.7`.
  *
  * @returns {CanonicalWindow|null} Null when no usage percentage is available
  */
@@ -252,10 +251,11 @@ function normalizeAgyWindows(usage, context) {
     if (!entry) continue;
     // Antigravity reports the remaining percentage; percentUsed is derived from
     // it and rounded to one decimal, so usageLeft wins when it is present.
+    // Grouped limits ("Gemini · Weekly Limit") identify their group, not the label.
     const window = buildWindow({
       type: agyWindowType(entry.cycle),
       label: entry.model || 'Model quota',
-      model: entry.model || null,
+      model: entry.group || entry.model || null,
       usedPercent: isFiniteNumber(entry.usageLeft) ? null : entry.percentUsed,
       remainingPercent: entry.usageLeft,
       resetsAt: entry.resetsAt,

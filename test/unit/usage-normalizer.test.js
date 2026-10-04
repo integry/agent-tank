@@ -240,7 +240,7 @@ describe('usage-normalizer', () => {
       expect(result.windows[1]).toEqual({
         type: 'five_hour',
         label: 'Gemini · Five Hour Limit',
-        model: 'Gemini · Five Hour Limit',
+        model: 'Gemini',
         used_percent: 20,
         remaining_percent: 80,
         resets_at: '2026-10-03T23:14:00.000Z',
@@ -322,8 +322,33 @@ describe('usage-normalizer', () => {
       });
     });
 
-    it('carries the model or group name in the model field', () => {
-      expect(result.windows.map(w => w.model)).toEqual(result.windows.map(w => w.label));
+    it('carries the group name in the model field while keeping the qualified label', () => {
+      expect(result.windows.map(w => [w.label, w.model])).toEqual([
+        ['Gemini · Weekly Limit', 'Gemini'],
+        ['Gemini · Five Hour Limit', 'Gemini'],
+        ['Claude and GPT · Weekly Limit', 'Claude and GPT'],
+        ['Claude and GPT · Five Hour Limit', 'Claude and GPT'],
+        ['Gemini 3 Pro', 'Gemini 3 Pro'],
+      ]);
+    });
+
+    it('gives the weekly and five-hour windows of one group the same model identity', () => {
+      const gemini = result.windows.filter(w => w.model === 'Gemini');
+      expect(gemini.map(w => w.type)).toEqual(['weekly', 'five_hour']);
+    });
+
+    it('falls back to the entry name for ungrouped legacy entries and to null when unnamed', () => {
+      const windows = normalizeAgentStatus({
+        ...agyStatus,
+        usage: { models: [
+          { model: 'Gemini Pro', usageLeft: 75, cycle: 'sessionAgy' },
+          { usageLeft: 50, cycle: 'sessionAgy' },
+        ] },
+      }, { now: NOW }).windows;
+      expect(windows.map(w => [w.label, w.model])).toEqual([
+        ['Gemini Pro', 'Gemini Pro'],
+        ['Model quota', null],
+      ]);
     });
   });
 
@@ -561,6 +586,35 @@ describe('usage-normalizer', () => {
         usage: { models: [{ model: 'X', usageLeft: 50, percentUsed: 50, resetsAt: '2026-10-03T19:00:00.000Z', resetsInSeconds: 1, cycle: 'fiveHour' }] },
       }, { now: NOW });
       expect(result.windows[0].resets_in_seconds).toBe(0);
+    });
+
+    describe('percentage clamping', () => {
+      it('clamps a used percentage above 100', () => {
+        const result = normalizeAgentStatus({
+          ...claudeStatus,
+          usage: { session: { percent: 102, resetsAt: null } },
+        }, { now: NOW });
+        expect(result.windows[0]).toMatchObject({ used_percent: 100, remaining_percent: 0 });
+      });
+
+      it('clamps a negative used percentage', () => {
+        const result = normalizeAgentStatus({
+          ...codexStatus,
+          usage: { weekly: { percentUsed: -3, resetsAt: null } },
+        }, { now: NOW });
+        expect(result.windows[0]).toMatchObject({ used_percent: 0, remaining_percent: 100 });
+      });
+
+      it.each([
+        [-1, 100, 0],
+        [101, 0, 100],
+      ])('clamps a remaining percentage of %p', (usageLeft, used, remaining) => {
+        const result = normalizeAgentStatus({
+          ...agyStatus,
+          usage: { models: [{ model: 'X', usageLeft, cycle: 'sessionAgy' }] },
+        }, { now: NOW });
+        expect(result.windows[0]).toMatchObject({ used_percent: used, remaining_percent: remaining });
+      });
     });
   });
 

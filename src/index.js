@@ -328,6 +328,9 @@ class AgentTank {
     }
   }
 
+  // Tests depend on this signature (string or { provider, id, alias, configPath })
+  // and on `requestedAgents` / `agents`: see test/fixtures/cli-once-json-stub.js,
+  // test/unit/server.test.js and test/unit/client-auto-refresh.test.js.
   createAgent(input) {
     const spec = typeof input === 'string'
       ? { provider: input, id: input, alias: null, configPath: null }
