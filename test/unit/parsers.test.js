@@ -258,9 +258,25 @@ describe('ClaudeAgent', () => {
         sessionId: '9d27e74f-d021-4c96-9d79-f2abaacdda8b',
         cwd: '/tmp',
         organization: 'Example Org',
+        loginMethod: 'ClaudeMaxaccount',
         email: 'user@example.com',
         model: 'claude-opus-5-5',
         version: '2.1.284',
+      });
+    });
+
+    it('reads the login method from line-oriented status output', () => {
+      const output = [
+        'Version: 2.1.71',
+        'Login method: Claude Pro account',
+        'Organization: Example Org',
+        'Email: user@example.com',
+        '? for shortcuts',
+      ].join('\n');
+
+      expect(agent._parseStatusOutput(output)).toMatchObject({
+        loginMethod: 'Claude Pro account',
+        organization: 'Example Org',
       });
     });
 

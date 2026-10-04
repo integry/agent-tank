@@ -2,6 +2,7 @@
  * Unit tests for the canonical usage normalization layer.
  */
 
+const logger = require('../../src/logger.js');
 const {
   WINDOW_TYPES,
   NORMALIZERS,
@@ -52,6 +53,7 @@ const claudeStatus = {
   },
   metadata: { email: 'user@example.com', version: '2.1.71' },
   lastUpdated: LAST_UPDATED,
+  usageUpdatedAt: LAST_UPDATED,
   error: null,
   isRefreshing: false,
 };
@@ -178,6 +180,34 @@ describe('usage-normalizer', () => {
       expect(session.pace).toBeNull();
     });
 
+    it('tags only the Fable window with a model so same-type windows are distinguishable', () => {
+      expect(result.windows.map(w => [w.type, w.model])).toEqual([
+        ['session', null],
+        ['weekly', null],
+        ['weekly', 'Fable'],
+      ]);
+    });
+
+    it.each([
+      ['Claude Pro account', 'pro'],
+      ['ClaudeMaxaccount', 'max'],
+      ['Claude Team account', 'team'],
+    ])('prefers the plan reported by the /status login method %j over the Fable heuristic', (loginMethod, plan) => {
+      const reported = normalizeAgentStatus({
+        ...claudeStatus,
+        metadata: { ...claudeStatus.metadata, loginMethod },
+      }, { now: NOW });
+      expect(reported.plan).toBe(plan);
+    });
+
+    it('falls back to the Fable heuristic when the login method names no plan', () => {
+      const apiKey = normalizeAgentStatus({
+        ...claudeStatus,
+        metadata: { ...claudeStatus.metadata, loginMethod: 'Anthropic API key' },
+      }, { now: NOW });
+      expect(apiKey.plan).toBe('max');
+    });
+
     it('maps the legacy single weekly row and reports an unknown plan without Fable', () => {
       const legacy = normalizeAgentStatus({
         ...claudeStatus,
@@ -185,7 +215,7 @@ describe('usage-normalizer', () => {
       }, { now: NOW });
       expect(legacy.plan).toBeNull();
       expect(legacy.windows).toEqual([{
-        type: 'weekly', label: 'Current week', used_percent: 50, remaining_percent: 50,
+        type: 'weekly', label: 'Current week', model: null, used_percent: 50, remaining_percent: 50,
         resets_at: null, resets_in_seconds: null, pace: null,
       }]);
     });
@@ -210,6 +240,7 @@ describe('usage-normalizer', () => {
       expect(result.windows[1]).toEqual({
         type: 'five_hour',
         label: 'Gemini · Five Hour Limit',
+        model: 'Gemini · Five Hour Limit',
         used_percent: 20,
         remaining_percent: 80,
         resets_at: '2026-10-03T23:14:00.000Z',
@@ -249,6 +280,51 @@ describe('usage-normalizer', () => {
       }, { now: NOW });
       expect(legacy.windows[0].type).toBe('session');
     });
+
+    describe('cycle allow-list', () => {
+      let warnSpy;
+
+      beforeEach(() => {
+        warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+      });
+
+      afterEach(() => {
+        warnSpy.mockRestore();
+      });
+
+      function windowTypeFor(entry) {
+        return normalizeAgentStatus({
+          ...agyStatus,
+          usage: { models: [{ model: 'Gemini Pro', usageLeft: 75, resetsAt: null, resetsInSeconds: null, ...entry }] },
+        }, { now: NOW }).windows[0].type;
+      }
+
+      it('maps entries without a cycle to session silently', () => {
+        expect(windowTypeFor({})).toBe('session');
+        expect(warnSpy).not.toHaveBeenCalled();
+      });
+
+      it.each(['daily', 'hourly', 'toString'])('logs an unrecognised %s cycle instead of silently treating it as a session', (cycle) => {
+        expect(windowTypeFor({ cycle })).toBe('session');
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(`"${cycle}"`));
+      });
+
+      it('logs each unrecognised cycle only once across repeated normalizations', () => {
+        windowTypeFor({ cycle: 'monthly' });
+        windowTypeFor({ cycle: 'monthly' });
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not log for allow-listed cycles', () => {
+        expect(['weekly', 'fiveHour', 'sessionAgy'].map(cycle => windowTypeFor({ cycle })))
+          .toEqual(['weekly', 'five_hour', 'session']);
+        expect(warnSpy).not.toHaveBeenCalled();
+      });
+    });
+
+    it('carries the model or group name in the model field', () => {
+      expect(result.windows.map(w => w.model)).toEqual(result.windows.map(w => w.label));
+    });
   });
 
   describe('Codex normalizer', () => {
@@ -259,6 +335,7 @@ describe('usage-normalizer', () => {
       expect(weekly).toEqual({
         type: 'weekly',
         label: 'Weekly limit',
+        model: null,
         used_percent: 12,
         remaining_percent: 88,
         resets_at: new Date(codexWeeklyResetEpoch * 1000).toISOString(),
@@ -271,6 +348,13 @@ describe('usage-normalizer', () => {
       expect(result.windows.map(w => [w.type, w.label])).toEqual([
         ['weekly', 'Weekly limit'],
         ['five_hour', 'GPT-5.3-Codex-Spark 5h limit'],
+      ]);
+    });
+
+    it('carries the per-model limit name in the model field', () => {
+      expect(result.windows.map(w => [w.type, w.model])).toEqual([
+        ['weekly', null],
+        ['five_hour', 'GPT-5.3-Codex-Spark'],
       ]);
     });
 
@@ -355,7 +439,7 @@ describe('usage-normalizer', () => {
     }, { now: NOW });
 
     const PROVIDER_KEYS = ['error', 'id', 'last_updated', 'plan', 'provider', 'raw', 'status', 'windows'];
-    const WINDOW_KEYS = ['label', 'pace', 'remaining_percent', 'resets_at', 'resets_in_seconds', 'type', 'used_percent'];
+    const WINDOW_KEYS = ['label', 'model', 'pace', 'remaining_percent', 'resets_at', 'resets_in_seconds', 'type', 'used_percent'];
     const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
     it('returns a providers array with one entry per agent', () => {
@@ -379,6 +463,7 @@ describe('usage-normalizer', () => {
         expect(Object.keys(window).sort()).toEqual(WINDOW_KEYS);
         expect(WINDOW_TYPES).toContain(window.type);
         expect(typeof window.label).toBe('string');
+        expect(window.model === null || typeof window.model === 'string').toBe(true);
         expect(typeof window.used_percent).toBe('number');
         expect(typeof window.remaining_percent).toBe('number');
         // The two percentages are complements; only float error is tolerated.
@@ -405,6 +490,47 @@ describe('usage-normalizer', () => {
     it('survives a JSON round trip unchanged', () => {
       const { raw: _raw, ...provider } = providers[0];
       expect(JSON.parse(JSON.stringify(provider))).toEqual(provider);
+    });
+  });
+
+  describe('reset anchor after a failed refresh that kept cached usage', () => {
+    // Usage captured at 19:00; a failed refresh at 19:30 bumped only lastUpdated.
+    const CAPTURED_AT = '2026-10-03T19:00:00.000Z';
+    const FAILED_AT = '2026-10-03T19:30:00.000Z';
+    const LATER = Date.parse('2026-10-03T19:45:00.000Z');
+    const failed = { lastUpdated: FAILED_AT, usageUpdatedAt: CAPTURED_AT, error: 'Session error — using cached data' };
+
+    it('anchors Claude human reset strings at the capture time, not lastUpdated', () => {
+      const result = normalizeAgentStatus({
+        ...claudeStatus,
+        ...failed,
+        usage: { session: { percent: 40, resetsAt: '8pm (Europe/London)', resetsInSeconds: 3600 } },
+      }, { now: LATER });
+      expect(result.status).toBe('error');
+      expect(result.last_updated).toBe(CAPTURED_AT);
+      expect(result.windows[0].resets_at).toBe('2026-10-03T20:00:00.000Z');
+      expect(result.windows[0].resets_in_seconds).toBe(900);
+    });
+
+    it('anchors Codex PTY human reset strings at the capture time, not lastUpdated', () => {
+      const result = normalizeAgentStatus({
+        ...codexStatus,
+        ...failed,
+        usage: { fiveHour: { percentUsed: 1, percentLeft: 99, resetsAt: '20:00 on 3 Oct', resetsInSeconds: 3600 }, weekly: null },
+      }, { now: LATER });
+      expect(result.last_updated).toBe(CAPTURED_AT);
+      expect(result.windows[0].resets_at).toBe('2026-10-03T20:00:00.000Z');
+      expect(result.windows[0].resets_in_seconds).toBe(900);
+    });
+
+    it('falls back to lastUpdated for payloads without a capture time', () => {
+      const result = normalizeAgentStatus({
+        ...codexStatus,
+        lastUpdated: FAILED_AT,
+        usage: { fiveHour: { percentUsed: 1, percentLeft: 99, resetsAt: '21:30 on 3 Oct', resetsInSeconds: 3600 }, weekly: null },
+      }, { now: LATER });
+      expect(result.last_updated).toBe(FAILED_AT);
+      expect(result.windows[0].resets_at).toBe('2026-10-03T20:30:00.000Z');
     });
   });
 

@@ -5,19 +5,13 @@
  * limits under session/weeklyAll/weeklyFable, Antigravity reports a flat
  * `models` array, Codex reports fiveHour/weekly objects). This module maps each
  * of those raw payloads onto one canonical shape so API consumers never have
- * to special-case a provider:
- *
- *   {
- *     providers: [{
- *       id, provider, plan, status, last_updated, error,
- *       windows: [{ type, label, used_percent, remaining_percent,
- *                   resets_at, resets_in_seconds, pace }],
- *       raw,
- *     }]
- *   }
+ * to special-case a provider: `{ providers: CanonicalProvider[] }` (see the
+ * typedefs below).
  *
  * Adding a new provider means registering one normalizer in NORMALIZERS.
  */
+
+const logger = require('./logger.js');
 
 /** Canonical window types. */
 const WINDOW_TYPES = Object.freeze(['session', 'five_hour', 'weekly']);
@@ -39,6 +33,8 @@ const PROVIDER_FAMILIES = Object.freeze({
  * @typedef {Object} CanonicalWindow
  * @property {'session'|'five_hour'|'weekly'} type
  * @property {string} label - Human-readable label
+ * @property {string|null} model - Model (group) the window is specific to, e.g. "Fable";
+ *   null when it covers all models. Disambiguates windows that share a `type`.
  * @property {number} used_percent
  * @property {number} remaining_percent
  * @property {string|null} resets_at - ISO 8601 timestamp, null when unknown
@@ -52,7 +48,9 @@ const PROVIDER_FAMILIES = Object.freeze({
  * @property {string} provider - Provider family ("claude", "codex", "antigravity")
  * @property {string|null} plan - Plan name where known (e.g. "max", "plus")
  * @property {'ok'|'error'|'refreshing'|'pending'} status - Collection status for this agent
- * @property {string|null} last_updated - ISO 8601 timestamp of the last successful refresh
+ * @property {string|null} last_updated - ISO 8601 time the usage in `windows` was captured
+ *   (last successful refresh); failed refreshes that keep cached usage do not move
+ *   it. Falls back to the last refresh attempt when no capture time is known.
  * @property {string|null} error - Last refresh error message, if any
  * @property {CanonicalWindow[]} windows
  * @property {Object} raw - Untouched per-agent status payload
@@ -132,7 +130,7 @@ function normalizePace(entry) {
  *
  * @returns {CanonicalWindow|null} Null when no usage percentage is available
  */
-function buildWindow({ type, label, usedPercent, remainingPercent, resetsAt, resetsInSeconds, entry }, context) {
+function buildWindow({ type, label, model = null, usedPercent, remainingPercent, resetsAt, resetsInSeconds, entry }, context) {
   let used;
   if (isFiniteNumber(usedPercent)) {
     used = roundPercent(usedPercent);
@@ -151,6 +149,7 @@ function buildWindow({ type, label, usedPercent, remainingPercent, resetsAt, res
   return {
     type,
     label,
+    model,
     used_percent: used,
     remaining_percent: remaining,
     resets_at: resetsAtIso,
@@ -168,25 +167,22 @@ function buildWindow({ type, label, usedPercent, remainingPercent, resetsAt, res
 // older Claude builds. Extra usage is a spend budget, not a rate-limit window,
 // so it stays in `raw` only.
 const CLAUDE_SECTIONS = [
-  { key: 'session', type: 'session', label: 'Current session' },
-  { key: 'weeklyAll', type: 'weekly', label: 'Current week (all models)' },
-  { key: 'weeklyFable', type: 'weekly', label: 'Current week (Fable)' },
-  { key: 'weekly', type: 'weekly', label: 'Current week' },
+  { key: 'session', type: 'session', label: 'Current session', model: null },
+  { key: 'weeklyAll', type: 'weekly', label: 'Current week (all models)', model: null },
+  { key: 'weeklyFable', type: 'weekly', label: 'Current week (Fable)', model: 'Fable' },
+  { key: 'weekly', type: 'weekly', label: 'Current week', model: null },
 ];
 
-/**
- * @param {Object} usage - Raw Claude usage
- * @param {Object} context - Normalization context
- * @returns {CanonicalWindow[]}
- */
+/** @returns {CanonicalWindow[]} Windows for raw Claude `usage` */
 function normalizeClaudeWindows(usage, context) {
   const windows = [];
-  for (const { key, type, label } of CLAUDE_SECTIONS) {
+  for (const { key, type, label, model } of CLAUDE_SECTIONS) {
     const entry = usage[key];
     if (!entry) continue;
     const window = buildWindow({
       type,
       label: entry.label || label,
+      model,
       usedPercent: entry.percent,
       resetsAt: entry.resetsAt,
       resetsInSeconds: entry.resetsInSeconds,
@@ -197,10 +193,15 @@ function normalizeClaudeWindows(usage, context) {
   return windows;
 }
 
+// /status "Login method: Claude Max account"; redraws may drop the spaces.
+const CLAUDE_LOGIN_PLAN = /claude\s*(max|pro|team|enterprise)/i;
+
 function claudePlan(agentStatus) {
-  const explicit = agentStatus.metadata?.plan;
-  if (explicit) return String(explicit).toLowerCase();
-  // Claude only renders the weekly Fable allowance for Max subscriptions.
+  const metadata = agentStatus.metadata || {};
+  if (metadata.plan) return String(metadata.plan).toLowerCase();
+  const reported = String(metadata.loginMethod ?? '').match(CLAUDE_LOGIN_PLAN);
+  if (reported) return reported[1].toLowerCase();
+  // Heuristic fallback: Claude only renders the weekly Fable allowance for Max.
   return agentStatus.usage?.weeklyFable ? 'max' : null;
 }
 
@@ -208,11 +209,28 @@ function claudePlan(agentStatus) {
 // Antigravity
 // ---------------------------------------------------------------------------
 
-const AGY_CYCLE_TYPES = {
+// Allow-list of Antigravity cycles (see AgyAgent#_cycleTypeFor).
+const AGY_CYCLE_TYPES = Object.freeze({
   weekly: 'weekly',
   fiveHour: 'five_hour',
   sessionAgy: 'session',
-};
+});
+
+const warnedAgyCycles = new Set();
+
+// Entries without a cycle predate cycle detection and are per-model session
+// quotas. An unknown cycle still maps to `session` so the limit is not hidden,
+// but is logged (once per cycle, as this runs on every poll) so the mislabel
+// is visible rather than silent.
+function agyWindowType(cycle) {
+  if (cycle == null) return 'session';
+  if (Object.hasOwn(AGY_CYCLE_TYPES, cycle)) return AGY_CYCLE_TYPES[cycle];
+  if (!warnedAgyCycles.has(cycle)) {
+    warnedAgyCycles.add(cycle);
+    logger.warn(`Unknown Antigravity cycle "${cycle}", reporting it as a session window`);
+  }
+  return 'session';
+}
 
 /**
  * Flatten the Antigravity `models` array into windows.
@@ -235,8 +253,9 @@ function normalizeAgyWindows(usage, context) {
     // Antigravity reports the remaining percentage; percentUsed is derived from
     // it and rounded to one decimal, so usageLeft wins when it is present.
     const window = buildWindow({
-      type: AGY_CYCLE_TYPES[entry.cycle] || 'session',
+      type: agyWindowType(entry.cycle),
       label: entry.model || 'Model quota',
+      model: entry.model || null,
       usedPercent: isFiniteNumber(entry.usageLeft) ? null : entry.percentUsed,
       remainingPercent: entry.usageLeft,
       resetsAt: entry.resetsAt,
@@ -257,7 +276,7 @@ const CODEX_SECTIONS = [
   { key: 'weekly', type: 'weekly', label: 'Weekly limit' },
 ];
 
-function codexWindowsFor(source, labelPrefix, context) {
+function codexWindowsFor(source, model, context) {
   const windows = [];
   for (const { key, type, label } of CODEX_SECTIONS) {
     const entry = source[key];
@@ -265,7 +284,8 @@ function codexWindowsFor(source, labelPrefix, context) {
     if (!entry) continue;
     const window = buildWindow({
       type,
-      label: labelPrefix ? `${labelPrefix} ${entry.label || label}` : (entry.label || label),
+      label: model ? `${model} ${entry.label || label}` : (entry.label || label),
+      model,
       usedPercent: entry.percentUsed,
       remainingPercent: entry.percentLeft,
       resetsAt: entry.resetsAt,
@@ -277,11 +297,7 @@ function codexWindowsFor(source, labelPrefix, context) {
   return windows;
 }
 
-/**
- * @param {Object} usage - Raw Codex usage
- * @param {Object} context - Normalization context
- * @returns {CanonicalWindow[]}
- */
+/** @returns {CanonicalWindow[]} Windows for raw Codex `usage` */
 function normalizeCodexWindows(usage, context) {
   const windows = codexWindowsFor(usage, null, context);
   // Per-model limits (e.g. "GPT-5.3-Codex-Spark") are separate windows.
@@ -333,8 +349,10 @@ function normalizeAgentStatus(agentStatus, options = {}) {
   const nowMs = options.now ?? Date.now();
   const providerKey = agentStatus.provider || agentStatus.name;
   const normalizer = NORMALIZERS[providerKey];
-  const lastUpdatedMs = toTimestampMs(agentStatus.lastUpdated);
-  const context = { nowMs, anchorMs: lastUpdatedMs ?? nowMs };
+  // Countdowns in `usage` were measured when it was captured. `lastUpdated` also
+  // moves on failed refreshes that keep cached usage, so it cannot anchor them.
+  const capturedMs = toTimestampMs(agentStatus.usageUpdatedAt) ?? toTimestampMs(agentStatus.lastUpdated);
+  const context = { nowMs, anchorMs: capturedMs ?? nowMs };
 
   const windows = normalizer && agentStatus.usage
     ? normalizer.windows(agentStatus.usage, context)
@@ -345,7 +363,7 @@ function normalizeAgentStatus(agentStatus, options = {}) {
     provider: PROVIDER_FAMILIES[providerKey] || providerKey || null,
     plan: normalizer ? normalizer.plan(agentStatus) : null,
     status: deriveStatus(agentStatus),
-    last_updated: lastUpdatedMs === null ? null : new Date(lastUpdatedMs).toISOString(),
+    last_updated: capturedMs === null ? null : new Date(capturedMs).toISOString(),
     error: agentStatus.error || null,
     windows,
     raw: agentStatus,

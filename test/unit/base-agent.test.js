@@ -219,4 +219,71 @@ describe('BaseAgent', () => {
       expect(agent.usage).toEqual({ session: { percent: 7 } }); // preserved
     });
   });
+
+  describe('usage capture timestamp across cached-data failures', () => {
+    const { ClaudeAgent } = require('../../src/agents/claude.js');
+    const { normalizeAgentStatus } = require('../../src/usage-normalizer.js');
+    const CAPTURED_AT = '2026-10-03T19:00:00.000Z';
+    const FAILED_AT = '2026-10-03T19:30:00.000Z';
+    const SUCCESS_OUTPUT = [
+      'Current session',
+      '40% used',
+      'Resets 8pm (UTC)',
+    ].join('\n');
+    let agent;
+
+    beforeEach(() => {
+      jest.useFakeTimers({ now: Date.parse(CAPTURED_AT) });
+      agent = new ClaudeAgent();
+      agent._metadataFetched = true;
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    // Successful capture at 19:00 whose countdown says the session resets at 20:00.
+    async function captureThenFail(failingOutput) {
+      agent.runCommand = jest.fn().mockResolvedValue(SUCCESS_OUTPUT);
+      await agent.refresh();
+      agent.usage.session.resetsInSeconds = 3600;
+
+      jest.setSystemTime(Date.parse(FAILED_AT));
+      agent.runCommand = jest.fn().mockResolvedValue(failingOutput);
+      await agent.refresh();
+    }
+
+    it('records the capture time on a successful refresh', async () => {
+      agent.runCommand = jest.fn().mockResolvedValue(SUCCESS_OUTPUT);
+
+      await agent.refresh();
+
+      expect(agent.usageUpdatedAt).toBe(CAPTURED_AT);
+      expect(agent.lastUpdated).toBe(CAPTURED_AT);
+      expect(agent.getStatus().usageUpdatedAt).toBe(CAPTURED_AT);
+    });
+
+    it.each([
+      ['an authentication issue', 'Please log in', () => {
+        agent.detectAuthenticationState = (out) => (/log in/.test(out) ? { message: 'Login required' } : null);
+      }],
+      ['a session error', 'Failed to load usage data', () => {}],
+      ['a rate limit with no usable data', 'rate_limit_error: too many requests', () => {}],
+    ])('keeps the capture time and reset instant after %s', async (_name, failingOutput, setup) => {
+      setup();
+
+      await captureThenFail(failingOutput);
+
+      expect(agent.error).toMatch(/cached data/);
+      expect(agent.lastUpdated).toBe(FAILED_AT);
+      expect(agent.usageUpdatedAt).toBe(CAPTURED_AT);
+
+      const now = Date.parse('2026-10-03T19:45:00.000Z');
+      const provider = normalizeAgentStatus({ ...agent.getStatus(), id: 'claude', provider: 'claude' }, { now });
+      expect(provider.status).toBe('error');
+      expect(provider.last_updated).toBe(CAPTURED_AT);
+      expect(provider.windows[0].resets_at).toBe('2026-10-03T20:00:00.000Z');
+      expect(provider.windows[0].resets_in_seconds).toBe(900);
+    });
+  });
 });

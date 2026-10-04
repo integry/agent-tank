@@ -9,12 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Usage responses now use a canonical provider shape shared by every provider: `id`, `provider`, `plan`, `status`, `last_updated`, `error`, and a `windows` list (`type`, `label`, `used_percent`, `remaining_percent`, ISO 8601 `resets_at`, `resets_in_seconds`, `pace` or `null`). The original per-provider payload is preserved under each provider's `raw` field. Response envelopes per endpoint:
+- Usage responses now use a canonical provider shape shared by every provider: `id`, `provider`, `plan`, `status`, `last_updated`, `error`, and a `windows` list (`type`, `label`, `model`, `used_percent`, `remaining_percent`, ISO 8601 `resets_at`, `resets_in_seconds`, `pace` or `null`). The original per-provider payload is preserved under each provider's `raw` field. Response envelopes per endpoint:
   - `GET /status` and `--once --json` return `{ "providers": [...] }`
   - `GET /status/:id` returns a single canonical provider object
   - `POST /refresh` returns `{ "success": true, "providers": [...] }` (previously `status`)
   - `POST /refresh/:id` returns `{ "success": true, "provider": {...} }` (previously `status`)
 - Add `getNormalizedStatus()` and `getNormalizedAgentStatus(id)` to the programmatic `AgentTank` API; `getStatus()` and `getAgentStatus(id)` still return the raw per-provider payloads
+- Raw agent status gains `usageUpdatedAt`, the time usage was last captured. Refreshes that fail but keep cached usage still bump `lastUpdated` but not `usageUpdatedAt`; canonical `last_updated` and reset times are based on `usageUpdatedAt`, so they no longer drift forward after such failures
+- Claude `/status` metadata now includes `loginMethod`, which is used to report the canonical `plan`
 
 ## [0.9.11] - 2026-09-29
 

@@ -424,6 +424,16 @@ add up to 100 (Antigravity's reported remaining percentage is kept as-is and
 payload is kept under `raw` (abbreviated below). Antigravity limits reporting
 "Quota available" are kept with `resets_at`/`resets_in_seconds` set to `null`.
 
+- `model` names the model (or model group) a window is specific to, such as
+  `"Fable"` or `"GPT-5.3-Codex-Spark"`, and is `null` for windows covering all
+  models. Use it to tell apart windows that share a `type`.
+- `last_updated` is when the usage in `windows` was captured. A refresh that
+  fails but keeps the cached usage does not move it (or the reset times); the
+  failure is reported through `status: "error"` and `error`.
+- `plan` comes from the plan the CLI reports (Codex plan type, Claude's
+  `/status` login method). If Claude doesn't report a plan, it falls back to
+  `"max"` when a weekly Fable window is present, and `null` otherwise.
+
 ```json
 {
   "providers": [
@@ -438,6 +448,7 @@ payload is kept under `raw` (abbreviated below). Antigravity limits reporting
         {
           "type": "session",
           "label": "Current session",
+          "model": null,
           "used_percent": 42,
           "remaining_percent": 58,
           "resets_at": "2026-10-03T21:19:00.000Z",
@@ -447,19 +458,21 @@ payload is kept under `raw` (abbreviated below). Antigravity limits reporting
         {
           "type": "weekly",
           "label": "Current week (all models)",
+          "model": null,
           "used_percent": 31,
           "remaining_percent": 69,
-          "resets_at": "2026-10-08T01:00:00.000Z",
-          "resets_in_seconds": 363600,
+          "resets_at": "2026-10-08T01:11:44.000Z",
+          "resets_in_seconds": 364304,
           "pace": { "ratio": 1.1, "burning_fast": true }
         },
         {
           "type": "weekly",
           "label": "Current week (Fable)",
+          "model": "Fable",
           "used_percent": 82,
           "remaining_percent": 18,
-          "resets_at": "2026-10-08T01:00:00.000Z",
-          "resets_in_seconds": 363600,
+          "resets_at": "2026-10-08T01:11:44.000Z",
+          "resets_in_seconds": 364304,
           "pace": { "ratio": 2.91, "burning_fast": true }
         }
       ],
@@ -476,6 +489,7 @@ payload is kept under `raw` (abbreviated below). Antigravity limits reporting
         {
           "type": "weekly",
           "label": "Weekly limit",
+          "model": null,
           "used_percent": 12,
           "remaining_percent": 88,
           "resets_at": "2026-10-10T19:45:40.000Z",
