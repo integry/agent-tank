@@ -14,11 +14,11 @@ function handleStatusPage(res, tank) {
 }
 
 /**
- * Handle GET /status - JSON status for all agents
+ * Handle GET /status - Canonical JSON usage for all agents
  */
 function handleStatusJson(res, tank) {
-  const status = tank.getStatus();
-  console.log(`[HTTP] GET /status - returning status for ${Object.keys(status).length} agents`);
+  const status = tank.getNormalizedStatus();
+  console.log(`[HTTP] GET /status - returning status for ${status.providers.length} agents`);
   res.setHeader('Content-Type', 'application/json');
   res.writeHead(200);
   res.end(JSON.stringify(status, null, 2));
@@ -67,7 +67,7 @@ function handleAgentHistory(res, tank, agentName) {
  * Handle GET /status/:agent - Agent-specific status
  */
 function handleAgentStatus(res, tank, agentName) {
-  const status = tank.getAgentStatus(agentName);
+  const status = tank.getNormalizedAgentStatus(agentName);
   if (!status) {
     res.writeHead(404);
     res.end(JSON.stringify({ error: 'Agent not found' }));
@@ -85,7 +85,7 @@ async function handleRefreshAll(res, tank) {
   await tank.refreshAll();
   res.setHeader('Content-Type', 'application/json');
   res.writeHead(200);
-  res.end(JSON.stringify({ success: true, status: tank.getStatus() }));
+  res.end(JSON.stringify({ success: true, ...tank.getNormalizedStatus() }));
 }
 
 /**
@@ -96,7 +96,7 @@ async function handleRefreshAgent(res, tank, agentName) {
     await tank.refreshAgent(agentName);
     res.setHeader('Content-Type', 'application/json');
     res.writeHead(200);
-    res.end(JSON.stringify({ success: true, status: tank.getAgentStatus(agentName) }));
+    res.end(JSON.stringify({ success: true, provider: tank.getNormalizedAgentStatus(agentName) }));
   } catch (err) {
     res.writeHead(404);
     res.end(JSON.stringify({ error: err.message }));

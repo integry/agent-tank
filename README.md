@@ -405,78 +405,112 @@ reset, so its reset fields are `null`.
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/` | HTML status page |
-| GET | `/status` | JSON status for all agents |
-| GET | `/status/:id` | JSON status for one configured account |
+| GET | `/status` | Canonical usage for all agents (`{ "providers": [...] }`) |
+| GET | `/status/:id` | Canonical usage for one configured account |
 | GET | `/config` | Auto-refresh and history config |
 | GET | `/history` | History summary |
 | GET | `/history/:id` | History for one configured account |
-| POST | `/refresh` | Refresh all agents |
-| POST | `/refresh/:id` | Refresh one configured account |
+| POST | `/refresh` | Refresh all agents; returns `{ "success": true, "providers": [...] }` |
+| POST | `/refresh/:id` | Refresh one configured account; returns `{ "success": true, "provider": {...} }` |
 
 ### Example `GET /status`
 
+Every provider returns the same canonical shape. Limits are a `windows` list
+(`type` is one of `session`, `five_hour`, `weekly`), all resets are ISO 8601,
+and `pace` is `null` when there is no pace signal. Percentages are rounded to
+two decimals, and `remaining_percent` is always `100 - used_percent`, so the two
+add up to 100 (Antigravity's reported remaining percentage is kept as-is and
+`used_percent` is derived from it). The untouched per-agent
+payload is kept under `raw` (abbreviated below). Antigravity limits reporting
+"Quota available" are kept with `resets_at`/`resets_in_seconds` set to `null`.
+
+- `model` names the model (or model group) a window is specific to, such as
+  `"Fable"` or `"GPT-5.3-Codex-Spark"`, and is `null` for windows covering all
+  models. Use it to tell apart windows that share a `type`. Antigravity's
+  grouped limits use the group name, so `"Gemini · Weekly Limit Remaining"` and
+  `"Gemini · Five Hour Limit Remaining"` both have `model: "Gemini"` (the
+  qualified name stays in `label`).
+- `used_percent` and `remaining_percent` are clamped to the 0–100 range, even
+  if a vendor reports something like 102% used.
+- `status` is `"refreshing"` while a refresh is running and `"error"` when the
+  last refresh failed, even if `windows` still holds cached usage from an
+  earlier refresh. It is `"pending"` before the first refresh and `"ok"`
+  otherwise.
+- Claude's extra usage is a spend budget, not a rate-limit window, so it isn't
+  in `windows`. It is still available under `raw.usage.extraUsage`.
+- `last_updated` is when the usage in `windows` was captured. A refresh that
+  fails but keeps the cached usage does not move it (or the reset times); the
+  failure is reported through `status: "error"` and `error`.
+- `plan` comes from the plan the CLI reports (Codex plan type, Claude's
+  `/status` login method). If Claude doesn't report a plan, it falls back to
+  `"max"` when a weekly Fable window is present, and `null` otherwise.
+
 ```json
 {
-  "claude": {
-    "name": "claude",
-    "id": "claude",
-    "alias": null,
-    "provider": "claude",
-    "usage": {
-      "session": {
-        "label": "Current session",
-        "percent": 42,
-        "resetsAt": "10pm (Europe/London)",
-        "resetsIn": "12m",
-        "resetsInSeconds": 764
-      },
-      "weeklyAll": {
-        "label": "Current week (all models)",
-        "percent": 31,
-        "resetsAt": "Mar 13, 3am (Europe/London)",
-        "resetsIn": "4d 5h",
-        "resetsInSeconds": 364364
-      },
-      "weeklyFable": {
-        "label": "Current week (Fable)",
-        "percent": 82,
-        "resetsAt": "Mar 13, 3am (Europe/London)",
-        "resetsIn": "4d 5h",
-        "resetsInSeconds": 364364
-      }
+  "providers": [
+    {
+      "id": "claude",
+      "provider": "claude",
+      "plan": "max",
+      "status": "ok",
+      "last_updated": "2026-10-03T19:59:00.000Z",
+      "error": null,
+      "windows": [
+        {
+          "type": "session",
+          "label": "Current session",
+          "model": null,
+          "used_percent": 42,
+          "remaining_percent": 58,
+          "resets_at": "2026-10-03T21:19:00.000Z",
+          "resets_in_seconds": 4740,
+          "pace": { "ratio": 0.8, "burning_fast": false }
+        },
+        {
+          "type": "weekly",
+          "label": "Current week (all models)",
+          "model": null,
+          "used_percent": 31,
+          "remaining_percent": 69,
+          "resets_at": "2026-10-08T01:11:44.000Z",
+          "resets_in_seconds": 364304,
+          "pace": { "ratio": 1.1, "burning_fast": true }
+        },
+        {
+          "type": "weekly",
+          "label": "Current week (Fable)",
+          "model": "Fable",
+          "used_percent": 82,
+          "remaining_percent": 18,
+          "resets_at": "2026-10-08T01:11:44.000Z",
+          "resets_in_seconds": 364304,
+          "pace": { "ratio": 2.91, "burning_fast": true }
+        }
+      ],
+      "raw": { "name": "claude", "usage": { "session": { "percent": 42, "resetsAt": "12:20am (Europe/Berlin)" } } }
     },
-    "metadata": {
-      "email": "user@example.com",
-      "version": "2.1.71"
-    },
-    "lastUpdated": "2026-03-08T21:47:15.090Z",
-    "error": null,
-    "isRefreshing": false
-  },
-  "codex": {
-    "name": "codex",
-    "usage": {
-      "fiveHour": {
-        "percentUsed": 0,
-        "resetsAt": "02:44 on 9 Mar",
-        "resetsIn": "4h 56m",
-        "resetsInSeconds": 17807
-      },
-      "weekly": {
-        "percentUsed": 0,
-        "resetsAt": "21:44 on 15 Mar",
-        "resetsIn": "6d 23h",
-        "resetsInSeconds": 604607
-      }
-    },
-    "metadata": {
-      "email": "user@example.com",
-      "model": "gpt-5.3-codex"
-    },
-    "lastUpdated": "2026-03-08T21:47:12.648Z",
-    "error": null,
-    "isRefreshing": false
-  }
+    {
+      "id": "codex",
+      "provider": "codex",
+      "plan": "plus",
+      "status": "ok",
+      "last_updated": "2026-10-03T19:59:00.000Z",
+      "error": null,
+      "windows": [
+        {
+          "type": "weekly",
+          "label": "Weekly limit",
+          "model": null,
+          "used_percent": 12,
+          "remaining_percent": 88,
+          "resets_at": "2026-10-10T19:45:40.000Z",
+          "resets_in_seconds": 603940,
+          "pace": null
+        }
+      ],
+      "raw": { "name": "codex", "usage": { "fiveHour": null, "weekly": { "percentUsed": 12, "resetsAt": 1791661540 } } }
+    }
+  ]
 }
 ```
 
@@ -652,10 +686,20 @@ const watcher = new AgentTank({
 
 await watcher.start();
 
-const status = watcher.getStatus();
-console.log(status);
+// Canonical shape shared by every provider (same as GET /status)
+const { providers } = watcher.getNormalizedStatus();
+for (const { id, provider, windows } of providers) {
+  for (const w of windows) {
+    console.log(`${id} (${provider}) ${w.label}: ${w.used_percent}% used, resets ${w.resets_at}`);
+  }
+}
 
 await watcher.refreshAgent('work');
+// One configured account (same as GET /status/work), or null if unknown
+console.log(watcher.getNormalizedAgentStatus('work'));
+
+// Raw per-provider payloads are still available
+console.log(watcher.getStatus());
 
 watcher.stop();
 ```

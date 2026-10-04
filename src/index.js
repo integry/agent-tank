@@ -13,6 +13,7 @@ const logger = require('./logger.js');
 const { HistoryStore, DEFAULT_RETENTION_DAYS } = require('./history-store.js');
 const { extractSnapshotMetrics } = require('./snapshot-metrics.js');
 const { attachPaceEvaluation } = require('./pace-attachment.js');
+const { normalizeStatus, normalizeAgentStatus } = require('./usage-normalizer.js');
 const { KeepaliveManager } = require('./keepalive-manager.js');
 const { AutoRefreshManager } = require('./auto-refresh-manager.js');
 const { normalizeAgentSpecs } = require('./agent-config.js');
@@ -327,6 +328,9 @@ class AgentTank {
     }
   }
 
+  // Tests depend on this signature (string or { provider, id, alias, configPath })
+  // and on `requestedAgents` / `agents`: see test/fixtures/cli-once-json-stub.js,
+  // test/unit/server.test.js and test/unit/client-auto-refresh.test.js.
   createAgent(input) {
     const spec = typeof input === 'string'
       ? { provider: input, id: input, alias: null, configPath: null }
@@ -492,6 +496,24 @@ class AgentTank {
       alias: agent.alias,
       provider: agent.provider,
     } : null;
+  }
+
+  /**
+   * Canonical usage for all agents (see src/usage-normalizer.js).
+   * The raw per-agent payload is preserved under each provider's `raw` field.
+   * @returns {{providers: Object[]}}
+   */
+  getNormalizedStatus() {
+    return normalizeStatus(this.getStatus());
+  }
+
+  /**
+   * Canonical usage for one agent, or null if the agent is unknown.
+   * @param {string} name - Agent id
+   * @returns {Object|null}
+   */
+  getNormalizedAgentStatus(name) {
+    return normalizeAgentStatus(this.getAgentStatus(name));
   }
 
   authenticate(req, url) {
