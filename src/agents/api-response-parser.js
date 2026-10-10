@@ -180,7 +180,7 @@ function parseFlatPercentageFields(apiResponse, usage, now) {
  * @returns {Object} Normalized response
  */
 function normalizeOAuthResponse(raw) {
-  if (!raw.five_hour && !raw.seven_day) return raw; // already normalized or unknown
+  if (!raw.five_hour && !raw.seven_day && !raw.seven_day_fable && !Array.isArray(raw.limits)) return raw; // already normalized or unknown
   const norm = {};
   if (raw.five_hour) {
     norm.sessionLimit = {
@@ -199,6 +199,18 @@ function normalizeOAuthResponse(raw) {
       percentUsed: Math.round(raw.seven_day_fable.utilization),
       resetsAt: raw.seven_day_fable.resets_at,
     };
+  }
+  // Current OAuth responses expose model allowances in a typed limits array.
+  // `is_active` indicates which limit is binding, not whether it should appear.
+  for (const limit of Array.isArray(raw.limits) ? raw.limits : []) {
+    if (!limit || !Number.isFinite(limit.percent)) continue;
+    let field;
+    if (limit.kind === 'session') field = 'sessionLimit';
+    if (limit.kind === 'weekly_all') field = 'weeklyAllModels';
+    if (limit.kind === 'weekly_scoped' && /^Fable$/i.test(limit.scope?.model?.display_name || '')) {
+      field = 'weeklyFable';
+    }
+    if (field) norm[field] = { percentUsed: Math.round(limit.percent), resetsAt: limit.resets_at };
   }
   if (raw.extra_usage?.is_enabled) {
     norm.extraUsage = {

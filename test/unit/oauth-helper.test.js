@@ -4,7 +4,7 @@
 
 jest.mock('node-pty', () => ({
   spawn: jest.fn()
-}), { virtual: true });
+}));
 
 const fs = require('fs');
 const path = require('path');

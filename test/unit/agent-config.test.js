@@ -5,7 +5,7 @@ const {
 } = require('../../src/agent-config.js');
 const { AgentTank } = require('../../src/index.js');
 
-jest.mock('node-pty', () => ({ spawn: jest.fn() }), { virtual: true });
+jest.mock('node-pty', () => ({ spawn: jest.fn() }));
 
 describe('agent account configuration', () => {
   it('keeps legacy string entries backward compatible', () => {

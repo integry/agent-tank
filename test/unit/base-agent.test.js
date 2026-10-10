@@ -10,7 +10,7 @@
 // Mock node-pty to avoid native module issues in unit tests
 jest.mock('node-pty', () => ({
   spawn: jest.fn()
-}), { virtual: true });
+}));
 
 const fs = require('fs');
 const os = require('node:os');

@@ -4,11 +4,12 @@ const { BaseAgent } = require('./base.js');
 const logger = require('../logger.js');
 const { pingKeepalive } = require('./keepalive-helper.js');
 const { parseApiResponse } = require('./api-response-parser.js');
+const { readRecentFableAllowance } = require('./claude-usage-cache.js');
 const { parsePtyOutput, FABLE_SECTION_START } = require('./pty-output-parser.js');
 
 // Matches the Fable allowance header alone, before its "N% used" row has rendered.
 const FABLE_SECTION_HEADER = new RegExp(FABLE_SECTION_START, 'i');
-const USAGE_SETTLE_TIMEOUT_MS = 2500;
+const USAGE_SETTLE_TIMEOUT_MS = 10000;
 const USAGE_SETTLE_POLL_MS = 50;
 // A healthy Claude /usage dialog starts returning its core rows almost
 // immediately. Persistent PTYs occasionally swallow the slash command and emit
@@ -29,6 +30,7 @@ class ClaudeAgent extends BaseAgent {
     super('claude', 'claude');
     this.configPath = options.configPath || null;
     this._statusSent = false;
+    this._trustHandledShells = new WeakSet();
     this.useApi = options.useApi || false;
     this._apiResponse = null; // Stores the API response when using direct API
     // PTY default: 600s (10 minutes), API mode: 60s (1 minute)
@@ -176,6 +178,7 @@ class ClaudeAgent extends BaseAgent {
    * Falls back to PTY if API fails
    */
   async runCommand() {
+    this._cachedPtyFable = null;
     if (this.useApi) {
       logger.agent(this.name, 'Attempting direct API fetch...');
       const apiResponse = await this._runWithApi();
@@ -189,7 +192,12 @@ class ClaudeAgent extends BaseAgent {
     }
 
     // Fall back to PTY command execution
-    return super.runCommand();
+    const output = await super.runCommand();
+    const parsed = parsePtyOutput(this.stripAnsi(output));
+    if (parsed.session && parsed.weeklyAll && !parsed.weeklyFable) {
+      this._cachedPtyFable = readRecentFableAllowance(this.configPath);
+    }
+    return output;
   }
 
   getTimeout() { return 30000; }
@@ -202,11 +210,36 @@ class ClaudeAgent extends BaseAgent {
 
   isReadyForCommands(output) {
     const clean = this.stripAnsi(output);
+    const trustMenu = clean.search(/yes,?\s*i\s*trust\s*this\s*folder/i);
+    if (trustMenu >= 0 && !/\?\s*for\s*shortcuts/i.test(clean.slice(trustMenu))) return false;
     return clean.includes('? for shortcuts') || clean.includes('❯') ||
            clean.includes('> ') || clean.includes('Try "');
   }
 
   handleTrustPrompt(shell, output) {
+    const clean = this.stripAnsi(output);
+    // Newer CLIs render spaces as cursor movements and default to No.
+    if (/yes,?\s*i\s*trust\s*this\s*folder/i.test(clean)) {
+      if (this._trustHandledShells.has(shell)) return false;
+      this._trustHandledShells.add(shell);
+      let active = true;
+      const exit = shell.onExit?.(() => { active = false; });
+      const write = value => {
+        if (active && !this.isStopping()) {
+          try { shell.write(value); } catch { /* Process exited during setup. */ }
+        }
+      };
+      // The terminal capability handshake redraws and resets the selection.
+      // Wait for it before selecting Yes, then allow that selection to render.
+      setTimeout(() => {
+        if (!/❯\s*Yes,?\s*I\s*trust/i.test(clean)) write('\x1b[B');
+      }, 750);
+      setTimeout(() => {
+        write('\r');
+        exit?.dispose();
+      }, 1000);
+      return true;
+    }
     const patterns = ['Do you trust', 'trust the files', 'trust this folder', 'Trust this workspace', 'allow access'];
     if (!patterns.some(p => output.toLowerCase().includes(p.toLowerCase()))) return false;
     logger.agent(this.name, 'Detected trust prompt, auto-accepting...');
@@ -355,7 +388,10 @@ class ClaudeAgent extends BaseAgent {
     }
 
     // Delegate to PTY output parser module
-    return parsePtyOutput(clean);
+    const usage = parsePtyOutput(clean);
+    if (!usage.weeklyFable && this._cachedPtyFable) usage.weeklyFable = this._cachedPtyFable;
+    this._cachedPtyFable = null;
+    return usage;
   }
 
   // Fetch metadata by sending /status command once on first refresh

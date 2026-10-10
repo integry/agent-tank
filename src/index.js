@@ -424,16 +424,19 @@ class AgentTank {
   }
 
   _getRefreshCooldownRemainingMs(name, now = Date.now()) {
-    if (this.refreshCooldown <= 0) {
-      return 0;
-    }
+    // Activity events and HTTP refreshes share this gate with timer polling.
+    // Otherwise frequent file activity bypasses provider-specific intervals
+    // and causes usage endpoints to rate-limit optional allowance data.
+    const agent = this.agents.get(name);
+    const cooldown = Math.max(this.refreshCooldown, agent?.refreshInterval ?? agent?.minRefreshInterval ?? 0);
+    if (cooldown <= 0) return 0;
 
     const lastStartedAt = this._agentRefreshStartedAt.get(name);
     if (!lastStartedAt) {
       return 0;
     }
 
-    return Math.max(0, (this.refreshCooldown * 1000) - (now - lastStartedAt));
+    return Math.max(0, (cooldown * 1000) - (now - lastStartedAt));
   }
 
   async _refreshAgentWithCooldown(name) {

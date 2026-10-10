@@ -1,3 +1,6 @@
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { BaseAgent } = require('./base.js');
 const { calculatePace } = require('../pace-evaluator.js');
 const { CYCLE_DURATIONS } = require('../usage-formatters.js');
@@ -18,6 +21,7 @@ class AgyAgent extends BaseAgent {
     super('agy', 'agy', ['--dangerously-skip-permissions']);
     this.configPath = options.configPath || null;
     this._aboutSent = false;
+    this._configHome = null;
   }
 
   getTimeout() {
@@ -32,8 +36,26 @@ class AgyAgent extends BaseAgent {
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
     };
-    if (this.configPath) env.GEMINI_CLI_HOME = this.configPath;
+    if (this.configPath) {
+      // Native Antigravity 1.x ignores GEMINI_CLI_HOME and reads HOME/.gemini.
+      // A private HOME supports arbitrary config directories without silently
+      // falling back to the default account. Keep the legacy variable as well.
+      if (!this._configHome) {
+        this._configHome = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-tank-agy-'));
+        fs.symlinkSync(path.resolve(this.configPath), path.join(this._configHome, '.gemini'), 'dir');
+      }
+      env.HOME = this._configHome;
+      env.GEMINI_CLI_HOME = this.configPath;
+    }
     return env;
+  }
+
+  killProcess() {
+    super.killProcess();
+    if (this._configHome) {
+      fs.rmSync(this._configHome, { recursive: true, force: true });
+      this._configHome = null;
+    }
   }
 
   _hasReadyPrompt(output) {

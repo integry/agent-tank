@@ -8,7 +8,7 @@
 // Mock node-pty to avoid native module issues in unit tests
 jest.mock('node-pty', () => ({
   spawn: jest.fn()
-}), { virtual: true });
+}));
 
 const { AgentTank, AUTO_REFRESH_MODES, detectDockerHosts, detectDockerHostsFromInterfaces } = require('../../src/index.js');
 
@@ -682,6 +682,7 @@ describe('AgentTank', () => {
     beforeEach(() => {
       tank = new AgentTank({ refreshCooldown: 30 });
       agent = tank.createAgent('claude');
+      agent.minRefreshInterval = null;
       agent.refresh = jest.fn().mockResolvedValue();
       tank.agents.set('claude', agent);
     });
@@ -710,6 +711,21 @@ describe('AgentTank', () => {
 
       expect(agent.refresh).toHaveBeenCalledTimes(2);
       nowSpy.mockRestore();
+    });
+
+    it('honors the provider minimum for activity and HTTP refreshes too', async () => {
+      agent.minRefreshInterval = 600;
+      let now = 1000;
+      const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+      try {
+        await tank.refreshAll();
+        now = 32000;
+        await tank.refreshAgent('claude');
+        expect(agent.refresh).toHaveBeenCalledTimes(1);
+        now = 601001;
+        await tank.refreshAgent('claude');
+        expect(agent.refresh).toHaveBeenCalledTimes(2);
+      } finally { nowSpy.mockRestore(); }
     });
 
     it('reuses the same in-flight refresh promise for overlapping requests', async () => {
