@@ -16,7 +16,8 @@ class BaseAgent {
     this.usage = null;
     this.metadata = null;
     this._metadataFetched = false;
-    this.lastUpdated = null;
+    this.lastUpdated = null;     // Last refresh attempt that produced or preserved usage
+    this.usageUpdatedAt = null;  // When `usage` was last captured; reset countdowns are relative to this
     this.error = null;
     this.auth = null;
     this.isRefreshing = false;
@@ -74,6 +75,7 @@ class BaseAgent {
       usage: this.usage,
       metadata: this.metadata,
       lastUpdated: this.lastUpdated,
+      usageUpdatedAt: this.usageUpdatedAt,
       error: this.error,
       auth: this.auth,
       isRefreshing: this.isRefreshing,
@@ -169,8 +171,7 @@ class BaseAgent {
       (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0)));
 
     if (hasData) {
-      this.usage = parsed;
-      this.lastUpdated = new Date().toISOString();
+      this._setUsage(parsed);
     } else if (/rate.?limited|rate_limit_error/i.test(cleanOutput)) {
       logger.agent(this.name, 'Rate limited with no usable data, preserving last known usage');
       this.error = this.usage ? 'Rate limited — using cached data' : 'Rate limited';
@@ -180,10 +181,19 @@ class BaseAgent {
       logger.agent(this.name, 'Parse returned no data, preserving last known usage');
       this.error = 'Failed to parse — using cached data';
     } else {
-      this.usage = parsed;
-      this.lastUpdated = new Date().toISOString();
+      this._setUsage(parsed);
     }
     logger.agent(this.name, 'Parsed usage:', logger.json(this.usage));
+  }
+
+  // Replace usage with a freshly captured payload. The cached-data failure
+  // paths only bump `lastUpdated`, so `usageUpdatedAt` stays the instant the
+  // `resetsInSeconds` countdowns in `usage` were measured at.
+  _setUsage(usage) {
+    const now = new Date().toISOString();
+    this.usage = usage;
+    this.lastUpdated = now;
+    this.usageUpdatedAt = now;
   }
 
   async runCommand() {

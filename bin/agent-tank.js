@@ -155,8 +155,8 @@ Examples:
 
 HTTP Endpoints:
   GET /              Status page (HTML)
-  GET /status        All agent statuses (JSON)
-  GET /status/:id    Status for a specific agent account (JSON)
+  GET /status        Canonical usage for all agents (JSON: { providers: [...] })
+  GET /status/:id    Canonical usage for a specific agent account (JSON)
   GET /config        Auto-refresh and history configuration (JSON)
   GET /history       Usage history statistics (JSON)
   GET /history/:id   Usage history for a specific agent account (JSON)
@@ -389,7 +389,7 @@ async function main() {
       await watcher.start();
       const status = watcher.getStatus();
       if (jsonMode) {
-        const output = `${JSON.stringify(status, null, 2)}\n`;
+        const output = `${JSON.stringify(watcher.getNormalizedStatus(), null, 2)}\n`;
         writeAndExit(process.stdout, output, 0, {
           cleanup: cleanupShutdownHandlers,
           watcher,

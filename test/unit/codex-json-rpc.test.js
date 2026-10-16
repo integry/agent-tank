@@ -183,6 +183,22 @@ describe('CodexAgent JSON-RPC Integration', () => {
     });
   });
 
+  describe('refresh via JSON-RPC', () => {
+    it('records the usage capture time so canonical resets stay anchored', async () => {
+      __mockClient.call.mockResolvedValue({
+        fiveHour: { percentLeft: 80, resetsAt: '14:30' },
+        weekly: { percentLeft: 95, resetsAt: '10:00 on 20 Mar' },
+      });
+
+      await agent.refresh();
+
+      expect(agent.error).toBeNull();
+      expect(agent.usage.fiveHour.percentLeft).toBe(80);
+      expect(agent.usageUpdatedAt).not.toBeNull();
+      expect(agent.usageUpdatedAt).toBe(agent.lastUpdated);
+    });
+  });
+
   describe('parseOutput with RPC response', () => {
     it('parses RPC response marker correctly', () => {
       agent._rpcRateLimits = {

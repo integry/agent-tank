@@ -470,6 +470,10 @@ class ClaudeAgent extends BaseAgent {
     const organization = readField('Organization|Org');
     if (organization) metadata.organization = organization;
 
+    // e.g. "Claude Max account"; the normalizer derives the plan from it.
+    const loginMethod = readField('Login\\s*method');
+    if (loginMethod) metadata.loginMethod = loginMethod;
+
     const email = readField('Email|Account|User|Logged\\s*in\\s*as');
     if (email) {
       const match = email.match(/\S+@\S+/);

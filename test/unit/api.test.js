@@ -3,6 +3,10 @@
  *
  * Tests HTTP endpoints (/status, /config) and authentication
  * (Bearer token and Basic auth) using supertest.
+ *
+ * Skipped because Jest cannot bind HTTP listeners here. The canonical
+ * `{ providers: [...] }` contract is exercised in test/unit/server.test.js;
+ * the assertions below are kept in sync with it.
  */
 
 console.log('\n⚠️  API socket tests skipped: this environment does not allow binding HTTP listeners from Jest\n');
@@ -72,9 +76,8 @@ const { createRequestHandler } = require('../../src/server.js');
         .get('/status')
         .expect(200);
 
-      expect(response.body).toHaveProperty('claude');
-      expect(response.body).toHaveProperty('agy');
-      expect(Object.keys(response.body)).toHaveLength(2);
+      expect(Object.keys(response.body)).toEqual(['providers']);
+      expect(response.body.providers.map(p => p.id)).toEqual(['claude', 'agy']);
     });
 
     it('returns correct schema for each agent', async () => {
@@ -84,23 +87,21 @@ const { createRequestHandler } = require('../../src/server.js');
         .get('/status')
         .expect(200);
 
-      const claudeStatus = response.body.claude;
-      expect(claudeStatus).toHaveProperty('name', 'claude');
-      expect(claudeStatus).toHaveProperty('usage');
-      expect(claudeStatus).toHaveProperty('metadata');
-      expect(claudeStatus).toHaveProperty('lastUpdated');
-      expect(claudeStatus).toHaveProperty('error');
-      expect(claudeStatus).toHaveProperty('isRefreshing');
+      const claudeStatus = response.body.providers.find(p => p.id === 'claude');
+      expect(Object.keys(claudeStatus)).toEqual(['id', 'provider', 'plan', 'status', 'last_updated', 'error', 'windows', 'raw']);
+      expect(claudeStatus).toMatchObject({ provider: 'claude', status: 'pending', windows: [] });
+      expect(claudeStatus.raw).toHaveProperty('name', 'claude');
+      expect(claudeStatus.raw).toHaveProperty('usageUpdatedAt', null);
     });
 
-    it('returns empty object when no agents are configured', async () => {
+    it('returns an empty providers array when no agents are configured', async () => {
       const srv = createTankWithServer({ withAgents: false });
 
       const response = await request(srv)
         .get('/status')
         .expect(200);
 
-      expect(response.body).toEqual({});
+      expect(response.body).toEqual({ providers: [] });
     });
 
     it('reflects agent state changes in response', async () => {
@@ -108,15 +109,16 @@ const { createRequestHandler } = require('../../src/server.js');
 
       // Modify agent state
       const claudeAgent = tank.agents.get('claude');
-      claudeAgent.usage = { session: { percent: 75 } };
-      claudeAgent.lastUpdated = '2024-01-15T10:30:00.000Z';
+      claudeAgent._setUsage({ session: { percent: 75 } });
 
       const response = await request(srv)
         .get('/status')
         .expect(200);
 
-      expect(response.body.claude.usage).toEqual({ session: { percent: 75 } });
-      expect(response.body.claude.lastUpdated).toBe('2024-01-15T10:30:00.000Z');
+      const claudeStatus = response.body.providers.find(p => p.id === 'claude');
+      expect(claudeStatus.raw.usage).toEqual({ session: { percent: 75 } });
+      expect(claudeStatus.last_updated).toBe(claudeAgent.usageUpdatedAt);
+      expect(claudeStatus.windows[0]).toMatchObject({ type: 'session', used_percent: 75, remaining_percent: 25 });
     });
   });
 
@@ -129,7 +131,7 @@ const { createRequestHandler } = require('../../src/server.js');
         .expect('Content-Type', /application\/json/)
         .expect(200);
 
-      expect(response.body).toHaveProperty('name', 'claude');
+      expect(response.body).toMatchObject({ id: 'claude', provider: 'claude' });
     });
 
     it('returns 404 for non-existent agent', async () => {
@@ -150,13 +152,23 @@ const { createRequestHandler } = require('../../src/server.js');
         .get('/status/agy')
         .expect(200);
 
-      expect(response.body).toEqual({
+      expect(response.body).toMatchObject({
+        id: 'agy',
+        provider: 'antigravity',
+        plan: null,
+        status: 'pending',
+        last_updated: null,
+        error: null,
+        windows: [],
+      });
+      expect(response.body.raw).toMatchObject({
         name: 'agy',
         usage: null,
         metadata: null,
         lastUpdated: null,
+        usageUpdatedAt: null,
         error: null,
-        isRefreshing: false
+        isRefreshing: false,
       });
     });
   });
@@ -276,7 +288,7 @@ const { createRequestHandler } = require('../../src/server.js');
         .set('Authorization', `Bearer ${validToken}`)
         .expect(200);
 
-      expect(response.body).toHaveProperty('claude');
+      expect(response.body.providers.map(p => p.id)).toContain('claude');
     });
 
     it('returns 200 OK with valid token in query parameter', async () => {
@@ -288,7 +300,7 @@ const { createRequestHandler } = require('../../src/server.js');
         .get(`/status?token=${validToken}`)
         .expect(200);
 
-      expect(response.body).toHaveProperty('claude');
+      expect(response.body.providers.map(p => p.id)).toContain('claude');
     });
 
     it('sets WWW-Authenticate header on 401 response', async () => {
@@ -397,7 +409,7 @@ const { createRequestHandler } = require('../../src/server.js');
         .set('Authorization', basicAuthHeader(username, password))
         .expect(200);
 
-      expect(response.body).toHaveProperty('claude');
+      expect(response.body.providers.map(p => p.id)).toContain('claude');
     });
 
     it('sets WWW-Authenticate header on 401 response', async () => {
@@ -466,7 +478,7 @@ const { createRequestHandler } = require('../../src/server.js');
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      expect(response.body).toHaveProperty('claude');
+      expect(response.body.providers.map(p => p.id)).toContain('claude');
     });
 
     it('accepts Basic auth when both auth methods are configured', async () => {
@@ -479,7 +491,7 @@ const { createRequestHandler } = require('../../src/server.js');
         .set('Authorization', basicAuthHeader(username, password))
         .expect(200);
 
-      expect(response.body).toHaveProperty('claude');
+      expect(response.body.providers.map(p => p.id)).toContain('claude');
     });
 
     it('returns 401 when neither auth method is satisfied', async () => {
@@ -503,7 +515,7 @@ const { createRequestHandler } = require('../../src/server.js');
         .get('/status')
         .expect(200);
 
-      expect(response.body).toHaveProperty('claude');
+      expect(response.body.providers.map(p => p.id)).toContain('claude');
     });
 
     it('allows access to /config without auth when no auth is configured', async () => {

@@ -376,6 +376,7 @@ describe('AgentTank', () => {
         usage: null,
         metadata: null,
         lastUpdated: null,
+        usageUpdatedAt: null,
         error: null,
         auth: null,
         isRefreshing: false,
@@ -435,6 +436,7 @@ describe('AgentTank', () => {
         usage: null,
         metadata: null,
         lastUpdated: null,
+        usageUpdatedAt: null,
         error: null,
         auth: null,
         isRefreshing: false

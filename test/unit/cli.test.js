@@ -1116,6 +1116,39 @@ describe('CLI', () => {
       }
     });
 
+    itWithPty('--once --json writes only the canonical providers envelope to stdout', () => {
+      // The stub replaces AgentTank#start with canned agents whose last refresh
+      // failed after usage was captured at 19:00 (see the fixture).
+      const stub = path.resolve(__dirname, '../fixtures/cli-once-json-stub.js');
+      const result = spawnSync(process.execPath, ['-r', stub, CLI_PATH, '--claude', '--codex', '--once', '--json'], {
+        encoding: 'utf8',
+        env: process.env,
+        timeout: 30000,
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain('stub: agents started');
+      expect(result.stdout.endsWith('}\n')).toBe(true);
+
+      const parsed = JSON.parse(result.stdout);
+      expect(Object.keys(parsed)).toEqual(['providers']);
+      expect(parsed.providers.map(p => [p.id, p.provider, p.status])).toEqual([
+        ['claude', 'claude', 'error'],
+        ['codex', 'codex', 'error'],
+      ]);
+      const [claude, codex] = parsed.providers;
+      expect(claude.last_updated).toBe('2026-10-03T19:00:00.000Z');
+      expect(claude.windows).toEqual([expect.objectContaining({
+        type: 'session',
+        model: null,
+        used_percent: 42,
+        remaining_percent: 58,
+        resets_at: '2026-10-03T20:00:00.000Z',
+      })]);
+      expect(codex.windows.map(w => [w.type, w.resets_at])).toEqual([['weekly', '2026-10-10T19:00:00.000Z']]);
+      expect(claude.raw.usage.session.resetsAt).toBe('8pm (UTC)');
+    });
+
     itWithPty('--json mode suppresses regular logging output', () => {
       // In JSON mode, there should be no "Auto-discovering" or similar messages
       const result = runOneShotCli(['--once', '--json', '--no-auto-discover']);

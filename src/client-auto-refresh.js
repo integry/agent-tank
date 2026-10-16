@@ -135,8 +135,11 @@ ${metricExtractors}
         const status = await response.json();
         const allMetrics = [];
 
-        // Extract and update all metrics from each agent
-        for (const [agentName, agentData] of Object.entries(status)) {
+        // /status returns the canonical { providers: [...] } shape; the page
+        // renders from each provider's untouched raw payload.
+        for (const entry of (status.providers || [])) {
+          const agentName = entry.id;
+          const agentData = entry.raw || {};
           if (!agentData.usage) continue;
 
           const provider = agentData.provider || agentData.name || agentName;
