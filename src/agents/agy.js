@@ -260,12 +260,17 @@ class AgyAgent extends BaseAgent {
     return this._parseAgyMetadata(await this._waitForBanner());
   }
 
-  // Resolve with the startup output once the banner's model line has rendered
-  // or a sign-in screen is up (else after a short grace period, since the
-  // prompt can appear before the model line).
-  _waitForBanner(timeoutMs = 3000) {
+  // Resolve with the startup output once the banner's model and plan have
+  // rendered or a sign-in screen is up (else after a short grace period, since
+  // the prompt can appear before the model line and agy draws the plan ~2s
+  // after startup).
+  _waitForBanner(timeoutMs = 4000) {
     const banner = () => `${this.spawnOutput || ''}${this.output || ''}`;
-    const settled = () => this._parseBannerModel(this.stripAnsi(banner())) || this.detectAuthenticationState(banner());
+    const settled = () => {
+      const clean = this.stripAnsi(banner());
+      return (this._parseBannerModel(clean) && this._parseBannerPlan(clean))
+        || this.detectAuthenticationState(banner());
+    };
     if (!this.shell || settled()) {
       return Promise.resolve(banner());
     }
@@ -286,10 +291,19 @@ class AgyAgent extends BaseAgent {
   // "? for shortcuts Gemini 4 Argon · medium". Quoted names belong to notices
   // such as '"Gemini 3.1 Pro (High)" is no longer available', not the model.
   _parseBannerModel(clean) {
-    const bannerLine = clean.match(/^[^\n"]*?\b((?:Gemini|Claude|GPT)\b[^\n"()]*?)\s*\([^)\n]*\)\s*$/im);
+    const bannerLine = clean.match(/^[^\n"]*?\b((?:Gemini|Claude|GPT)\b[^\n\r"()·]*?)[ \t]*\([^)\n]*\)\s*$/im);
     if (bannerLine) return this.stripBoxChars(bannerLine[1]).trim();
     const statusLine = clean.match(/\?\s+for\s+shortcuts[ \t]+([^\n·]+?)(?:[ \t]*·[^\n]*)?[ \t]*$/im);
     return statusLine ? this.stripBoxChars(statusLine[1]).trim() : null;
+  }
+
+  // The plan in parentheses after the account: "user@example.com (Google AI Pro)".
+  // agy 1.4.0 draws it in a later redraw by moving the cursor back to the
+  // account line, so once escapes are stripped it can also stand on its own.
+  _parseBannerPlan(clean) {
+    const match = clean.match(/\S+@\S+[ \t]+\(([^)\n]+)\)/)
+      || clean.match(/\((Google\s+AI\s+[^)\n]+)\)/i);
+    return match ? match[1].trim() : null;
   }
 
   _parseAgyMetadata(output) {
@@ -302,9 +316,8 @@ class AgyAgent extends BaseAgent {
     const emailMatch = clean.match(/(\S+@\S+)/);
     if (emailMatch) metadata.email = this.stripBoxChars(emailMatch[1]);
 
-    // The account line names the plan in parentheses: "user@example.com (Google AI Pro)".
-    const planMatch = clean.match(/\S+@\S+[ \t]+\(([^)\n]+)\)/);
-    if (planMatch) metadata.plan = planMatch[1].trim();
+    const plan = this._parseBannerPlan(clean);
+    if (plan) metadata.plan = plan;
 
     const cwdMatch = clean.match(/\n\s*(\/[^\n]+)\n/);
     if (cwdMatch) metadata.cwd = this.stripBoxChars(cwdMatch[1]);

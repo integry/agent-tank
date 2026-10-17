@@ -276,6 +276,34 @@ describe('agent metadata collection', () => {
       expect(agent.metadata.model).toBe('Gemini 4 Argon');
     });
 
+    it('waits for the plan that agy redraws next to the account after the model', async () => {
+      const agent = new AgyAgent();
+      // agy 1.4.0 prints the account bare, then ~2s later moves the cursor up
+      // and draws " (Google AI Pro)" after it.
+      createChunkedShell({
+        startup: [
+          `${AGY_BANNER_LINES[0]}\r\n▀▀▀▀▀▀       ${ESC}[90muser@example.com${ESC}[m\r\n>\r\n`
+            + `${ESC}[90m? for shortcuts${ESC}[m${ESC}[82X${ESC}[82C${ESC}[2mGemini 4 Argon · medium\r${ESC}[m`,
+          `${ESC}[2A${ESC}[2C${ESC}[?25h${ESC}[?25l${ESC}[9A${ESC}[34C${ESC}[90m (Google AI Pro)${ESC}[m\n\n${ESC}[50D`,
+        ],
+      });
+
+      await refreshWithStubbedUsage(agent, 1000);
+
+      expect(agent.metadata).toMatchObject({ model: 'Gemini 4 Argon', plan: 'Google AI Pro' });
+      expect(normalizeAgentStatus(agent.getStatus()).plan).toBe('google ai pro');
+    });
+
+    it('still reports the model when no plan is ever drawn', async () => {
+      const agent = new AgyAgent();
+      createChunkedShell({ startup: [`${AGY_BANNER_LINES[0]}\r\n>\r\n? for shortcuts Gemini 4 Argon · medium\r\n`] });
+
+      await refreshWithStubbedUsage(agent, 5000);
+
+      expect(agent.metadata.model).toBe('Gemini 4 Argon');
+      expect(agent.metadata.plan).toBeUndefined();
+    });
+
     it('stops at the sign-in screen instead of waiting out the spawn timeout', async () => {
       const agent = new AgyAgent();
       createChunkedShell({ startup: [AGY_SIGN_IN_SCREEN] });
