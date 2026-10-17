@@ -17,6 +17,30 @@ function fakeContainer(agentId) {
   };
 }
 
+// A container whose legend and sparkline can be queried after rendering
+function interactiveContainer(agentId) {
+  const values = {};
+  const listeners = {};
+  const svg = {
+    addEventListener: (type, handler) => { listeners[type] = handler; },
+    getBoundingClientRect: () => ({ left: 0, width: 240 }),
+  };
+  const container = {
+    dataset: { agentId },
+    innerHTML: '',
+    querySelector: (selector) => (selector === '.history-sparkline' ? svg : null),
+    querySelectorAll: (selector) => {
+      if (selector !== '.history-legend-item') return [];
+      const keys = [...container.innerHTML.matchAll(/data-metric-key="([^"]*)"/g)].map(match => match[1]);
+      return keys.map(key => {
+        values[key] = values[key] || { textContent: '' };
+        return { querySelector: () => values[key] };
+      });
+    },
+  };
+  return { container, values, hover: (clientX) => listeners.mousemove({ clientX }), leave: () => listeners.mouseleave() };
+}
+
 function seriesBody(series) {
   return { ok: true, status: 200, json: async () => ({ agent: 'work', store: 'sqlite', retention_days: 14, series }) };
 }
@@ -105,6 +129,33 @@ describe('dashboard usage-history sparklines', () => {
 
     expect(work.innerHTML).toContain('history-line history-series-2');
     expect(work.innerHTML).not.toContain('history-series-1');
+  });
+
+  it('shows a dash on hover for a metric with no sample at or before that time', () => {
+    const { container, values, hover, leave } = interactiveContainer('work');
+    const context = loadHistoryScript([], async () => seriesBody([]));
+    const weekly = { key: 'weekly', label: 'Weekly', points: [
+      { t: '2026-10-12T00:00:00.000Z', percent: 10 },
+      { t: '2026-10-16T00:00:00.000Z', percent: 40 },
+    ] };
+    const model = { key: 'model', label: 'Model', points: [
+      { t: '2026-10-14T00:00:00.000Z', percent: 70 },
+      { t: '2026-10-16T00:00:00.000Z', percent: 80 },
+    ] };
+
+    context.renderHistoryChart(container, [weekly, model]);
+    expect(values.model.textContent).toBe('80%');
+
+    hover(60); // Tuesday 00:00 — before the model metric's first sample
+    expect(values.weekly.textContent).toBe('10%');
+    expect(values.model.textContent).toBe('—');
+
+    hover(120); // Wednesday 00:00 — the model metric's first sample
+    expect(values.model.textContent).toBe('70%');
+
+    leave();
+    expect(values.weekly.textContent).toBe('40%');
+    expect(values.model.textContent).toBe('80%');
   });
 
   it('escapes metric labels', () => {

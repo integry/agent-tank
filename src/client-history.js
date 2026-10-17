@@ -97,16 +97,17 @@ const historyScript = `
       ).join('') + '</ul>';
     }
 
-    // Show each line's value at (or just before) the given time; null = latest
+    // Show each line's value at (or just before) the given time; null = latest.
+    // A line with no sample yet at that time shows a dash, never a later value.
     function showHistoryValuesAt(container, ms) {
       const chart = container._historyChart;
       if (!chart) return;
       const at = ms == null ? chart.end : ms;
       const items = container.querySelectorAll('.history-legend-item');
       chart.lines.forEach((line, index) => {
-        const point = line.points.filter(p => p.ms <= at).pop() || line.points[0];
+        const point = line.points.filter(p => p.ms <= at).pop();
         const value = items[index] && items[index].querySelector('.history-legend-value');
-        if (value) value.textContent = Math.round(point.percent) + '%';
+        if (value) value.textContent = point ? Math.round(point.percent) + '%' : '—';
       });
       const time = container.querySelector('.history-chart-time');
       if (time) time.textContent = ms == null ? 'Since ' + historyTimeLabel(chart.start) : historyTimeLabel(at);
