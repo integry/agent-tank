@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-17
+
+Breaking: usage responses use a new canonical shape and history moved to SQLite. See [Upgrading from 0.9.x](README.md#upgrading-from-09x).
+
+### Verified
+
+Verified with the following agent versions (versions checked on 2026-10-17):
+
+- Claude Code `2.1.302`
+- Antigravity CLI (`agy`) `1.4.0`
+- Codex CLI `0.162.1`
+
 ### Added
 
 - Antigravity: support the separate **Gemini 4 Argon** quota pool reported by `agy` 1.3.x. Its `GEMINI 4 ARGON` section is recognised as a group even without a `MODELS` suffix, so `Gemini 4 Argon Weekly Limit` is reported with `group: "Gemini 4 Argon"` and `cycle: "weekly"` (a `weekly` window with `model: "Gemini 4 Argon"` in `GET /status`), and a bare `Weekly Limit` in that section is qualified as `Gemini 4 Argon · Weekly Limit` instead of being attributed to the previous group
