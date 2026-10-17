@@ -12,6 +12,8 @@ const {
   parseLimitEntry,
   parseVersionInfo,
   parseModelLimits,
+  parseContextWindow,
+  parseCredits,
   extractMetadataFromOutput,
 } = require('./codex-pty-helpers.js');
 const { pingKeepalive } = require('./keepalive-helper.js');
@@ -360,6 +362,12 @@ class CodexAgent extends BaseAgent {
     if (accountMatch) {
       usage.account = this.stripBoxChars(accountMatch[1]);
     }
+
+    const contextWindow = parseContextWindow(clean);
+    if (contextWindow) usage.contextWindow = contextWindow;
+
+    const credits = parseCredits(clean);
+    if (credits) usage.credits = credits;
 
     this._updateMetadataFromOutput(clean);
 

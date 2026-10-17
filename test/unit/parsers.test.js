@@ -1813,6 +1813,54 @@ describe('CodexAgent', () => {
         }
       }
     });
+
+    describe('context window and credits', () => {
+      const statusScreen = `
+╭──────────────────────────────────────────────────────────────╮
+│  Model:               GPT-6-Astra                            │
+│  Account:             user@example.com                       │
+│  Context window:      25% left (198K used / 258K)            │
+│  5h limit:            [██████████████░░░░░░] 70% left (resets 14:30) │
+│  Weekly limit:        [████░░░░░░░░░░░░░░░░] 19% left (resets 8:12 AM on 22 Oct) │
+│  Credits:             48405 credits                          │
+╰──────────────────────────────────────────────────────────────╯
+      `;
+
+      it('attaches the context window from /status', () => {
+        const result = agent.parseOutput(statusScreen);
+
+        expect(result.contextWindow.totalTokens).toBe(258000);
+        expect(result.contextWindow.usedTokens).toBe(198000);
+        expect(result.contextWindow.percentLeft).toBe(25);
+      });
+
+      it('attaches the credit balance from /status', () => {
+        const result = agent.parseOutput(statusScreen);
+
+        expect(result.credits).toEqual({ remaining: 48405, unit: 'credits' });
+      });
+
+      it('parses comma-grouped credits and full token counts', () => {
+        const result = agent.parseOutput(`
+          Context window: 60% left (108,800 used / 272,000)
+          Weekly limit: [████░░░░░░] 40% left (resets 09:00 on 20 Mar)
+          Credits: 1,250 credits
+        `);
+
+        expect(result.contextWindow).toEqual({ percentLeft: 60, usedTokens: 108800, totalTokens: 272000 });
+        expect(result.credits.remaining).toBe(1250);
+      });
+
+      it('leaves both fields unset when /status does not print them', () => {
+        const result = agent.parseOutput(`
+          5h limit: [████████░░] 80% left (resets 14:30)
+          Weekly limit: [██████████] 100% left (resets 10:00 on 15 Mar)
+        `);
+
+        expect(result.contextWindow).toBeUndefined();
+        expect(result.credits).toBeUndefined();
+      });
+    });
   });
 
   describe('parseResetTime', () => {

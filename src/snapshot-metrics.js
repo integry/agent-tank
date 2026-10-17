@@ -121,7 +121,30 @@ function codexMetricsFor(source, model) {
 }
 
 /**
- * Extract Codex metric rows, including per-model limits.
+ * Codex context window utilisation as a percentage row. Prefers the token
+ * counts over the CLI's rounded "N% left".
+ * @returns {Object|null}
+ */
+function codexContextMetric(contextWindow) {
+  if (!contextWindow) return null;
+  const { usedTokens, totalTokens, percentLeft } = contextWindow;
+  let percentUsed = null;
+  if (isFiniteNumber(usedTokens) && isFiniteNumber(totalTokens) && totalTokens > 0) {
+    percentUsed = (usedTokens / totalTokens) * 100;
+  } else if (isFiniteNumber(percentLeft)) {
+    percentUsed = 100 - percentLeft;
+  }
+  if (percentUsed === null) return null;
+  return percentMetric({
+    key: 'contextUsedPercent',
+    label: 'Context window',
+    percentUsed: Math.round(Math.min(100, Math.max(0, percentUsed)) * 100) / 100,
+  });
+}
+
+/**
+ * Extract Codex metric rows, including per-model limits, the context window
+ * utilisation and the credit balance.
  * @param {Object} usage - Raw Codex usage
  * @returns {Object[]} Metric rows
  */
@@ -132,6 +155,15 @@ function extractCodexMetrics(usage) {
       if (!modelLimit) continue;
       metrics.push(...codexMetricsFor(modelLimit, modelLimit.name || 'Model'));
     }
+  }
+  const contextMetric = codexContextMetric(usage.contextWindow);
+  if (contextMetric) metrics.push(contextMetric);
+  // A balance, not a percentage: carried in value/unit and never plotted.
+  if (isFiniteNumber(usage.credits?.remaining)) {
+    metrics.push({
+      key: 'credits', label: 'Credits', model: null, cycle: null,
+      percentUsed: null, value: usage.credits.remaining, unit: 'credits',
+    });
   }
   return metrics;
 }

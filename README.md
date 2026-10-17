@@ -345,9 +345,19 @@ and display `alias`, and an optional `configPath` directory:
     "dbPath": "~/.agent-tank/history.db",
     "retentionDays": 14,
     "chart": true
+  },
+  "contextWindows": {
+    "gpt-6-astra": 300000
   }
 }
 ```
+
+`contextWindows` adds entries to, or corrects, the built-in table of known model
+context windows (see `context_window` under [Example `GET /status`](#example-get-status)).
+Keys are matched against the model name the CLI reports, case-insensitively and
+ignoring spaces, dots, underscores and hyphens, longest key first. A Claude
+display name without the `claude-` prefix, such as `Opus 5.5`, is matched as
+`claude-opus-5-5`. Values are token counts.
 
 Relative account paths are resolved relative to the JSON config file, and `~/`
 paths are expanded to the current user's home directory. The path
@@ -453,6 +463,18 @@ payload is kept under `raw` (abbreviated below). Antigravity limits reporting
 - `plan` comes from the plan the CLI reports (Codex plan type, Claude's
   `/status` login method). If Claude doesn't report a plan, it falls back to
   `"max"` when a weekly Fable window is present, and `null` otherwise.
+- `context_window` is a best-effort model context window, or `null` when
+  unknown. `source` says where it came from: `"cli"` when the CLI reported it
+  (Codex `/status` or its app-server), `"override"` when it came from the
+  `contextWindows` config key, or `"known-model"` when the reported model
+  (e.g. `claude-opus-5-5`) matched Agent Tank's built-in table. Only `"cli"`
+  values carry `used_tokens` and the percentages; looked-up values report the
+  size only, with `used_tokens`, `used_percent` and `remaining_percent` set to
+  `null`.
+- `credits` is the Codex credit balance (`{ "remaining": 48405, "unit": "credits" }`),
+  and `null` for other providers or when Codex doesn't report one. It is a
+  balance, not a time window, so it isn't in `windows`. Claude's extra usage is
+  a dollar budget, not credits, and stays under `raw.usage.extraUsage`.
 
 ```json
 {
@@ -496,6 +518,15 @@ payload is kept under `raw` (abbreviated below). Antigravity limits reporting
           "pace": { "ratio": 2.91, "burning_fast": true }
         }
       ],
+      "context_window": {
+        "total_tokens": 1000000,
+        "used_tokens": null,
+        "used_percent": null,
+        "remaining_percent": null,
+        "model": "claude-opus-5-5",
+        "source": "known-model"
+      },
+      "credits": null,
       "raw": { "name": "claude", "usage": { "session": { "percent": 42, "resetsAt": "12:20am (Europe/Berlin)" } } }
     },
     {
@@ -517,6 +548,15 @@ payload is kept under `raw` (abbreviated below). Antigravity limits reporting
           "pace": null
         }
       ],
+      "context_window": {
+        "total_tokens": 258000,
+        "used_tokens": 198000,
+        "used_percent": 76.74,
+        "remaining_percent": 23.26,
+        "model": "GPT-6-Astra",
+        "source": "cli"
+      },
+      "credits": { "remaining": 48405, "unit": "credits" },
       "raw": { "name": "codex", "usage": { "fiveHour": null, "weekly": { "percentUsed": 12, "resetsAt": 1791661540 } } }
     }
   ]
@@ -615,11 +655,11 @@ to the `usage_metrics` table:
 |---|---|
 | `agent_id` | Configured account id (e.g. `claude`, `work`) |
 | `provider` | Provider key (`claude`, `agy`, `codex`) |
-| `metric_key` | Stable series id, e.g. `session`, `weeklyAll`, `fiveHour`, `model:Gemini · Weekly Limit`, `GPT-5.3-Codex-Spark:fiveHour` |
+| `metric_key` | Stable series id, e.g. `session`, `weeklyAll`, `fiveHour`, `model:Gemini · Weekly Limit`, `GPT-5.3-Codex-Spark:fiveHour`; Codex also records `contextUsedPercent` (context window utilisation) and `credits` (credit balance) |
 | `metric_label` | Human-readable label (may change without forking the series) |
 | `model`, `cycle` | Model (group) the limit applies to, and `session` / `five_hour` / `weekly` |
 | `percent_used` | Always percent **used**, including for Antigravity |
-| `value`, `unit` | Non-percentage metrics (`unit` is `percent` for percentage rows) |
+| `value`, `unit` | Non-percentage metrics such as the Codex credit balance (`unit: credits`); `unit` is `percent` for percentage rows |
 | `recorded_at`, `recorded_at_ms` | Capture time as ISO 8601 and epoch milliseconds |
 
 A series needs no application code:

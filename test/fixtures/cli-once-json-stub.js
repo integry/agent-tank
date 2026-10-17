@@ -15,6 +15,7 @@ const USAGE = {
     weeklyFable: null,
   },
   codex: {
+    model: 'GPT-6-Astra',
     fiveHour: null,
     weekly: { label: 'Weekly limit', percentUsed: 12, percentLeft: 88, resetsAt: '2026-10-10T19:00:00Z', resetsInSeconds: 604800 },
   },

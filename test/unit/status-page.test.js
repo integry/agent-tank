@@ -144,4 +144,60 @@ describe('statusPage', () => {
       expect(html).toContain('--chart-series-1');
     });
   });
+
+  describe('context window and credits rows', () => {
+    const codexStatus = {
+      name: 'codex',
+      provider: 'codex',
+      usage: {
+        model: 'GPT-6-Astra',
+        fiveHour: null,
+        weekly: { percentUsed: 81, percentLeft: 19, resetsIn: '4d 2h' },
+        contextWindow: { percentLeft: 25, usedTokens: 198000, totalTokens: 258000 },
+        credits: { remaining: 48405, unit: 'credits' },
+      },
+      metadata: null,
+      error: null,
+      isRefreshing: false,
+      publicStatus: null,
+    };
+
+    it('renders a context-window row and a credits row on the Codex card', () => {
+      const html = statusPage({ codex: codexStatus });
+
+      expect(html).toContain('<div class="usage-extras" data-agent-id="codex">');
+      expect(html).toContain('<span class="usage-label">Context window</span>');
+      expect(html).toContain('<span class="usage-percent">77</span><span class="usage-suffix">% used</span>');
+      expect(html).toContain('198K / 258K');
+      expect(html).toContain('48,405 credits');
+      expect(html).toContain('title="GPT-6-Astra: reported by the CLI"');
+    });
+
+    it('renders a known-model window size for a Claude card', () => {
+      const html = statusPage({
+        claude: { name: 'claude', provider: 'claude', usage: { session: { percent: 5 } }, metadata: { model: 'claude-opus-5-5' } },
+      });
+
+      const extras = html.match(/<div class="usage-extras" data-agent-id="claude">(.*?)<\/div>\s*<\/div>\s*\n/s)[1];
+
+      expect(extras).toContain('<span class="usage-value">1M tokens</span>');
+      expect(extras).toContain('title="claude-opus-5-5: known model window"');
+      expect(extras).not.toContain('Credits');
+    });
+
+    it('applies config-file overrides', () => {
+      const html = statusPage({
+        codex: { ...codexStatus, usage: { ...codexStatus.usage, contextWindow: undefined } },
+      }, { contextWindows: { 'gpt-6-astra': 300000 } });
+
+      expect(html).toContain('300K tokens');
+      expect(html).toContain('title="GPT-6-Astra: from the config file"');
+    });
+
+    it('keeps a hidden container when there is nothing to show so XHR can fill it', () => {
+      const html = statusPage({ codex: { ...codexStatus, usage: { weekly: { percentUsed: 1 } } } });
+
+      expect(html).toContain('<div class="usage-extras" data-agent-id="codex" style="display:none"></div>');
+    });
+  });
 });

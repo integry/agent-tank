@@ -88,7 +88,7 @@ const { createRequestHandler } = require('../../src/server.js');
         .expect(200);
 
       const claudeStatus = response.body.providers.find(p => p.id === 'claude');
-      expect(Object.keys(claudeStatus)).toEqual(['id', 'provider', 'plan', 'status', 'last_updated', 'error', 'windows', 'raw']);
+      expect(Object.keys(claudeStatus)).toEqual(['id', 'provider', 'plan', 'status', 'last_updated', 'error', 'windows', 'context_window', 'credits', 'raw']);
       expect(claudeStatus).toMatchObject({ provider: 'claude', status: 'pending', windows: [] });
       expect(claudeStatus.raw).toHaveProperty('name', 'claude');
       expect(claudeStatus.raw).toHaveProperty('usageUpdatedAt', null);

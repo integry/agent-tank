@@ -43,6 +43,8 @@ const {
   formatRpcResponseAsOutput,
   parseRpcRateLimits,
   parseRpcLimitEntry,
+  parseRpcCredits,
+  parseRpcContextWindow,
   formatDuration,
 } = require('../../src/agents/codex-rpc-helpers.js');
 
@@ -405,6 +407,95 @@ describe('CodexAgent JSON-RPC Integration', () => {
 
       expect(usage.weekly.pace).toBeDefined();
       expect(typeof usage.weekly.pace.paceRatio).toBe('number');
+    });
+  });
+
+  describe('credits and context window', () => {
+    const bucket = {
+      limitId: 'codex',
+      primary: { usedPercent: 30, windowDurationMins: 300 },
+      secondary: { usedPercent: 81, windowDurationMins: 10080 },
+    };
+
+    it('reads a credits snapshot from the main rate-limit bucket', () => {
+      const { usage } = parseRpcRateLimits({
+        rateLimits: { ...bucket, credits: { hasCredits: true, unlimited: false, balance: '48405' } },
+      });
+
+      expect(usage.credits).toEqual({ remaining: 48405, unit: 'credits' });
+    });
+
+    it('reads a context window reported at the top level of the response', () => {
+      const { usage } = parseRpcRateLimits({
+        rateLimits: bucket,
+        contextWindow: { usedTokens: 198000, totalTokens: 258000, percentLeft: 25 },
+      });
+
+      expect(usage.contextWindow).toEqual({ percentLeft: 25, usedTokens: 198000, totalTokens: 258000 });
+    });
+
+    it('reads balances from a legacy structured response', () => {
+      const { usage } = parseRpcRateLimits({
+        fiveHour: { percentLeft: 80 },
+        creditBalance: 12,
+        model_context_window: 272000,
+      });
+
+      expect(usage.credits).toEqual({ remaining: 12, unit: 'credits' });
+      expect(usage.contextWindow).toEqual({ percentLeft: null, usedTokens: null, totalTokens: 272000 });
+    });
+
+    it('leaves both fields unset when the app-server does not report them', () => {
+      const { usage } = parseRpcRateLimits({ rateLimits: bucket });
+
+      expect(usage.credits).toBeUndefined();
+      expect(usage.contextWindow).toBeUndefined();
+    });
+
+    it('flows through CodexAgent#parseOutput', () => {
+      const agent = new CodexAgent();
+      agent._rpcRateLimits = { rateLimits: { ...bucket, credits: 7 }, context_window: { total: '258K', used: '198K' } };
+
+      const usage = agent.parseOutput('__RPC_RESPONSE__');
+
+      expect(usage.credits.remaining).toBe(7);
+      expect(usage.contextWindow).toMatchObject({ totalTokens: 258000, usedTokens: 198000 });
+    });
+
+    describe('parseRpcCredits', () => {
+      it.each([
+        [{ credits: 48405 }, 48405],
+        [{ credits: '1,250' }, 1250],
+        [{ credits: { remaining: 3 } }, 3],
+        [{ creditsRemaining: 9 }, 9],
+        [{ credits_remaining: '0' }, 0],
+      ])('parses %j', (source, remaining) => {
+        expect(parseRpcCredits(source)).toEqual({ remaining, unit: 'credits' });
+      });
+
+      it('returns null without a numeric balance', () => {
+        expect(parseRpcCredits({})).toBeNull();
+        expect(parseRpcCredits({ credits: { hasCredits: false, unlimited: true, balance: null } })).toBeNull();
+        expect(parseRpcCredits({ credits: 'n/a' })).toBeNull();
+      });
+    });
+
+    describe('parseRpcContextWindow', () => {
+      it('parses a token-usage info block', () => {
+        expect(parseRpcContextWindow({
+          info: { model_context_window: 272000, last_token_usage: { input_tokens: 1000, total_tokens: 1500 } },
+        })).toEqual({ percentLeft: null, usedTokens: 1500, totalTokens: 272000 });
+      });
+
+      it('parses flat fields', () => {
+        expect(parseRpcContextWindow({ modelContextWindow: 258000, contextTokensUsed: 1000 }))
+          .toEqual({ percentLeft: null, usedTokens: 1000, totalTokens: 258000 });
+      });
+
+      it('returns null without a positive window size', () => {
+        expect(parseRpcContextWindow({})).toBeNull();
+        expect(parseRpcContextWindow({ contextWindow: { used: 5 } })).toBeNull();
+      });
     });
   });
 

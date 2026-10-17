@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `context_window` and `credits` on every canonical provider object (`GET /status`, `GET /status/:id`, `--once --json`), `null` when unknown. `context_window` is `{ total_tokens, used_tokens, used_percent, remaining_percent, model, source }`, where `source` is `cli` (reported by the CLI), `override` (config file) or `known-model` (built-in table in `src/context-window.js`). Claude and Antigravity get a size looked up from the model their CLI reports; Codex reports its own. `credits` is the Codex credit balance, `{ remaining, unit: "credits" }`; Claude's extra-usage dollar budget stays under `raw.usage.extraUsage`
+- Codex: parse `Context window: N% left (X used / Y)` and `Credits: N credits` from `/status` into `usage.contextWindow` / `usage.credits`, and read the same values from the JSON-RPC app-server response when it reports them
+- `contextWindows` config key to add or correct known model context windows, e.g. `{ "gpt-6-astra": 300000 }`
+- Dashboard cards show a context-window row and a credits row when known, and both update after an auto-refresh poll or a card refresh without a page reload
+- Codex history snapshots record `contextUsedPercent` (percent unit) and `credits` (`credits` unit, in `value`)
 - Usage-history sparkline on each dashboard agent card: one hand-built inline-SVG line per tracked metric on a fixed 0–100% scale, with a legend of latest values and hover read-out. It is redrawn after every auto-refresh poll and card refresh without a page reload, and shows "Not enough history yet" until a metric has two points
 - `--history-chart` / `--no-history-chart`, `AGENT_TANK_HISTORY_CHART` and the `history.chart` config key (default on). `GET /config` reports the effective value as `history.chart`, which is `false` whenever history recording is off (`store: "none"`)
 - `GET /history/:id?view=chart` returns only plottable series (percent units, at least two points) with `{ t, percent }` points
