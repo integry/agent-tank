@@ -2,17 +2,12 @@ const { BaseAgent } = require('./base.js');
 const { calculatePace } = require('../pace-evaluator.js');
 const { CYCLE_DURATIONS } = require('../usage-formatters.js');
 const logger = require('../logger.js');
+const { QUOTA_HEADER, RESET_LINE, formatGroupName, cycleTypeFor, parseAgyUsage } = require('./agy-usage-parser.js');
 
 class AgyAgent extends BaseAgent {
-  // Matches both the older "Model Quota" screen and the newer grouped
-  // "Models & Quota" screen reported by recent Antigravity CLI builds.
-  static QUOTA_HEADER = /Models?\s*&?\s*Quota/i;
-
-  // Antigravity words its countdown line differently across builds: older
-  // screens say "Resets in 3h 15m", the grouped "Models & Quota" screen says
-  // "Refreshes in 160h 12m". A fully replenished limit renders "Quota
-  // available" instead, which carries no countdown and yields a null reset.
-  static RESET_LINE = /^(?:resets?|refresh(?:es)?|renew(?:s|als)?)\s*(?:in|at)?\s*([0-9dhm\s]+)?/i;
+  // See agy-usage-parser.js for the screen formats these match.
+  static QUOTA_HEADER = QUOTA_HEADER;
+  static RESET_LINE = RESET_LINE;
 
   constructor(options = {}) {
     super('agy', 'agy', ['--dangerously-skip-permissions']);
@@ -89,7 +84,10 @@ class AgyAgent extends BaseAgent {
       };
     }
 
-    if (this._hasReadyPrompt(clean) || /signing in/i.test(clean)) {
+    // agy 1.4.0 draws a "Signing in..." spinner next to its login menu, so a
+    // menu still asking for a login method means nobody is signed in.
+    const awaitingLoginChoice = /currently not signed in/i.test(clean) && /select login method/i.test(clean);
+    if (this._hasReadyPrompt(clean) || (/signing in/i.test(clean) && !awaitingLoginChoice)) {
       return null;
     }
 
@@ -194,22 +192,8 @@ class AgyAgent extends BaseAgent {
     setTimeout(() => shell.write('\r'), 1000);
   }
 
-  // Convert an ALL-CAPS Antigravity group header (e.g. "CLAUDE AND GPT") into a
-  // readable label ("Claude and GPT"), preserving known acronyms and lowercasing
-  // connective words.
   _formatGroupName(raw) {
-    const acronyms = new Set(['GPT', 'GPU', 'AI', 'CLI', 'API', 'OSS']);
-    const connectives = new Set(['and', 'or', 'of', 'the', 'for', 'with']);
-    return raw
-      .split(/\s+/)
-      .map((word, idx) => {
-        const upper = word.toUpperCase();
-        if (acronyms.has(upper)) return upper;
-        const lower = word.toLowerCase();
-        if (idx > 0 && connectives.has(lower)) return lower;
-        return lower.charAt(0).toUpperCase() + lower.slice(1);
-      })
-      .join(' ');
+    return formatGroupName(raw);
   }
 
   // Read the countdown line that follows a limit's percentage bar. Returns
@@ -229,13 +213,8 @@ class AgyAgent extends BaseAgent {
     return { resetsIn, resetsInSeconds, resetsAt };
   }
 
-  // Map an Antigravity limit label to the cycle its countdown belongs to, so
-  // pace math compares usage against the right window. A weekly limit reports
-  // "Refreshes in 160h 12m", which is nonsense against a 24h cycle.
   _cycleTypeFor(label) {
-    if (/\bweek(?:ly)?\b/i.test(label)) return 'weekly';
-    if (/\b(?:five|5)[\s-]?hour\b/i.test(label)) return 'fiveHour';
-    return 'sessionAgy';
+    return cycleTypeFor(label);
   }
 
   // Calculate pace data for a model entry when reset timing is available.
@@ -264,73 +243,7 @@ class AgyAgent extends BaseAgent {
   }
 
   _parseAgyUsage(clean, usage) {
-    if (!AgyAgent.QUOTA_HEADER.test(clean)) return;
-
-    const lines = clean.split('\n').map(line => line.trim()).filter(Boolean);
-    const knownMarkers = new Set([
-      'Model Quota',
-      'Models & Quota',
-      'Quota available',
-      '? for shortcuts',
-    ]);
-
-    // Newer Antigravity builds group quotas under section headers such as
-    // "GEMINI MODELS" / "CLAUDE AND GPT MODELS", with each group reporting its
-    // own "Weekly Limit" and "Five Hour Limit". Track the active group so those
-    // generic labels can be qualified and not collapsed into a single entry.
-    let currentGroup = null;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      const groupMatch = line.match(/^([A-Z][A-Z0-9 &/-]*?)\s+MODELS$/);
-      if (groupMatch) {
-        currentGroup = this._formatGroupName(groupMatch[1].trim());
-        continue;
-      }
-
-      if (knownMarkers.has(line) || /^(?:[>└│]|[-─↑/↓]|esc\s+to\s+cancel)/i.test(line)) {
-        continue;
-      }
-      // Descriptive lines that are not models (e.g. "Account: ...",
-      // "Models within this group: ...").
-      if (/^(?:Account|Models within this group)\s*:/i.test(line)) {
-        continue;
-      }
-      if (!/[A-Za-z]/.test(line) || /\d+\s*%/.test(line)) {
-        continue;
-      }
-      // A countdown line ("Refreshes in 58m") belongs to the entry above it and
-      // is never a model label of its own.
-      if (AgyAgent.RESET_LINE.test(line)) {
-        continue;
-      }
-
-      const percentLine = lines[i + 1] || '';
-      const percentMatch = percentLine.match(/(\d+(?:\.\d+)?)\s*%/);
-      if (!percentMatch) {
-        continue;
-      }
-
-      const usageLeft = parseFloat(percentMatch[1]);
-      const percentUsed = Number((100 - usageLeft).toFixed(1));
-      const reset = this._parseResetLine(lines[i + 2]);
-
-      // Qualify shared limit labels with their group so entries from different
-      // groups stay distinct; per-model labels are already unique on their own.
-      const isSharedLimit = /^(?:weekly|five[\s-]?hour|5[\s-]?hour|daily|hourly)\b/i.test(line);
-      const modelName = (currentGroup && isSharedLimit)
-        ? `${currentGroup} · ${line}`
-        : line;
-
-      if (!usage.models.find(m => m.model === modelName)) {
-        const cycle = this._cycleTypeFor(line);
-        const modelEntry = { model: modelName, usageLeft, percentUsed, ...reset, cycle };
-        if (currentGroup) modelEntry.group = currentGroup;
-        this._addPaceData(modelEntry, reset.resetsInSeconds, cycle);
-        usage.models.push(modelEntry);
-      }
-    }
+    parseAgyUsage(clean, usage, this);
   }
 
   async fetchMetadata() {
@@ -339,7 +252,58 @@ class AgyAgent extends BaseAgent {
     }
 
     this._aboutSent = true;
-    return this._parseAgyMetadata(this.output);
+    // The version, account and model are only printed in the startup banner,
+    // so the process has to be running before there is anything to parse.
+    if (!this.shell || !this.processReady) {
+      await this.spawnProcess();
+    }
+    return this._parseAgyMetadata(await this._waitForBanner());
+  }
+
+  // Resolve with the startup output once the banner's model and plan have
+  // rendered or a sign-in screen is up (else after a short grace period, since
+  // the prompt can appear before the model line and agy draws the plan ~2s
+  // after startup).
+  _waitForBanner(timeoutMs = 4000) {
+    const banner = () => `${this.spawnOutput || ''}${this.output || ''}`;
+    const settled = () => {
+      const clean = this.stripAnsi(banner());
+      return (this._parseBannerModel(clean) && this._parseBannerPlan(clean))
+        || this.detectAuthenticationState(banner());
+    };
+    if (!this.shell || settled()) {
+      return Promise.resolve(banner());
+    }
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        this._onDataCallback = null;
+        resolve(banner());
+      };
+      const timer = setTimeout(done, timeoutMs);
+      this._onDataCallback = () => {
+        if (settled()) done();
+      };
+    });
+  }
+
+  // "Gemini 4 Argon (Medium)" on its own banner line, or the status line
+  // "? for shortcuts Gemini 4 Argon · medium". Quoted names belong to notices
+  // such as '"Gemini 3.1 Pro (High)" is no longer available', not the model.
+  _parseBannerModel(clean) {
+    const bannerLine = clean.match(/^[^\n"]*?\b((?:Gemini|Claude|GPT)\b[^\n\r"()·]*?)[ \t]*\([^)\n]*\)\s*$/im);
+    if (bannerLine) return this.stripBoxChars(bannerLine[1]).trim();
+    const statusLine = clean.match(/\?\s+for\s+shortcuts[ \t]+([^\n·]+?)(?:[ \t]*·[^\n]*)?[ \t]*$/im);
+    return statusLine ? this.stripBoxChars(statusLine[1]).trim() : null;
+  }
+
+  // The plan in parentheses after the account: "user@example.com (Google AI Pro)".
+  // agy 1.4.0 draws it in a later redraw by moving the cursor back to the
+  // account line, so once escapes are stripped it can also stand on its own.
+  _parseBannerPlan(clean) {
+    const match = clean.match(/\S+@\S+[ \t]+\(([^)\n]+)\)/)
+      || clean.match(/\((Google\s+AI\s+[^)\n]+)\)/i);
+    return match ? match[1].trim() : null;
   }
 
   _parseAgyMetadata(output) {
@@ -352,12 +316,14 @@ class AgyAgent extends BaseAgent {
     const emailMatch = clean.match(/(\S+@\S+)/);
     if (emailMatch) metadata.email = this.stripBoxChars(emailMatch[1]);
 
+    const plan = this._parseBannerPlan(clean);
+    if (plan) metadata.plan = plan;
+
     const cwdMatch = clean.match(/\n\s*(\/[^\n]+)\n/);
     if (cwdMatch) metadata.cwd = this.stripBoxChars(cwdMatch[1]);
 
-    const modelMatch = clean.match(/((?:Gemini|Claude|GPT)[^\n]+?)\s+\((?:Google AI|[^)]*Pro|[^)]*Free|[^)]*)\)/i)
-      || clean.match(/\?\s+for\s+shortcuts\s+(.+?)(?:\n|$)/i);
-    if (modelMatch) metadata.model = this.stripBoxChars(modelMatch[1]);
+    const model = this._parseBannerModel(clean);
+    if (model) metadata.model = model;
 
     metadata.cli = 'agy';
     return Object.keys(metadata).length > 1 ? metadata : { cli: 'agy' };

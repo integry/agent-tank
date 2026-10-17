@@ -4,6 +4,7 @@
 const { faviconScript } = require('./client-favicon');
 const { autoRefreshScript } = require('./client-auto-refresh');
 const { monitorScript } = require('./client-monitor');
+const { historyScript } = require('./client-history');
 
 const clientScript = faviconScript + `
     // Theme management
@@ -142,6 +143,6 @@ const clientScript = faviconScript + `
         alert('Failed to refresh: ' + e.message);
       }
     }
-` + autoRefreshScript + monitorScript;
+` + autoRefreshScript + monitorScript + historyScript;
 
 module.exports = { clientScript };

@@ -3,7 +3,8 @@ const path = require('node:path');
 const pkg = require(path.join(__dirname, '..', 'package.json'));
 
 const { agentIcons, refreshIcon, tankIcon, syncIcon, copyIcon } = require('./icons');
-const { formatUsage } = require('./usage-formatters');
+const { formatUsage, formatUsageExtras } = require('./usage-formatters');
+const { normalizeAgentStatus } = require('./usage-normalizer');
 const { clientScript } = require('./client-script');
 const { getStatusBadgeClass, getStatusText } = require('./public-status');
 
@@ -70,9 +71,17 @@ function renderCardFooter(data) {
     : '';
 }
 
-function renderAgentCard([name, data]) {
+function renderHistoryChart(name) {
+  return `<div class="history-chart" data-agent-id="${escapeHtml(name)}" aria-live="polite">
+          <div class="history-chart-empty">Loading history…</div>
+        </div>`;
+}
+
+function renderAgentCard([name, data], options = {}) {
   const provider = data.provider || data.name || name;
   const usageHtml = formatUsage(provider, data.usage, { agentId: name });
+  const canonical = normalizeAgentStatus({ ...data, id: name }, { contextWindows: options.contextWindows });
+  const extrasHtml = formatUsageExtras(name, canonical.context_window, canonical.credits);
   const statusClass = data.error ? 'error' : data.isRefreshing ? 'refreshing' : 'ok';
   const icon = agentIcons[provider] || '';
   const providerName = getAgentDisplayName(provider);
@@ -82,6 +91,7 @@ function renderAgentCard([name, data]) {
   const statusBadgeHtml = renderPublicStatusBadge(data.publicStatus);
   const footerHtml = renderCardFooter(data);
   const refreshArgument = escapeHtml(JSON.stringify(name));
+  const historyHtml = options.historyChart ? renderHistoryChart(name) : '';
 
   return `
       <div class="agent-card ${statusClass} agent-${escapeHtml(provider)}" data-agent-id="${escapeHtml(name)}">
@@ -94,15 +104,25 @@ function renderAgentCard([name, data]) {
           </button>
         </h2>
         <div class="usage">${usageHtml}</div>
+        ${extrasHtml}
+        ${historyHtml}
         ${footerHtml}
       </div>
     `;
 }
 
-function statusPage(status) {
+/**
+ * Render the dashboard HTML.
+ * @param {Object} status - Raw agent status keyed by agent id (AgentTank#getStatus)
+ * @param {Object} [options]
+ * @param {boolean} [options.historyChart=false] - Add a usage-history sparkline container to each card
+ * @param {Object<string, number>} [options.contextWindows] - Context window overrides (config file)
+ * @returns {string}
+ */
+function statusPage(status, options = {}) {
   const agents = Object.entries(status);
   const globalLastChecked = getGlobalLastChecked(agents);
-  const agentCards = agents.map(renderAgentCard).join('');
+  const agentCards = agents.map(agent => renderAgentCard(agent, options)).join('');
 
   return `<!DOCTYPE html>
 <html>

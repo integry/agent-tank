@@ -1,3 +1,5 @@
+/* eslint-disable max-lines -- One registry keeps every provider mapping and canonical field in one place. */
+
 /**
  * Usage normalization layer.
  *
@@ -12,6 +14,7 @@
  */
 
 const logger = require('./logger.js');
+const { detectContextWindow } = require('./context-window.js');
 
 /** Canonical window types. */
 const WINDOW_TYPES = Object.freeze(['session', 'five_hour', 'weekly']);
@@ -53,7 +56,26 @@ const PROVIDER_FAMILIES = Object.freeze({
  *   it. Falls back to the last refresh attempt when no capture time is known.
  * @property {string|null} error - Last refresh error message, if any
  * @property {CanonicalWindow[]} windows
+ * @property {CanonicalContextWindow|null} context_window - Best-effort model context window
+ * @property {CanonicalCredits|null} credits - Credit balance (Codex only)
  * @property {Object} raw - Untouched per-agent status payload
+ */
+
+/**
+ * @typedef {Object} CanonicalContextWindow
+ * @property {number} total_tokens - Window size in tokens
+ * @property {number|null} used_tokens - Tokens in use; null unless the CLI reported it
+ * @property {number|null} used_percent
+ * @property {number|null} remaining_percent
+ * @property {string|null} model - Model the window belongs to
+ * @property {'cli'|'override'|'known-model'} source - Where the size came from:
+ *   printed by the CLI, the config-file `contextWindows` table, or the built-in table
+ */
+
+/**
+ * @typedef {Object} CanonicalCredits
+ * @property {number} remaining - Credit balance
+ * @property {'credits'} unit
  */
 
 const ISO_DATE_PREFIX = /^\d{4}-\d{2}-\d{2}/;
@@ -310,9 +332,40 @@ function normalizeCodexWindows(usage, context) {
   return windows;
 }
 
+// Antigravity's banner names the plan, e.g. "Google AI Pro".
+function agyPlan(agentStatus) {
+  const plan = agentStatus.metadata?.plan;
+  return plan ? String(plan).toLowerCase() : null;
+}
+
 function codexPlan(agentStatus) {
   const plan = agentStatus.metadata?.planType ?? agentStatus.metadata?.plan;
   return plan ? String(plan).toLowerCase() : null;
+}
+
+// Credits are a balance, not a time window, so they get their own field.
+// Claude's extraUsage is a dollar budget and deliberately stays in `raw`.
+function codexCredits(usage) {
+  const remaining = usage?.credits?.remaining;
+  return isFiniteNumber(remaining) ? { remaining, unit: 'credits' } : null;
+}
+
+// ---------------------------------------------------------------------------
+// Context window
+// ---------------------------------------------------------------------------
+
+/**
+ * Best-effort context window: the CLI-reported window (Codex) wins, then the
+ * config-file override table, then the built-in known-model table.
+ * @returns {CanonicalContextWindow|null}
+ */
+function normalizeContextWindow(agentStatus, overrides) {
+  const model = agentStatus.usage?.model || agentStatus.metadata?.model || null;
+  return detectContextWindow({
+    reported: agentStatus.usage?.contextWindow || null,
+    model,
+    overrides,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -322,12 +375,13 @@ function codexPlan(agentStatus) {
 /**
  * One normalizer per internal provider key.
  * `windows(usage, context)` maps raw usage to canonical windows;
- * `plan(agentStatus)` extracts the plan name where known.
+ * `plan(agentStatus)` extracts the plan name where known;
+ * `credits(usage)` extracts a credit balance where the provider has one.
  */
 const NORMALIZERS = {
-  claude: { windows: normalizeClaudeWindows, plan: claudePlan },
-  agy: { windows: normalizeAgyWindows, plan: () => null },
-  codex: { windows: normalizeCodexWindows, plan: codexPlan },
+  claude: { windows: normalizeClaudeWindows, plan: claudePlan, credits: () => null },
+  agy: { windows: normalizeAgyWindows, plan: agyPlan, credits: () => null },
+  codex: { windows: normalizeCodexWindows, plan: codexPlan, credits: codexCredits },
 };
 
 function deriveStatus(agentStatus) {
@@ -342,6 +396,8 @@ function deriveStatus(agentStatus) {
  * @param {Object} agentStatus - Raw per-agent status
  * @param {Object} [options]
  * @param {number} [options.now=Date.now()] - Current time in ms
+ * @param {Object<string, number>} [options.contextWindows] - Config-file context
+ *   window overrides, keyed by model-name pattern
  * @returns {CanonicalProvider|null}
  */
 function normalizeAgentStatus(agentStatus, options = {}) {
@@ -366,6 +422,8 @@ function normalizeAgentStatus(agentStatus, options = {}) {
     last_updated: capturedMs === null ? null : new Date(capturedMs).toISOString(),
     error: agentStatus.error || null,
     windows,
+    context_window: normalizeContextWindow(agentStatus, options.contextWindows),
+    credits: normalizer && agentStatus.usage ? normalizer.credits(agentStatus.usage) : null,
     raw: agentStatus,
   };
 }
@@ -396,5 +454,6 @@ module.exports = {
   normalizeAgyWindows,
   normalizeCodexWindows,
   normalizePace,
+  normalizeContextWindow,
   resolveResetsAt,
 };

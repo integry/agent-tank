@@ -7,7 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-17
+
+Breaking: usage responses use a new canonical shape and history moved to SQLite. See [Upgrading from 0.9.x](README.md#upgrading-from-09x).
+
+### Verified
+
+Verified with the following agent versions (versions checked on 2026-10-17):
+
+- Claude Code `2.1.302`
+- Antigravity CLI (`agy`) `1.4.0`
+- Codex CLI `0.162.1`
+
+### Added
+
+- Antigravity: support the separate **Gemini 4 Argon** quota pool reported by `agy` 1.3.x. Its `GEMINI 4 ARGON` section is recognised as a group even without a `MODELS` suffix, so `Gemini 4 Argon Weekly Limit` is reported with `group: "Gemini 4 Argon"` and `cycle: "weekly"` (a `weekly` window with `model: "Gemini 4 Argon"` in `GET /status`), and a bare `Weekly Limit` in that section is qualified as `Gemini 4 Argon · Weekly Limit` instead of being attributed to the previous group
+- `context_window` and `credits` on every canonical provider object (`GET /status`, `GET /status/:id`, `--once --json`), `null` when unknown. `context_window` is `{ total_tokens, used_tokens, used_percent, remaining_percent, model, source }`, where `source` is `cli` (reported by the CLI), `override` (config file) or `known-model` (built-in table in `src/context-window.js`). Claude and Antigravity get a size looked up from the model their CLI reports; Codex reports its own. `credits` is the Codex credit balance, `{ remaining, unit: "credits" }`; Claude's extra-usage dollar budget stays under `raw.usage.extraUsage`
+- Codex: parse `Context window: N% left (X used / Y)` and `Credits: N credits` from `/status` into `usage.contextWindow` / `usage.credits`, and read the same values from the JSON-RPC app-server response when it reports them
+- `contextWindows` config key to add or correct known model context windows, e.g. `{ "gpt-6-astra": 300000 }`
+- Dashboard cards show a context-window row and a credits row when known, and both update after an auto-refresh poll or a card refresh without a page reload
+- Codex history snapshots record `contextUsedPercent` (percent unit) and `credits` (`credits` unit, in `value`)
+- Usage-history sparkline on each dashboard agent card: one hand-built inline-SVG line per tracked metric on a fixed 0–100% scale, with a legend of latest values and hover read-out. It is redrawn after every auto-refresh poll and card refresh without a page reload, and shows "Not enough history yet" until a metric has two points
+- `--history-chart` / `--no-history-chart`, `AGENT_TANK_HISTORY_CHART` and the `history.chart` config key (default on). `GET /config` reports the effective value as `history.chart`, which is `false` whenever history recording is off (`store: "none"`)
+- `GET /history/:id?view=chart` returns only plottable series (percent units, at least two points) with `{ t, percent }` points
+- `src/history-series.js` exports `toChartSeries(series, options)`
+
 ### Changed
+
+- Antigravity: descriptive prose lines (ending in `.`, `!` or `?`, or longer than eight words) on the `/usage` screen are skipped explicitly and can never become a model label. Quota parsing moved from `src/agents/agy.js` to `src/agents/agy-usage-parser.js`
+- Usage history moved from `~/.agent-tank/history.json` to a SQLite database at `~/.agent-tank/history.db` (Node's built-in `node:sqlite`, no new dependency). Each refresh stores one row per metric in a normalised `usage_metrics` table, so a series is a single indexed query. The JSON file is no longer read or written, and existing JSON history is not migrated
+- `GET /history/:id` now returns `{ agent, store, retention_days, series }` (`series` is `[]` for an account with no recorded metrics), where each series is `{ key, label, model, cycle, unit, points: [{ t, percent, value }] }`; it accepts `since`, `until` and `metric` query parameters. `GET /history` stats are now per-account row counts plus `store` and `path`
+- `GET /config` reports the history backend as `history: { enabled, store, path, retentionDays, chart }`
+- `src/snapshot-metrics.js` now exports `extractUsageMetrics(provider, usage)`, which returns a flat array of metric rows; `extractSnapshotMetrics` was removed
+- History needs Node.js 22.5+. On older runtimes history is disabled with one startup warning and reported as `store: "none"`; refreshes are unaffected
+- Add `--history` / `--no-history`, `--history-db <path>`, `AGENT_TANK_HISTORY`, `AGENT_TANK_HISTORY_DB`, and the `history.enabled` / `history.dbPath` config keys
+- Usage that was not re-captured since it was last recorded (a failed refresh that keeps cached usage, or a refresh skipped by the cooldown) is no longer recorded again
+- `AgentTank#stop()` closes the history database
 
 - Usage responses now use a canonical provider shape shared by every provider: `id`, `provider`, `plan`, `status`, `last_updated`, `error`, and a `windows` list (`type`, `label`, `model`, `used_percent`, `remaining_percent`, ISO 8601 `resets_at`, `resets_in_seconds`, `pace` or `null`). The original per-provider payload is preserved under each provider's `raw` field. Response envelopes per endpoint:
   - `GET /status` and `--once --json` return `{ "providers": [...] }`
@@ -17,6 +52,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `getNormalizedStatus()` and `getNormalizedAgentStatus(id)` to the programmatic `AgentTank` API; `getStatus()` and `getAgentStatus(id)` still return the raw per-provider payloads
 - Raw agent status gains `usageUpdatedAt`, the time usage was last captured. Refreshes that fail but keep cached usage still bump `lastUpdated` but not `usageUpdatedAt`; canonical `last_updated` and reset times are based on `usageUpdatedAt`, so they no longer drift forward after such failures
 - Claude `/status` metadata now includes `loginMethod`, which is used to report the canonical `plan`
+
+### Fixed
+
+- Claude: metadata from `/status` was always `null` because the slash-command autocomplete menu was mistaken for the finished Status panel, so the canonical `plan` and `context_window` were `null`. Completion now requires the panel's `Version:` field followed by `Login method:`, `Model:` or `Session ID:`
+- Antigravity: metadata was parsed before the CLI had started, so `model` was never set and `context_window` (including `contextWindows` overrides) could not apply. Agent Tank now waits for the startup banner and reads `version`, `email`, `model` (from the banner, never from a "no longer available" notice) and `plan`
+- Antigravity: the plan shown next to the account in the banner (e.g. `Google AI Pro`) is reported as the canonical `plan` (`"google ai pro"`)
+- Antigravity: a signed-out CLI showing the login menu next to a `Signing in...` spinner is reported as `Authentication required` instead of waiting out the spawn timeout
+- Codex e2e tests accept the epoch-second `resetsAt` that the JSON-RPC app-server returns, and check the canonical `resets_at` is ISO 8601
+
+### Documentation
+
+- README: new "Upgrading from 0.9.x" section with before/after response shapes and history notes, and a troubleshooting entry for `null` `context_window` / `plan`
 
 ## [0.9.11] - 2026-09-29
 

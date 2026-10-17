@@ -2,6 +2,7 @@
 // This module exports a string containing the XHR-based auto-refresh code
 
 const { colorHelpers, timeHelpers, metricExtractors } = require('./client-auto-refresh-helpers');
+const { renderUsageExtras } = require('./usage-formatters');
 
 const autoRefreshScript = `
     // ===== Auto-Refresh System (XHR-based) =====
@@ -10,6 +11,19 @@ const autoRefreshScript = `
 ${colorHelpers}
 ${timeHelpers}
 ${metricExtractors}
+
+    // Shared with the server-side card renderer (src/usage-formatters.js)
+    ${renderUsageExtras.toString()}
+
+    // Redraw a card's context-window and credits rows
+    function updateUsageExtras(agentId, contextWindow, credits) {
+      const container = Array.from(document.querySelectorAll('.usage-extras'))
+        .find(el => el.dataset.agentId === agentId);
+      if (!container) return;
+      const html = renderUsageExtras(contextWindow, credits);
+      container.innerHTML = html;
+      container.style.display = html ? '' : 'none';
+    }
 
     // Update a single metric's DOM elements
     function updateMetricDOM(metric) {
@@ -140,6 +154,7 @@ ${metricExtractors}
         for (const entry of (status.providers || [])) {
           const agentName = entry.id;
           const agentData = entry.raw || {};
+          updateUsageExtras(agentName, entry.context_window || null, entry.credits || null);
           if (!agentData.usage) continue;
 
           const provider = agentData.provider || agentData.name || agentName;
@@ -184,6 +199,9 @@ ${metricExtractors}
         // Update favicon and title based on new data
         updateFaviconAndTitle();
         checkAndNotify();
+
+        // Redraw usage-history sparklines with the newly recorded points
+        renderHistoryCharts();
 
         console.log('[Auto-refresh] Updated', allMetrics.length, 'metrics');
       } catch (error) {

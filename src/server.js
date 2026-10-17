@@ -6,6 +6,72 @@
 const http = require('node:http');
 const logger = require('./logger.js');
 const { statusPage } = require('./status-page.js');
+const { toChartSeries } = require('./history-series.js');
+
+function sendJson(res, body) {
+  res.setHeader('Content-Type', 'application/json');
+  res.writeHead(200);
+  res.end(JSON.stringify(body, null, 2));
+}
+
+/**
+ * Build the GET /history/:id body. Supports `since`, `until` (ISO 8601 or
+ * epoch ms) and `metric` (a metric key) query parameters. `view=chart`
+ * reduces the series to plottable `{ t, percent }` points (see toChartSeries).
+ */
+function historyResponse(tank, id, params = new URLSearchParams()) {
+  const options = {};
+  for (const [param, option] of [['since', 'since'], ['until', 'until'], ['metric', 'key']]) {
+    const raw = params.get(param);
+    if (raw) options[option] = /^\d+$/.test(raw) ? Number(raw) : raw;
+  }
+  const config = tank.getHistoryConfig();
+  const series = tank.getHistory(id, options) || [];
+  return {
+    agent: id,
+    store: config.store,
+    retention_days: config.retentionDays,
+    series: params.get('view') === 'chart' ? toChartSeries(series) : series,
+  };
+}
+
+/** Render the dashboard HTML. */
+function statusPageResponse(tank) {
+  return statusPage(tank.getStatus(), {
+    historyChart: tank.getHistoryConfig().chart,
+    contextWindows: tank.contextWindows,
+  });
+}
+
+/** Build the GET /config body. */
+function configResponse(tank) {
+  return {
+    autoRefresh: {
+      enabled: tank.autoRefresh.enabled && tank.autoRefresh.interval > 0,
+      interval: tank.autoRefresh.interval, // in seconds
+      refreshCooldown: tank.refreshCooldown,
+    },
+    history: tank.getHistoryConfig(),
+    lastRefreshedAt: tank.lastRefreshedAt,
+  };
+}
+
+/**
+ * Serve GET /history (stats) and GET /history/:id (series).
+ * @returns {boolean} Whether the request was a history route
+ */
+function handleHistoryRoute(res, tank, url) {
+  if (url.pathname === '/history') {
+    sendJson(res, tank.getHistoryStats());
+    return true;
+  }
+  if (url.pathname.startsWith('/history/')) {
+    const id = decodeURIComponent(url.pathname.slice(9));
+    sendJson(res, historyResponse(tank, id, url.searchParams));
+    return true;
+  }
+  return false;
+}
 
 function createRequestHandler(tank) {
   return async (req, res) => {
@@ -34,7 +100,7 @@ function createRequestHandler(tank) {
       if (req.method === 'GET' && path === '/') {
         res.setHeader('Content-Type', 'text/html');
         res.writeHead(200);
-        res.end(statusPage(tank.getStatus()));
+        res.end(statusPageResponse(tank));
         return;
       }
 
@@ -48,17 +114,11 @@ function createRequestHandler(tank) {
       }
 
       if (req.method === 'GET' && path === '/config') {
-        const config = {
-          autoRefresh: {
-            enabled: tank.autoRefresh.enabled && tank.autoRefresh.interval > 0,
-            interval: tank.autoRefresh.interval, // in seconds
-            refreshCooldown: tank.refreshCooldown,
-          },
-          lastRefreshedAt: tank.lastRefreshedAt,
-        };
-        res.setHeader('Content-Type', 'application/json');
-        res.writeHead(200);
-        res.end(JSON.stringify(config, null, 2));
+        sendJson(res, configResponse(tank));
+        return;
+      }
+
+      if (req.method === 'GET' && handleHistoryRoute(res, tank, url)) {
         return;
       }
 
@@ -145,4 +205,11 @@ function displayServerBanner(tank) {
   console.log('');
 }
 
-module.exports = { createRequestHandler, createServer, displayServerBanner };
+module.exports = {
+  createRequestHandler,
+  historyResponse,
+  configResponse,
+  statusPageResponse,
+  createServer,
+  displayServerBanner,
+};

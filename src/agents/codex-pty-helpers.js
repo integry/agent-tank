@@ -1,5 +1,6 @@
 const { calculatePace } = require('../pace-evaluator.js');
 const { CYCLE_DURATIONS } = require('../usage-formatters.js');
+const { parseTokenCount } = require('../context-window.js');
 
 /**
  * Parse reset time string to seconds and formatted text
@@ -217,8 +218,48 @@ function extractMetadataFromOutput(clean, stripBoxChars) {
   return metadata;
 }
 
+const TOKEN_COUNT = '[\\d.,]+\\s*[KMB]?';
+const CONTEXT_WINDOW_REGEX = new RegExp(
+  `Context window:\\s*(?:(\\d+(?:\\.\\d+)?)%\\s*left\\s*)?\\(\\s*(${TOKEN_COUNT})\\s*used\\s*\\/\\s*(${TOKEN_COUNT})\\s*\\)`,
+  'i'
+);
+
+/**
+ * Parse the context window line from /status output, e.g.
+ * "Context window:      25% left (198K used / 258K)".
+ * @param {string} clean - Cleaned output string
+ * @returns {{percentLeft: number|null, usedTokens: number, totalTokens: number}|null}
+ */
+function parseContextWindow(clean) {
+  const match = String(clean ?? '').match(CONTEXT_WINDOW_REGEX);
+  if (!match) return null;
+  const usedTokens = parseTokenCount(match[2]);
+  const totalTokens = parseTokenCount(match[3]);
+  if (usedTokens === null || !totalTokens) return null;
+  return {
+    percentLeft: match[1] === undefined ? null : parseFloat(match[1]),
+    usedTokens,
+    totalTokens,
+  };
+}
+
+/**
+ * Parse the credit balance line from /status output, e.g.
+ * "Credits:             48405 credits".
+ * @param {string} clean - Cleaned output string
+ * @returns {{remaining: number, unit: string}|null}
+ */
+function parseCredits(clean) {
+  const match = String(clean ?? '').match(/Credits:\s*(-?[\d,]*\.?\d+)\s*credits?\b/i);
+  if (!match) return null;
+  const remaining = Number(match[1].replace(/,/g, ''));
+  return Number.isFinite(remaining) ? { remaining, unit: 'credits' } : null;
+}
+
 module.exports = {
   parseResetTime,
+  parseContextWindow,
+  parseCredits,
   parseLimitEntry,
   parseVersionInfo,
   parseModelLimits,

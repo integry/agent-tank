@@ -1,5 +1,6 @@
 const { calculatePace } = require('../pace-evaluator.js');
 const { CYCLE_DURATIONS } = require('../usage-formatters.js');
+const { parseTokenCount } = require('../context-window.js');
 
 /**
  * Format RPC response as if it were PTY output for parseOutput compatibility
@@ -51,6 +52,7 @@ function parseRpcRateLimits(rateLimits, context = {}) {
 
   if (isCurrentRateLimitsResponse(rateLimits)) {
     parseCurrentRateLimits(rateLimits, usage, metadataUpdates, context);
+    attachBalances(usage, [rateLimits, rateLimits.rateLimits, findMainBucket(rateLimits, rateLimits.rateLimitsByLimitId || {})]);
     return { usage, metadataUpdates };
   }
 
@@ -95,7 +97,95 @@ function parseRpcRateLimits(rateLimits, context = {}) {
     metadataUpdates.sessionId = rateLimits.sessionId;
   }
 
+  attachBalances(usage, [rateLimits]);
   return { usage, metadataUpdates };
+}
+
+/**
+ * Attach the credit balance and context window from the first source object
+ * that reports each one.
+ * @param {Object} usage - Usage object being built
+ * @param {Array<Object>} sources - Candidate objects, most authoritative first
+ */
+function attachBalances(usage, sources) {
+  const candidates = sources.filter(isObject);
+  for (const source of candidates) {
+    const credits = parseRpcCredits(source);
+    if (credits) { usage.credits = credits; break; }
+  }
+  for (const source of candidates) {
+    const contextWindow = parseRpcContextWindow(source);
+    if (contextWindow) { usage.contextWindow = contextWindow; break; }
+  }
+}
+
+function firstDefined(object, keys) {
+  for (const key of keys) {
+    if (object[key] !== undefined && object[key] !== null) return object[key];
+  }
+  return undefined;
+}
+
+const CREDIT_KEYS = ['credits', 'creditBalance', 'credit_balance', 'creditsRemaining', 'credits_remaining'];
+const CREDIT_VALUE_KEYS = ['balance', 'remaining', 'creditsRemaining', 'credits_remaining', 'available', 'value'];
+
+/**
+ * Parse a credit balance from an app-server object. Accepts a bare number or
+ * numeric string (`credits: 48405`) or an object such as
+ * `{ hasCredits, unlimited, balance: "48405" }`.
+ * @param {Object} source
+ * @returns {{remaining: number, unit: string}|null}
+ */
+function parseRpcCredits(source) {
+  const raw = firstDefined(source, CREDIT_KEYS);
+  if (raw === undefined) return null;
+  const value = isObject(raw) ? firstDefined(raw, CREDIT_VALUE_KEYS) : raw;
+  const remaining = toFiniteNumber(typeof value === 'string' ? value.replace(/,/g, '') : value);
+  return remaining === null ? null : { remaining, unit: 'credits' };
+}
+
+const CONTEXT_KEYS = ['contextWindow', 'context_window', 'tokenUsage', 'token_usage', 'info'];
+const CONTEXT_TOTAL_KEYS = [
+  'totalTokens', 'total_tokens', 'total', 'size', 'limit', 'max',
+  'modelContextWindow', 'model_context_window', 'contextWindow', 'context_window',
+];
+const CONTEXT_USED_KEYS = ['usedTokens', 'used_tokens', 'used', 'tokensUsed', 'tokens_used', 'inputTokens', 'input_tokens'];
+const CONTEXT_LEFT_KEYS = ['percentLeft', 'percent_left', 'remainingPercent', 'remaining_percent'];
+
+function tokenValue(value) {
+  if (isObject(value)) {
+    // e.g. last_token_usage: { input_tokens, total_tokens }
+    return tokenValue(firstDefined(value, ['totalTokens', 'total_tokens', 'inputTokens', 'input_tokens']));
+  }
+  return parseTokenCount(value);
+}
+
+/**
+ * Parse a context window from an app-server object. Accepts a nested object
+ * (`contextWindow: { total, used, percentLeft }`, or a token-usage `info`
+ * block carrying `model_context_window` + `last_token_usage`) or flat fields
+ * (`modelContextWindow` + `contextTokensUsed`).
+ * @param {Object} source
+ * @returns {{percentLeft: number|null, usedTokens: number|null, totalTokens: number}|null}
+ */
+function parseRpcContextWindow(source) {
+  const nested = firstDefined(source, CONTEXT_KEYS);
+  const container = isObject(nested) ? nested : source;
+  const totalRaw = isObject(nested)
+    ? firstDefined(nested, CONTEXT_TOTAL_KEYS)
+    : firstDefined(source, ['modelContextWindow', 'model_context_window', 'contextWindow', 'context_window', 'contextWindowTokens']);
+  const totalTokens = tokenValue(totalRaw);
+  if (!totalTokens) return null;
+
+  const usedRaw = firstDefined(container, [
+    ...CONTEXT_USED_KEYS, 'lastTokenUsage', 'last_token_usage', 'contextTokensUsed', 'context_tokens_used',
+  ]);
+  const percentLeft = toFiniteNumber(firstDefined(container, CONTEXT_LEFT_KEYS));
+  return {
+    percentLeft,
+    usedTokens: usedRaw === undefined ? null : tokenValue(usedRaw),
+    totalTokens,
+  };
 }
 
 function parseCurrentRateLimits(rateLimits, usage, metadataUpdates, context) {
@@ -295,5 +385,7 @@ module.exports = {
   formatRpcResponseAsOutput,
   parseRpcRateLimits,
   parseRpcLimitEntry,
+  parseRpcCredits,
+  parseRpcContextWindow,
   formatDuration,
 };

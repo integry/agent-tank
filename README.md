@@ -91,7 +91,7 @@ node bin/agent-tank.js --help                 # full option list
 
 Prerequisites:
 
-- **Node.js 18+**
+- **Node.js 18+** (usage history needs **Node.js 22.5+** for the built-in `node:sqlite`; on older runtimes history is disabled with a warning)
 - `node-pty` is a native module, so `npm install` needs **Python 3.8+** and **C/C++ build tools**. See [Installation Notes](#installation-notes) if the build fails.
 - At least one supported CLI installed and authenticated on your `PATH` (`claude`, `agy`, or `codex`).
 
@@ -256,7 +256,10 @@ Options:
   --activity-debounce <ms>           Activity debounce interval in milliseconds (default: 5000)
   --keepalive           Enable/disable session keepalive (default: true)
   --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300, 0 = disabled)
+  --history             Enable/disable usage history recording (default: true)
+  --history-db <path>   SQLite history database (default: ~/.agent-tank/history.db)
   --history-retention-days <days>    Days to retain usage history (default: 14)
+  --history-chart       Show/hide the dashboard usage-history sparkline (default: true)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
   --background          Start Agent Tank as a detached background process
@@ -287,7 +290,10 @@ three exceptions: `--no-background`, `--once`, and `--json` suppress
 | `AGENT_TANK_ACTIVITY_DEBOUNCE` | Activity debounce interval in milliseconds |
 | `AGENT_TANK_KEEPALIVE` | Enable/disable keepalive |
 | `AGENT_TANK_KEEPALIVE_INTERVAL` | Keepalive interval in seconds |
+| `AGENT_TANK_HISTORY` | Enable/disable usage history (`1`/`true` or `0`/`false`) |
+| `AGENT_TANK_HISTORY_DB` | SQLite history database path |
 | `AGENT_TANK_HISTORY_RETENTION_DAYS` | History retention window |
+| `AGENT_TANK_HISTORY_CHART` | Show/hide the dashboard usage-history sparkline (`1`/`true` or `0`/`false`) |
 | `AGENT_TANK_BACKGROUND` | Start as a detached background process (`1`/`true`) |
 | `AGENT_TANK_BACKGROUND_LOG` | Background child stdout/stderr log path (defaults to a temp file) |
 | `AGENT_TANK_BACKGROUND_GRACE_MS` | Parent startup grace period before reporting background success; success means the child survived this period |
@@ -335,10 +341,23 @@ and display `alias`, and an optional `configPath` directory:
     "interval": 300
   },
   "history": {
-    "retentionDays": 14
+    "enabled": true,
+    "dbPath": "~/.agent-tank/history.db",
+    "retentionDays": 14,
+    "chart": true
+  },
+  "contextWindows": {
+    "gpt-6-astra": 300000
   }
 }
 ```
+
+`contextWindows` adds entries to, or corrects, the built-in table of known model
+context windows (see `context_window` under [Example `GET /status`](#example-get-status)).
+Keys are matched against the model name the CLI reports, case-insensitively and
+ignoring spaces, dots, underscores and hyphens, longest key first. A Claude
+display name without the `claude-` prefix, such as `Opus 5.5`, is matched as
+`claude-opus-5-5`. Values are token counts.
 
 Relative account paths are resolved relative to the JSON config file, and `~/`
 paths are expanded to the current user's home directory. The path
@@ -398,9 +417,39 @@ reset, so its reset fields are `null`.
 }
 ```
 
+Limits are grouped by the section they appear under (`GEMINI MODELS`,
+`CLAUDE AND GPT MODELS`, …), and shared labels such as `Weekly Limit` are
+qualified with their group. Antigravity 1.3.x also reports **Gemini 4 Argon** as
+a separate quota pool under a `GEMINI 4 ARGON` header. It is reported as its own
+weekly limit with `group: "Gemini 4 Argon"`, so `GET /status` returns it as a
+`weekly` window with `model: "Gemini 4 Argon"`:
+
+```json
+{
+  "model": "Gemini 4 Argon Weekly Limit",
+  "usageLeft": 98.23,
+  "percentUsed": 1.8,
+  "resetsIn": "158h 44m",
+  "resetsInSeconds": 571440,
+  "resetsAt": "2026-10-24T00:44:00.000Z",
+  "cycle": "weekly",
+  "group": "Gemini 4 Argon"
+}
+```
+
+Section descriptions (such as Argon's "For paid Pro plans, …" note) and rows
+without a percentage (such as a `Disabled: …` five-hour limit after the weekly
+limit is hit) are not reported as limits. Argon's context window is not yet
+published, so when the CLI banner names `Gemini 4 Argon` as the active model the
+account's `context_window` is `null` unless you set it with the `contextWindows`
+config key (e.g. `{ "gemini-4-argon": 1048576 }`, reported as `source: "override"`).
+
 ## HTTP API
 
 ### Endpoints
+
+Upgrading from 0.9.x? The response shapes changed; see
+[Upgrading from 0.9.x](#upgrading-from-09x).
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -408,8 +457,8 @@ reset, so its reset fields are `null`.
 | GET | `/status` | Canonical usage for all agents (`{ "providers": [...] }`) |
 | GET | `/status/:id` | Canonical usage for one configured account |
 | GET | `/config` | Auto-refresh and history config |
-| GET | `/history` | History summary |
-| GET | `/history/:id` | History for one configured account |
+| GET | `/history` | History summary, including the backend (`store`: `sqlite` or `none`) |
+| GET | `/history/:id` | Metric series for one configured account (`?since=`, `?until=`, `?metric=`, `?view=chart`) |
 | POST | `/refresh` | Refresh all agents; returns `{ "success": true, "providers": [...] }` |
 | POST | `/refresh/:id` | Refresh one configured account; returns `{ "success": true, "provider": {...} }` |
 
@@ -441,9 +490,23 @@ payload is kept under `raw` (abbreviated below). Antigravity limits reporting
 - `last_updated` is when the usage in `windows` was captured. A refresh that
   fails but keeps the cached usage does not move it (or the reset times); the
   failure is reported through `status: "error"` and `error`.
-- `plan` comes from the plan the CLI reports (Codex plan type, Claude's
-  `/status` login method). If Claude doesn't report a plan, it falls back to
-  `"max"` when a weekly Fable window is present, and `null` otherwise.
+- `plan` comes from the plan the CLI reports, lowercased: the Codex plan type
+  (`"plus"`), Claude's `/status` login method (`"max"`), or the plan shown next
+  to the account in Antigravity's startup banner (`"google ai pro"`). If Claude
+  doesn't report a plan, it falls back to `"max"` when a weekly Fable window is
+  present, and `null` otherwise.
+- `context_window` is a best-effort model context window, or `null` when
+  unknown. `source` says where it came from: `"cli"` when the CLI reported it
+  (Codex `/status` or its app-server), `"override"` when it came from the
+  `contextWindows` config key, or `"known-model"` when the reported model
+  (e.g. `claude-opus-5-5`) matched Agent Tank's built-in table. Only `"cli"`
+  values carry `used_tokens` and the percentages; looked-up values report the
+  size only, with `used_tokens`, `used_percent` and `remaining_percent` set to
+  `null`.
+- `credits` is the Codex credit balance (`{ "remaining": 48405, "unit": "credits" }`),
+  and `null` for other providers or when Codex doesn't report one. It is a
+  balance, not a time window, so it isn't in `windows`. Claude's extra usage is
+  a dollar budget, not credits, and stays under `raw.usage.extraUsage`.
 
 ```json
 {
@@ -487,6 +550,15 @@ payload is kept under `raw` (abbreviated below). Antigravity limits reporting
           "pace": { "ratio": 2.91, "burning_fast": true }
         }
       ],
+      "context_window": {
+        "total_tokens": 1000000,
+        "used_tokens": null,
+        "used_percent": null,
+        "remaining_percent": null,
+        "model": "claude-opus-5-5",
+        "source": "known-model"
+      },
+      "credits": null,
       "raw": { "name": "claude", "usage": { "session": { "percent": 42, "resetsAt": "12:20am (Europe/Berlin)" } } }
     },
     {
@@ -508,11 +580,83 @@ payload is kept under `raw` (abbreviated below). Antigravity limits reporting
           "pace": null
         }
       ],
+      "context_window": {
+        "total_tokens": 258000,
+        "used_tokens": 198000,
+        "used_percent": 76.74,
+        "remaining_percent": 23.26,
+        "model": "GPT-6-Astra",
+        "source": "cli"
+      },
+      "credits": { "remaining": 48405, "unit": "credits" },
       "raw": { "name": "codex", "usage": { "fiveHour": null, "weekly": { "percentUsed": 12, "resetsAt": 1791661540 } } }
     }
   ]
 }
 ```
+
+## Upgrading from 0.9.x
+
+0.10.0 changes the shape of every usage response and the history backend.
+If you consume the HTTP API, `--once --json`, or the `AgentTank` class, check
+the following before upgrading.
+
+### Usage responses use one canonical shape
+
+Every provider now returns the same object (see
+[Example `GET /status`](#example-get-status)). The previous per-provider
+payload is still available, unchanged, under each provider's `raw` field.
+
+| Call | 0.9.x | 0.10.0 |
+|---|---|---|
+| `GET /status`, `--once --json` | `{ "claude": {...}, "codex": {...} }` | `{ "providers": [ {...}, {...} ] }` |
+| `GET /status/:id` | raw agent payload | one canonical provider object |
+| `POST /refresh` | `{ "success": true, "status": {...} }` | `{ "success": true, "providers": [...] }` |
+| `POST /refresh/:id` | `{ "success": true, "status": {...} }` | `{ "success": true, "provider": {...} }` |
+
+Reading a five-hour limit, before and after:
+
+```javascript
+// 0.9.x
+const res = await fetch('http://127.0.0.1:3456/status').then(r => r.json());
+const used = res.codex.usage.fiveHour.percentUsed;
+
+// 0.10.0
+const { providers } = await fetch('http://127.0.0.1:3456/status').then(r => r.json());
+const codex = providers.find(p => p.id === 'codex');
+const used = codex.windows.find(w => w.type === 'five_hour')?.used_percent;
+// The 0.9.x payload is still there if you need it:
+const legacyUsed = codex.raw.usage.fiveHour.percentUsed;
+```
+
+Notable differences in the canonical shape:
+
+- Reset times are always ISO 8601 in `resets_at` (Codex's raw `resetsAt` stays
+  in epoch seconds, Claude's stays a display string).
+- Accounts are identified by `id` (the alias for multi-account setups) and
+  `provider`; Antigravity's `provider` is `"antigravity"`.
+- New fields: `plan`, `context_window`, `credits`, and `pace` per window.
+- `last_updated` is when usage was last captured. A failed refresh that keeps
+  cached usage no longer moves it.
+
+In the `AgentTank` class, `getStatus()` and `getAgentStatus(id)` still return
+the raw payloads. Use `getNormalizedStatus()` and `getNormalizedAgentStatus(id)`
+for the canonical shape.
+
+### History moved to SQLite
+
+- `~/.agent-tank/history.json` is no longer read or written, and its contents
+  are **not migrated**. History starts empty in `~/.agent-tank/history.db`
+  (change it with `--history-db`). You can delete the old JSON file.
+- History needs **Node.js 22.5+** (`node:sqlite`). On older Node versions
+  Agent Tank still runs, logs one warning, and reports `store: "none"`.
+- `GET /history/:id` now returns `{ agent, store, retention_days, series }`
+  with one series per metric, instead of a list of snapshots. See
+  [Usage History and Pace](#usage-history-and-pace).
+- `GET /config` reports history as
+  `history: { enabled, store, path, retentionDays, chart }`.
+- Call `watcher.stop()` when you're done with the `AgentTank` class, so
+  the history database is closed.
 
 ## Claude API Mode
 
@@ -596,18 +740,87 @@ Notes:
 
 ## Usage History and Pace
 
-Agent Tank stores usage snapshots and calculates whether a metric is being consumed faster than the time window would suggest.
+Agent Tank records usage history and calculates whether a metric is being consumed faster than the time window would suggest.
 
-You can configure retention:
+History is stored in SQLite at `~/.agent-tank/history.db`, using Node's built-in
+`node:sqlite` (no extra dependency). Each refresh writes **one row per metric**
+to the `usage_metrics` table:
+
+| Column | Description |
+|---|---|
+| `agent_id` | Configured account id (e.g. `claude`, `work`) |
+| `provider` | Provider key (`claude`, `agy`, `codex`) |
+| `metric_key` | Stable series id, e.g. `session`, `weeklyAll`, `fiveHour`, `model:Gemini · Weekly Limit`, `GPT-5.3-Codex-Spark:fiveHour`; Codex also records `contextUsedPercent` (context window utilisation) and `credits` (credit balance) |
+| `metric_label` | Human-readable label (may change without forking the series) |
+| `model`, `cycle` | Model (group) the limit applies to, and `session` / `five_hour` / `weekly` |
+| `percent_used` | Always percent **used**, including for Antigravity |
+| `value`, `unit` | Non-percentage metrics such as the Codex credit balance (`unit: credits`); `unit` is `percent` for percentage rows |
+| `recorded_at`, `recorded_at_ms` | Capture time as ISO 8601 and epoch milliseconds |
+
+A series needs no application code:
 
 ```bash
-agent-tank --history-retention-days 7
+sqlite3 ~/.agent-tank/history.db \
+  "SELECT recorded_at, percent_used FROM usage_metrics
+   WHERE agent_id='work' AND metric_key='weekly' ORDER BY recorded_at_ms"
 ```
+
+Options:
+
+```bash
+agent-tank --history-retention-days 7   # delete rows older than 7 days on write
+agent-tank --history-db /tmp/at.db      # use a different database file
+agent-tank --no-history                 # disable history recording
+agent-tank --no-history-chart           # keep recording, hide the dashboard sparkline
+```
+
+`node:sqlite` requires Node.js 22.5+. On older runtimes Agent Tank logs one
+warning at startup, keeps running without history, and reports
+`"store": "none"` on `GET /config` and `GET /history`. The same is reported
+when history is disabled with `--no-history`.
 
 History endpoints:
 
-- `GET /history`
-- `GET /history/:agent`
+- `GET /history` returns per-account row counts, the database path and `store`
+- `GET /history/:id` returns `{ "agent", "store", "retention_days", "series": [{ "key", "label", "model", "cycle", "unit", "points": [{ "t", "percent", "value" }] }] }`;
+  filter with `since` / `until` (ISO 8601 or epoch ms) and `metric` (a `metric_key`).
+  `series` is `[]` for an account with no recorded metrics
+- `GET /history/:id?view=chart` returns the same envelope with only plottable
+  series (percent units with at least two points), each point reduced to `{ "t", "percent" }`:
+
+```json
+{
+  "agent": "work",
+  "store": "sqlite",
+  "retention_days": 14,
+  "series": [
+    {
+      "key": "weekly",
+      "label": "Weekly",
+      "model": null,
+      "cycle": "weekly",
+      "points": [{ "t": "2026-10-16T08:00:00.000Z", "percent": 12 }, { "t": "2026-10-16T09:00:00.000Z", "percent": 15 }]
+    }
+  ]
+}
+```
+
+`percent` is always percent **used**.
+
+### Dashboard sparkline
+
+Each agent card on the status page shows a sparkline of its usage history, one
+line per tracked metric on a fixed 0–100% scale, with a legend that shows each
+metric's latest value (hover the chart to read values at an earlier time). The
+chart is redrawn after every auto-refresh poll and after a card's refresh
+button, without reloading the page. Until a metric has at least two recorded
+points the card shows "Not enough history yet".
+
+The sparkline is on by default. Hide it with `--no-history-chart`,
+`AGENT_TANK_HISTORY_CHART=0` or `"history": { "chart": false }`; `GET /config`
+reports the effective setting as `history.chart`. When recording is off
+(`--no-history`, or `store: "none"` on runtimes without `node:sqlite`) the chart
+is never rendered and `history.chart` is `false`.
 
 ## Installation Notes
 
@@ -724,6 +937,24 @@ npm run rebuild
 - check for trust prompts, auth prompts, or update prompts
 - try `--fresh-process`
 - try disabling keepalive or background refresh while debugging
+
+### `context_window` or `plan` is `null`
+
+`context_window` needs the model the CLI is using. Claude reports it on
+`/status` and Antigravity in its startup banner; both are read once, on the
+first refresh. It is `null` when:
+
+- the CLI didn't report a model (check `raw.metadata.model`), or
+- the model isn't in Agent Tank's built-in table (for example Gemini 4 Argon,
+  whose window isn't published yet).
+
+Add or correct a size with the `contextWindows` config key, for example
+`{ "contextWindows": { "gemini-4-argon": 1048576 } }`; it is then reported with
+`source: "override"`. Codex reports its own context window only while it has
+an active session, so it is often `null` from a fresh `codex` process.
+
+`plan` is `null` when the CLI doesn't show one, such as an Antigravity account
+without a plan next to its email.
 
 ### No agents found
 
