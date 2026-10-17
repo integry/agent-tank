@@ -713,6 +713,22 @@ describe('context_window and credits', () => {
     });
   });
 
+  it('looks up a Claude display name without the claude- prefix', () => {
+    const provider = normalizeAgentStatus({
+      ...claudeStatus,
+      metadata: { ...claudeStatus.metadata, model: 'Opus 5.5' },
+    }, { now: NOW });
+
+    expect(provider.context_window).toEqual({
+      total_tokens: 1000000,
+      used_tokens: null,
+      used_percent: null,
+      remaining_percent: null,
+      model: 'Opus 5.5',
+      source: 'known-model',
+    });
+  });
+
   it('keeps Claude extra usage out of credits (it is a dollar budget)', () => {
     const provider = normalizeAgentStatus({
       ...claudeStatus,

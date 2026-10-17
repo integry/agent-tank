@@ -355,8 +355,9 @@ and display `alias`, and an optional `configPath` directory:
 `contextWindows` adds entries to, or corrects, the built-in table of known model
 context windows (see `context_window` under [Example `GET /status`](#example-get-status)).
 Keys are matched against the model name the CLI reports, case-insensitively and
-ignoring spaces, dots, underscores and hyphens, longest key first. Values are
-token counts.
+ignoring spaces, dots, underscores and hyphens, longest key first. A Claude
+display name without the `claude-` prefix, such as `Opus 5.5`, is matched as
+`claude-opus-5-5`. Values are token counts.
 
 Relative account paths are resolved relative to the JSON config file, and `~/`
 paths are expanded to the current user's home directory. The path

@@ -56,6 +56,30 @@ describe('context-window', () => {
       expect(detectContextWindow({ model: 'gpt-5.1-codex-max' }).total_tokens).toBe(272000);
     });
 
+    it('matches Claude display names that lack the claude- prefix', () => {
+      expect(detectContextWindow({ model: 'Opus 5.5' })).toMatchObject({
+        total_tokens: 1000000,
+        model: 'Opus 5.5',
+        source: 'known-model',
+      });
+      expect(detectContextWindow({ model: 'Default Opus 4.5' }).total_tokens).toBe(200000);
+      expect(detectContextWindow({ model: 'Sonnet 4.6' }).total_tokens).toBe(1000000);
+      expect(detectContextWindow({ model: 'haiku_4.5' }).total_tokens).toBe(200000);
+      expect(detectContextWindow({ model: 'Fable 5.1' }).total_tokens).toBe(1000000);
+    });
+
+    it('keeps override precedence for unprefixed Claude display names', () => {
+      expect(detectContextWindow({ model: 'Opus 5.5', overrides: { 'claude-opus-5-5': 500000 } }))
+        .toMatchObject({ total_tokens: 500000, source: 'override' });
+      expect(detectContextWindow({ model: 'Opus 5.5', overrides: { 'opus 5.5': 600000 } }))
+        .toMatchObject({ total_tokens: 600000, source: 'override' });
+    });
+
+    it('does not match a bare Claude family word without a version', () => {
+      expect(detectContextWindow({ model: 'opus' })).toBeNull();
+      expect(detectContextWindow({ model: 'Sonnet' })).toBeNull();
+    });
+
     it('lets a more specific override win over a broader one', () => {
       const overrides = { 'gpt-6': 400000, 'gpt-6-astra': 300000 };
 

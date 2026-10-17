@@ -80,11 +80,22 @@ function compileTable(table) {
 const KNOWN_TABLE = compileTable(KNOWN_CONTEXT_WINDOWS);
 
 /**
+ * Claude's /status prints display names such as "Opus 5.5" or "Default Opus 4.5"
+ * without the `claude-` prefix the tables use. Add it in front of a bare Claude
+ * family name followed by a version, so "opus-5-5" matches `claude-opus-5`.
+ * @param {string} normalised - Output of normaliseModelName
+ * @returns {string}
+ */
+function addClaudePrefix(normalised) {
+  return normalised.replace(/(?<![a-z0-9])(?<!claude-)(fable|mythos|opus|sonnet|haiku)(?=-\d)/g, 'claude-$1');
+}
+
+/**
  * Look a model up in a compiled table.
  * @returns {number|null} Window size in tokens
  */
 function lookup(table, model) {
-  const normalised = normaliseModelName(model);
+  const normalised = addClaudePrefix(normaliseModelName(model));
   if (!normalised) return null;
   const match = table.find(({ pattern }) => normalised.includes(pattern));
   return match ? match.tokens : null;
