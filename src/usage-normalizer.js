@@ -332,6 +332,12 @@ function normalizeCodexWindows(usage, context) {
   return windows;
 }
 
+// Antigravity's banner names the plan, e.g. "Google AI Pro".
+function agyPlan(agentStatus) {
+  const plan = agentStatus.metadata?.plan;
+  return plan ? String(plan).toLowerCase() : null;
+}
+
 function codexPlan(agentStatus) {
   const plan = agentStatus.metadata?.planType ?? agentStatus.metadata?.plan;
   return plan ? String(plan).toLowerCase() : null;
@@ -374,7 +380,7 @@ function normalizeContextWindow(agentStatus, overrides) {
  */
 const NORMALIZERS = {
   claude: { windows: normalizeClaudeWindows, plan: claudePlan, credits: () => null },
-  agy: { windows: normalizeAgyWindows, plan: () => null, credits: () => null },
+  agy: { windows: normalizeAgyWindows, plan: agyPlan, credits: () => null },
   codex: { windows: normalizeCodexWindows, plan: codexPlan, credits: codexCredits },
 };
 

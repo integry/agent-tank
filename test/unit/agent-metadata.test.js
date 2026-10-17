@@ -200,9 +200,24 @@ describe('agent metadata collection', () => {
       expect(agent._parseAgyMetadata(AGY_BANNER)).toEqual({
         version: '1.4.0',
         email: 'user@example.com',
+        plan: 'Google AI Pro',
         model: 'Gemini 4 Argon',
         cli: 'agy',
       });
+    });
+
+    it('omits the plan when the account line has no plan in parentheses', () => {
+      const agent = new AgyAgent();
+      const noPlan = AGY_BANNER.replace('user@example.com (Google AI Pro)', 'user@example.com');
+
+      expect(agent._parseAgyMetadata(noPlan).plan).toBeUndefined();
+    });
+
+    it('reports the banner plan as the canonical plan', () => {
+      const metadata = new AgyAgent()._parseAgyMetadata(AGY_BANNER);
+      const result = normalizeAgentStatus({ name: 'agy', id: 'agy', provider: 'agy', usage: { models: [] }, metadata });
+
+      expect(result.plan).toBe('google ai pro');
     });
 
     it('ignores the model quoted in the "no longer available" notice', () => {
@@ -244,6 +259,7 @@ describe('agent metadata collection', () => {
       expect(agent.metadata).toEqual({
         version: '1.4.0',
         email: 'user@example.com',
+        plan: 'Google AI Pro',
         model: 'Gemini 4 Argon',
         cli: 'agy',
       });

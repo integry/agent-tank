@@ -12,6 +12,7 @@
  */
 
 const { execSync } = require('child_process');
+const { normalizeAgentStatus } = require('../../src/usage-normalizer.js');
 
 // Check if Codex CLI is available before loading node-pty
 let codexCliAvailable = false;
@@ -212,8 +213,11 @@ describeIfCodex('CodexAgent E2E', () => {
         // Label should be '5h limit'
         expect(fiveHour.label).toBe('5h limit');
 
-        // resetsAt should be a string
-        expect(typeof fiveHour.resetsAt).toBe('string');
+        // The PTY path reports a display string; the JSON-RPC app-server path
+        // reports epoch seconds. The canonical window is always ISO 8601.
+        expect(['string', 'number']).toContain(typeof fiveHour.resetsAt);
+        const canonical = normalizeAgentStatus(agent.getStatus()).windows.find(w => w.type === 'five_hour');
+        expect(canonical.resets_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
 
         console.log('fiveHour limit validated:', fiveHour);
       } else {

@@ -41,6 +41,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raw agent status gains `usageUpdatedAt`, the time usage was last captured. Refreshes that fail but keep cached usage still bump `lastUpdated` but not `usageUpdatedAt`; canonical `last_updated` and reset times are based on `usageUpdatedAt`, so they no longer drift forward after such failures
 - Claude `/status` metadata now includes `loginMethod`, which is used to report the canonical `plan`
 
+### Fixed
+
+- Claude: metadata from `/status` was always `null` because the slash-command autocomplete menu was mistaken for the finished Status panel, so the canonical `plan` and `context_window` were `null`. Completion now requires the panel's `Version:` field followed by `Login method:`, `Model:` or `Session ID:`
+- Antigravity: metadata was parsed before the CLI had started, so `model` was never set and `context_window` (including `contextWindows` overrides) could not apply. Agent Tank now waits for the startup banner and reads `version`, `email`, `model` (from the banner, never from a "no longer available" notice) and `plan`
+- Antigravity: the plan shown next to the account in the banner (e.g. `Google AI Pro`) is reported as the canonical `plan` (`"google ai pro"`)
+- Antigravity: a signed-out CLI showing the login menu next to a `Signing in...` spinner is reported as `Authentication required` instead of waiting out the spawn timeout
+- Codex e2e tests accept the epoch-second `resetsAt` that the JSON-RPC app-server returns, and check the canonical `resets_at` is ISO 8601
+
+### Documentation
+
+- README: new "Upgrading from 0.9.x" section with before/after response shapes and history notes, and a troubleshooting entry for `null` `context_window` / `plan`
+
 ## [0.9.11] - 2026-09-29
 
 ### Verified

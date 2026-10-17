@@ -448,6 +448,9 @@ config key (e.g. `{ "gemini-4-argon": 1048576 }`, reported as `source: "override
 
 ### Endpoints
 
+Upgrading from 0.9.x? The response shapes changed; see
+[Upgrading from 0.9.x](#upgrading-from-09x).
+
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/` | HTML status page |
@@ -487,9 +490,11 @@ payload is kept under `raw` (abbreviated below). Antigravity limits reporting
 - `last_updated` is when the usage in `windows` was captured. A refresh that
   fails but keeps the cached usage does not move it (or the reset times); the
   failure is reported through `status: "error"` and `error`.
-- `plan` comes from the plan the CLI reports (Codex plan type, Claude's
-  `/status` login method). If Claude doesn't report a plan, it falls back to
-  `"max"` when a weekly Fable window is present, and `null` otherwise.
+- `plan` comes from the plan the CLI reports, lowercased: the Codex plan type
+  (`"plus"`), Claude's `/status` login method (`"max"`), or the plan shown next
+  to the account in Antigravity's startup banner (`"google ai pro"`). If Claude
+  doesn't report a plan, it falls back to `"max"` when a weekly Fable window is
+  present, and `null` otherwise.
 - `context_window` is a best-effort model context window, or `null` when
   unknown. `source` says where it came from: `"cli"` when the CLI reported it
   (Codex `/status` or its app-server), `"override"` when it came from the
@@ -589,6 +594,69 @@ payload is kept under `raw` (abbreviated below). Antigravity limits reporting
   ]
 }
 ```
+
+## Upgrading from 0.9.x
+
+0.10.0 changes the shape of every usage response and the history backend.
+If you consume the HTTP API, `--once --json`, or the `AgentTank` class, check
+the following before upgrading.
+
+### Usage responses use one canonical shape
+
+Every provider now returns the same object (see
+[Example `GET /status`](#example-get-status)). The previous per-provider
+payload is still available, unchanged, under each provider's `raw` field.
+
+| Call | 0.9.x | 0.10.0 |
+|---|---|---|
+| `GET /status`, `--once --json` | `{ "claude": {...}, "codex": {...} }` | `{ "providers": [ {...}, {...} ] }` |
+| `GET /status/:id` | raw agent payload | one canonical provider object |
+| `POST /refresh` | `{ "success": true, "status": {...} }` | `{ "success": true, "providers": [...] }` |
+| `POST /refresh/:id` | `{ "success": true, "status": {...} }` | `{ "success": true, "provider": {...} }` |
+
+Reading a five-hour limit, before and after:
+
+```javascript
+// 0.9.x
+const res = await fetch('http://127.0.0.1:3456/status').then(r => r.json());
+const used = res.codex.usage.fiveHour.percentUsed;
+
+// 0.10.0
+const { providers } = await fetch('http://127.0.0.1:3456/status').then(r => r.json());
+const codex = providers.find(p => p.id === 'codex');
+const used = codex.windows.find(w => w.type === 'five_hour')?.used_percent;
+// The 0.9.x payload is still there if you need it:
+const legacyUsed = codex.raw.usage.fiveHour.percentUsed;
+```
+
+Notable differences in the canonical shape:
+
+- Reset times are always ISO 8601 in `resets_at` (Codex's raw `resetsAt` stays
+  in epoch seconds, Claude's stays a display string).
+- Accounts are identified by `id` (the alias for multi-account setups) and
+  `provider`; Antigravity's `provider` is `"antigravity"`.
+- New fields: `plan`, `context_window`, `credits`, and `pace` per window.
+- `last_updated` is when usage was last captured. A failed refresh that keeps
+  cached usage no longer moves it.
+
+In the `AgentTank` class, `getStatus()` and `getAgentStatus(id)` still return
+the raw payloads. Use `getNormalizedStatus()` and `getNormalizedAgentStatus(id)`
+for the canonical shape.
+
+### History moved to SQLite
+
+- `~/.agent-tank/history.json` is no longer read or written, and its contents
+  are **not migrated**. History starts empty in `~/.agent-tank/history.db`
+  (change it with `--history-db`). You can delete the old JSON file.
+- History needs **Node.js 22.5+** (`node:sqlite`). On older Node versions
+  Agent Tank still runs, logs one warning, and reports `store: "none"`.
+- `GET /history/:id` now returns `{ agent, store, retention_days, series }`
+  with one series per metric, instead of a list of snapshots. See
+  [Usage History and Pace](#usage-history-and-pace).
+- `GET /config` reports history as
+  `history: { enabled, store, path, retentionDays, chart }`.
+- Call `watcher.stop()` when you're done with the `AgentTank` class, so
+  the history database is closed.
 
 ## Claude API Mode
 
@@ -869,6 +937,24 @@ npm run rebuild
 - check for trust prompts, auth prompts, or update prompts
 - try `--fresh-process`
 - try disabling keepalive or background refresh while debugging
+
+### `context_window` or `plan` is `null`
+
+`context_window` needs the model the CLI is using. Claude reports it on
+`/status` and Antigravity in its startup banner; both are read once, on the
+first refresh. It is `null` when:
+
+- the CLI didn't report a model (check `raw.metadata.model`), or
+- the model isn't in Agent Tank's built-in table (for example Gemini 4 Argon,
+  whose window isn't published yet).
+
+Add or correct a size with the `contextWindows` config key, for example
+`{ "contextWindows": { "gemini-4-argon": 1048576 } }`; it is then reported with
+`source: "override"`. Codex reports its own context window only while it has
+an active session, so it is often `null` from a fresh `codex` process.
+
+`plan` is `null` when the CLI doesn't show one, such as an Antigravity account
+without a plan next to its email.
 
 ### No agents found
 

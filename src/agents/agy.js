@@ -302,6 +302,10 @@ class AgyAgent extends BaseAgent {
     const emailMatch = clean.match(/(\S+@\S+)/);
     if (emailMatch) metadata.email = this.stripBoxChars(emailMatch[1]);
 
+    // The account line names the plan in parentheses: "user@example.com (Google AI Pro)".
+    const planMatch = clean.match(/\S+@\S+[ \t]+\(([^)\n]+)\)/);
+    if (planMatch) metadata.plan = planMatch[1].trim();
+
     const cwdMatch = clean.match(/\n\s*(\/[^\n]+)\n/);
     if (cwdMatch) metadata.cwd = this.stripBoxChars(cwdMatch[1]);
 
