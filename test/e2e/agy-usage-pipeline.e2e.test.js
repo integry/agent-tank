@@ -219,13 +219,21 @@ describe('Antigravity Gemini 4 Argon pipeline E2E', () => {
     expect(provider.windows.some(w => /Disabled|paid Pro plans|GEMINI 4 ARGON/.test(w.label))).toBe(false);
   });
 
-  it('reports a known-model context window for the active Argon model', async () => {
+  it('keeps the unverified Argon context window unknown by default', async () => {
+    const provider = await getStatus();
+
+    expect(provider.context_window).toBeNull();
+  });
+
+  it('reports an operator override for the Argon context window', async () => {
+    tank.contextWindows = { 'gemini-4-argon': 2000000 };
+
     const provider = await getStatus();
 
     expect(provider.context_window).toMatchObject({
-      total_tokens: 1048576,
+      total_tokens: 2000000,
       model: 'Gemini 4 Argon',
-      source: 'known-model',
+      source: 'override',
     });
   });
 

@@ -29,9 +29,8 @@
  *   reserved for output). Codex itself reports a slightly smaller usable
  *   figure (e.g. 258K), which wins when the CLI reports it.
  * - Gemini 2.5 / 3: 1,048,576 input tokens (Google model cards).
- * - Gemini 4 Argon: 1,048,576 input tokens, the Gemini family window. It is
- *   Antigravity's separate "GEMINI 4 ARGON" quota pool and reported by the CLI
- *   banner as e.g. "Gemini 4 Argon (Medium)".
+ * - Gemini 4 Argon is deliberately absent: its window is not yet published, so
+ *   it stays unknown unless an operator sets it through `contextWindows`.
  */
 const KNOWN_CONTEXT_WINDOWS = Object.freeze({
   'claude-fable-5': 1000000,
@@ -47,7 +46,6 @@ const KNOWN_CONTEXT_WINDOWS = Object.freeze({
   'claude-sonnet-4-5': 200000,
   'claude-haiku-4-5': 200000,
   'gpt-5': 272000,
-  'gemini-4-argon': 1048576,
   'gemini-3': 1048576,
   'gemini-2-5': 1048576,
 });

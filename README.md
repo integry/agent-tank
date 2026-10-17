@@ -439,9 +439,10 @@ weekly limit with `group: "Gemini 4 Argon"`, so `GET /status` returns it as a
 
 Section descriptions (such as Argon's "For paid Pro plans, …" note) and rows
 without a percentage (such as a `Disabled: …` five-hour limit after the weekly
-limit is hit) are not reported as limits. When the CLI banner names
-`Gemini 4 Argon` as the active model, the account's `context_window` is looked
-up from the built-in table (`source: "known-model"`).
+limit is hit) are not reported as limits. Argon's context window is not yet
+published, so when the CLI banner names `Gemini 4 Argon` as the active model the
+account's `context_window` is `null` unless you set it with the `contextWindows`
+config key (e.g. `{ "gemini-4-argon": 1048576 }`, reported as `source: "override"`).
 
 ## HTTP API
 
