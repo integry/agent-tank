@@ -430,9 +430,17 @@ class ClaudeAgent extends BaseAgent {
 
   _hasCompleteStatusOutput(output) {
     const clean = this.stripAnsi(output);
-    const hasSessionInfo = /session/i.test(clean) || /working directory|cwd/i.test(clean);
-    const hasPrompt = ['? for shortcuts', '❯', '> ', 'esc to'].some(p => clean.includes(p));
-    return hasSessionInfo && hasPrompt;
+    // Typing "/status" first opens the slash-command autocomplete menu, which
+    // already mentions "session" and draws a "❯" cursor. Only the Status panel
+    // itself prints a version field next to its account/session fields, and
+    // the panel only counts as drawn once its footer follows the version.
+    const versionAt = clean.search(/(?:Version|Claude\s*Code)\s*:\s*v?\d/i);
+    if (versionAt === -1) return false;
+    const panel = clean.slice(versionAt);
+    const hasPanelField = /(?:Login\s*method|Model|Session\s*ID)\s*:/i.test(panel);
+    const lower = panel.toLowerCase();
+    const hasPrompt = ['? for shortcuts', '❯', '> ', 'esc to'].some(p => lower.includes(p));
+    return hasPanelField && hasPrompt;
   }
 
   _parseStatusOutput(output) {

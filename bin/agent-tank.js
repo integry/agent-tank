@@ -10,7 +10,7 @@ const {
   spawnBackgroundProcess,
   warnAboutRunningProcesses,
 } = require('../src/cli-background.js');
-const { normalizeAgentSpecs, parseAgentOption } = require('../src/agent-config.js');
+const { normalizeAgentSpecs, parseAgentOption, resolveConfigPath } = require('../src/agent-config.js');
 const pkg = require('../package.json');
 
 const options = {
@@ -35,7 +35,10 @@ const options = {
   'auto-refresh-mode': { type: 'string', default: 'activity' },
   'refresh-cooldown': { type: 'string', default: '30' },
   'activity-debounce': { type: 'string', default: '5000' },
+  history: { type: 'boolean', default: true },
+  'history-db': { type: 'string' },
   'history-retention-days': { type: 'string', default: '14' },
+  'history-chart': { type: 'boolean', default: true },
   'keepalive': { type: 'boolean', default: true },
   'keepalive-interval': { type: 'string', default: '300' },
   once: { type: 'boolean', default: false },
@@ -97,7 +100,10 @@ Options:
   --activity-debounce <ms>           Activity debounce interval in milliseconds (default: 5000)
   --keepalive           Enable/disable session keepalive (default: true)
   --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300, 0 = disabled)
+  --history             Enable/disable usage history recording (default: true)
+  --history-db <path>   SQLite history database (default: ~/.agent-tank/history.db)
   --history-retention-days <days>    Days to retain usage history (default: 14)
+  --history-chart       Show/hide the dashboard usage-history sparkline (default: true)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
   --background          Start Agent Tank as a detached background process
@@ -124,7 +130,10 @@ Environment variables:
   AGENT_TANK_ACTIVITY_DEBOUNCE      Activity debounce interval in milliseconds
   AGENT_TANK_KEEPALIVE      Enable/disable session keepalive ("1" or "true" / "0" or "false")
   AGENT_TANK_KEEPALIVE_INTERVAL  Session keepalive interval in seconds
+  AGENT_TANK_HISTORY        Enable/disable usage history ("1" or "true" / "0" or "false")
+  AGENT_TANK_HISTORY_DB     SQLite history database path
   AGENT_TANK_HISTORY_RETENTION_DAYS  Days to retain usage history
+  AGENT_TANK_HISTORY_CHART  Show/hide the dashboard sparkline ("1" or "true" / "0" or "false")
   AGENT_TANK_BACKGROUND  Start as a detached background process ("1" or "true")
   AGENT_TANK_BACKGROUND_LOG  Log file for background child stdout/stderr
   AGENT_TANK_BACKGROUND_GRACE_MS  Parent startup grace period before reporting background success
@@ -150,6 +159,9 @@ Examples:
   agent-tank --keepalive-interval 600 # Send keepalive every 10 minutes
   agent-tank --no-keepalive           # Disable session keepalive
   agent-tank --history-retention-days 7  # Keep only 7 days of history
+  agent-tank --history-db /tmp/at.db  # Store usage history in a custom database
+  agent-tank --no-history             # Disable usage history recording
+  agent-tank --no-history-chart       # Keep recording history but hide the dashboard sparkline
   agent-tank --once                   # Fetch usage once and exit
   agent-tank --once --json            # Output pure JSON for scripting
 
@@ -159,7 +171,7 @@ HTTP Endpoints:
   GET /status/:id    Canonical usage for a specific agent account (JSON)
   GET /config        Auto-refresh and history configuration (JSON)
   GET /history       Usage history statistics (JSON)
-  GET /history/:id   Usage history for a specific agent account (JSON)
+  GET /history/:id   Usage history series for an agent account (JSON; ?since=&until=&metric=&view=chart)
   POST /refresh      Trigger refresh for all agents
   POST /refresh/:id  Trigger refresh for a specific agent account
 `);
@@ -320,6 +332,31 @@ async function main() {
     historyRetentionDays = config.history.retentionDays;
   }
 
+  // History store configuration (env > CLI > config file)
+  const historyEnv = process.env.AGENT_TANK_HISTORY;
+  let historyEnabled = values.history;
+  if (historyEnv !== undefined) {
+    historyEnabled = historyEnv === '1' || historyEnv === 'true';
+  } else if (!tokens.some(token => token.kind === 'option' && token.name === 'history') &&
+    config.history?.enabled !== undefined) {
+    historyEnabled = config.history.enabled;
+  }
+
+  let historyDbPath = process.env.AGENT_TANK_HISTORY_DB || values['history-db'];
+  if (!historyDbPath && config.history?.dbPath) {
+    historyDbPath = resolveConfigPath(config.history.dbPath, configBaseDir);
+  }
+
+  // Dashboard history chart (env > CLI > config file); off whenever history is off
+  const historyChartEnv = process.env.AGENT_TANK_HISTORY_CHART;
+  let historyChart = values['history-chart'];
+  if (historyChartEnv !== undefined) {
+    historyChart = historyChartEnv === '1' || historyChartEnv === 'true';
+  } else if (!tokens.some(token => token.kind === 'option' && token.name === 'history-chart') &&
+    config.history?.chart !== undefined) {
+    historyChart = config.history.chart;
+  }
+
   // Keepalive configuration (env > CLI > config file)
   const keepaliveEnv = process.env.AGENT_TANK_KEEPALIVE;
   let keepaliveEnabled = values['keepalive'];
@@ -366,6 +403,10 @@ async function main() {
     keepaliveEnabled: onceMode ? false : keepaliveEnabled, // Disable keepalive in one-shot mode
     keepaliveInterval,
     historyRetentionDays,
+    historyEnabled,
+    historyDbPath,
+    historyChart,
+    contextWindows: config.contextWindows,
     skipServer: onceMode, // Don't start HTTP server in one-shot mode
   });
 

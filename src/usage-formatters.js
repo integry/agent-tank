@@ -236,6 +236,68 @@ function formatCodexUsage(usage, agentId = 'codex') {
   return html;
 }
 
+/**
+ * Inner HTML for a card's context-window and credits rows.
+ *
+ * Self-contained (no closures or module references) because the client-side
+ * auto-refresh script embeds this function's source via toString() to redraw
+ * the rows after an XHR refresh; keep it that way.
+ *
+ * @param {Object|null} contextWindow - Canonical `context_window`
+ * @param {Object|null} credits - Canonical `credits`
+ * @returns {string} Empty string when there is nothing to show
+ */
+function renderUsageExtras(contextWindow, credits) {
+  function esc(value) {
+    return String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  }
+  function tokens(count) {
+    if (count >= 1e6) return (Math.round(count / 1e5) / 10) + 'M';
+    if (count >= 1e3) return Math.round(count / 1e3) + 'K';
+    return String(count);
+  }
+  let html = '';
+  if (contextWindow && typeof contextWindow.total_tokens === 'number') {
+    const sources = { cli: 'reported by the CLI', override: 'from the config file', 'known-model': 'known model window' };
+    const title = esc((contextWindow.model ? contextWindow.model + ': ' : '') + (sources[contextWindow.source] || contextWindow.source));
+    const used = contextWindow.used_percent;
+    html += '<div class="model-container context-window-row">';
+    if (typeof used === 'number') {
+      const color = used < 50 ? '#48bb78' : used < 80 ? '#ecc94b' : '#e53e3e';
+      const colorClass = used < 50 ? 'high' : used < 80 ? 'medium' : 'low';
+      html += '<div class="usage-item" title="' + title + '"><span class="usage-label">Context window</span>' +
+        '<span class="usage-value ' + colorClass + '"><span class="usage-percent">' + Math.round(used) + '</span><span class="usage-suffix">% used</span></span></div>';
+      html += '<div class="progress-bar"><div class="progress-fill" style="width: ' + Math.min(100, Math.max(0, used)) + '%; background: ' + color + ';"></div></div>';
+      const usedTokens = typeof contextWindow.used_tokens === 'number' ? tokens(contextWindow.used_tokens) + ' / ' : '';
+      html += '<div class="usage-item reset-info"><span class="usage-label">↳ Tokens</span><span class="usage-value">' + usedTokens + tokens(contextWindow.total_tokens) + '</span></div>';
+    } else {
+      html += '<div class="usage-item" title="' + title + '"><span class="usage-label">Context window</span>' +
+        '<span class="usage-value">' + tokens(contextWindow.total_tokens) + ' tokens</span></div>';
+    }
+    html += '</div>';
+  }
+  if (credits && typeof credits.remaining === 'number') {
+    html += '<div class="model-container credits-row"><div class="usage-item"><span class="usage-label">Credits</span>' +
+      '<span class="usage-value">' + esc(credits.remaining.toLocaleString('en-US')) + ' ' + esc(credits.unit || 'credits') + '</span></div></div>';
+  }
+  return html;
+}
+
+/**
+ * Container for a card's context-window and credits rows. Always rendered
+ * (hidden when empty) so an XHR refresh can fill it in later.
+ * @param {string} agentId - Configured agent id
+ * @param {Object|null} contextWindow - Canonical `context_window`
+ * @param {Object|null} credits - Canonical `credits`
+ * @returns {string}
+ */
+function formatUsageExtras(agentId, contextWindow, credits) {
+  const inner = renderUsageExtras(contextWindow, credits);
+  const hidden = inner ? '' : ' style="display:none"';
+  const id = String(agentId).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  return `<div class="usage-extras" data-agent-id="${id}"${hidden}>${inner}</div>`;
+}
+
 function formatUsage(agentName, usage, options = {}) {
   if (!usage) {
     return '<p class="usage-item">No data available</p>';
@@ -253,6 +315,8 @@ module.exports = {
   formatClaudeUsage,
   formatAgyUsage,
   formatCodexUsage,
+  formatUsageExtras,
+  renderUsageExtras,
   usageItem,
   resetInfoItem,
   parseResetsInToSeconds,

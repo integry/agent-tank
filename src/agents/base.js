@@ -13,6 +13,9 @@ class BaseAgent {
     this.name = name;
     this.command = command;
     this.args = args;
+    // Terminal implementation used to start the CLI. Tests can replace it with
+    // a fake that has the same `spawn(command, args, options)` signature.
+    this.pty = pty;
     this.usage = null;
     this.metadata = null;
     this._metadataFetched = false;
@@ -28,6 +31,7 @@ class BaseAgent {
     this.shell = null;
     this.processReady = false;
     this.output = '';
+    this.spawnOutput = ''; // Startup banner seen while waiting for the prompt
     this.freshProcess = false;
     this._onDataCallback = null;
     this._commandInFlight = false;
@@ -221,12 +225,13 @@ class BaseAgent {
     return new Promise((resolve, reject) => {
       let trustHandled = false;
       let spawnOutput = '';
+      this.spawnOutput = '';
 
       logger.agent(this.name, 'Spawning persistent process:', logger.dim(`${this.command} ${this.args.join(' ')}`));
 
       try {
         const env = this.getEnv ? this.getEnv() : { ...process.env, TERM: 'xterm-256color' };
-        this.shell = pty.spawn(this.command, this.args, {
+        this.shell = this.pty.spawn(this.command, this.args, {
           name: 'xterm-color',
           cols: 120,
           rows: 40,
@@ -264,6 +269,7 @@ class BaseAgent {
         }
 
         spawnOutput += data;
+        this.spawnOutput = spawnOutput;
 
         // Handle trust/update prompts during spawn (only once each)
         if (!trustHandled && this.handleTrustPrompt && this.handleTrustPrompt(this.shell, spawnOutput)) {
@@ -508,7 +514,7 @@ class BaseAgent {
       let shell;
       try {
         const env = this.getEnv ? this.getEnv() : { ...process.env, TERM: 'xterm-256color' };
-        shell = pty.spawn(this.command, this.args, {
+        shell = this.pty.spawn(this.command, this.args, {
           name: 'xterm-color',
           cols: 120,
           rows: 40,

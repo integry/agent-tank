@@ -463,7 +463,7 @@ describe('usage-normalizer', () => {
       codex: codexStatus,
     }, { now: NOW });
 
-    const PROVIDER_KEYS = ['error', 'id', 'last_updated', 'plan', 'provider', 'raw', 'status', 'windows'];
+    const PROVIDER_KEYS = ['context_window', 'credits', 'error', 'id', 'last_updated', 'plan', 'provider', 'raw', 'status', 'windows'];
     const WINDOW_KEYS = ['label', 'model', 'pace', 'remaining_percent', 'resets_at', 'resets_in_seconds', 'type', 'used_percent'];
     const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -506,6 +506,12 @@ describe('usage-normalizer', () => {
           expect(typeof window.pace.burning_fast).toBe('boolean');
         }
       }
+    });
+
+    it.each(['claude', 'agy', 'codex'])('%s reports context_window and credits as null when unknown', (id) => {
+      const provider = providers.find(p => p.id === id);
+      expect(provider.context_window).toBeNull();
+      expect(provider.credits).toBeNull();
     });
 
     it('registers a normalizer for every built-in provider', () => {
@@ -639,5 +645,113 @@ describe('usage-normalizer', () => {
       expect(resolveResetsAt('12:20am (Europe/Berlin)', null, NOW)).toBeNull();
       expect(resolveResetsAt(null, null, NOW)).toBeNull();
     });
+  });
+});
+
+describe('context_window and credits', () => {
+  const codexWithBalances = {
+    name: 'codex',
+    provider: 'codex',
+    usageUpdatedAt: LAST_UPDATED,
+    usage: {
+      fiveHour: null,
+      weekly: null,
+      model: 'GPT-6-Astra',
+      contextWindow: { percentLeft: 25, usedTokens: 198000, totalTokens: 258000 },
+      credits: { remaining: 48405, unit: 'credits' },
+    },
+  };
+
+  it('maps a CLI-reported Codex context window and credit balance', () => {
+    const provider = normalizeAgentStatus(codexWithBalances, { now: NOW });
+
+    expect(provider.context_window).toEqual({
+      total_tokens: 258000,
+      used_tokens: 198000,
+      used_percent: 76.74,
+      remaining_percent: 23.26,
+      model: 'GPT-6-Astra',
+      source: 'cli',
+    });
+    expect(provider.credits).toEqual({ remaining: 48405, unit: 'credits' });
+  });
+
+  it('prefers the CLI-reported window over a config-file override', () => {
+    const provider = normalizeAgentStatus(codexWithBalances, {
+      now: NOW,
+      contextWindows: { 'gpt-6-astra': 300000 },
+    });
+
+    expect(provider.context_window).toMatchObject({ total_tokens: 258000, source: 'cli' });
+  });
+
+  it('applies a config-file override when the CLI reports no window', () => {
+    const status = { ...codexWithBalances, usage: { ...codexWithBalances.usage, contextWindow: undefined } };
+    const provider = normalizeAgentStatus(status, { now: NOW, contextWindows: { 'gpt-6-astra': 300000 } });
+
+    expect(provider.context_window).toEqual({
+      total_tokens: 300000,
+      used_tokens: null,
+      used_percent: null,
+      remaining_percent: null,
+      model: 'GPT-6-Astra',
+      source: 'override',
+    });
+  });
+
+  it('looks up a Claude model reported by /status in the known-model table', () => {
+    const provider = normalizeAgentStatus({
+      ...claudeStatus,
+      metadata: { ...claudeStatus.metadata, model: 'claude-opus-5-5' },
+    }, { now: NOW });
+
+    expect(provider.context_window).toMatchObject({
+      total_tokens: 1000000,
+      used_tokens: null,
+      model: 'claude-opus-5-5',
+      source: 'known-model',
+    });
+  });
+
+  it('looks up a Claude display name without the claude- prefix', () => {
+    const provider = normalizeAgentStatus({
+      ...claudeStatus,
+      metadata: { ...claudeStatus.metadata, model: 'Opus 5.5' },
+    }, { now: NOW });
+
+    expect(provider.context_window).toEqual({
+      total_tokens: 1000000,
+      used_tokens: null,
+      used_percent: null,
+      remaining_percent: null,
+      model: 'Opus 5.5',
+      source: 'known-model',
+    });
+  });
+
+  it('keeps Claude extra usage out of credits (it is a dollar budget)', () => {
+    const provider = normalizeAgentStatus({
+      ...claudeStatus,
+      usage: { ...claudeStatus.usage, extraUsage: { percent: 10, spent: 5, budget: 50 }, credits: { remaining: 3 } },
+    }, { now: NOW });
+
+    expect(provider.credits).toBeNull();
+    expect(provider.raw.usage.extraUsage).toMatchObject({ spent: 5, budget: 50 });
+  });
+
+  it('reports a known window for a pending agent whose model is already known', () => {
+    const provider = normalizeAgentStatus({ name: 'claude', provider: 'claude', usage: null, metadata: { model: 'claude-haiku-4-5' } }, { now: NOW });
+
+    expect(provider.status).toBe('pending');
+    expect(provider.context_window).toMatchObject({ total_tokens: 200000, source: 'known-model' });
+    expect(provider.credits).toBeNull();
+  });
+
+  it('passes context window overrides through normalizeStatus', () => {
+    const { providers } = normalizeStatus({
+      work: { name: 'agy', provider: 'agy', usage: { models: [] }, metadata: { model: 'Gemini 4 Argon (Medium)' } },
+    }, { now: NOW, contextWindows: { 'gemini 4 argon': 2000000 } });
+
+    expect(providers[0].context_window).toMatchObject({ total_tokens: 2000000, source: 'override' });
   });
 });

@@ -10,13 +10,13 @@ const { discoverAgents } = require('./discovery.js');
 const { fetchPublicStatus } = require('./public-status.js');
 const { createServer, displayServerBanner } = require('./server.js');
 const logger = require('./logger.js');
-const { HistoryStore, DEFAULT_RETENTION_DAYS } = require('./history-store.js');
-const { extractSnapshotMetrics } = require('./snapshot-metrics.js');
+const { createHistoryStore, DEFAULT_RETENTION_DAYS } = require('./history-store.js');
 const { attachPaceEvaluation } = require('./pace-attachment.js');
 const { normalizeStatus, normalizeAgentStatus } = require('./usage-normalizer.js');
 const { KeepaliveManager } = require('./keepalive-manager.js');
 const { AutoRefreshManager } = require('./auto-refresh-manager.js');
 const { normalizeAgentSpecs } = require('./agent-config.js');
+const { normaliseContextWindowOverrides } = require('./context-window.js');
 
 // Load package.json for version info
 const pkg = require(path.join(__dirname, '..', 'package.json'));
@@ -163,11 +163,21 @@ class AgentTank {
     // Auto-refresh manager (initialized in start())
     this.autoRefreshManager = null;
 
-    // History store for usage snapshots
-    this.historyRetentionDays = options.historyRetentionDays ?? DEFAULT_RETENTION_DAYS;
-    this.historyStore = new HistoryStore({
-      retentionDays: this.historyRetentionDays
+    // History store: one SQLite row per metric per refresh (no-op when
+    // disabled or when node:sqlite is unavailable)
+    this.historyStore = options.historyStore ?? createHistoryStore({
+      enabled: options.historyEnabled !== false,
+      dbPath: options.historyDbPath,
+      retentionDays: options.historyRetentionDays ?? DEFAULT_RETENTION_DAYS,
     });
+    this.historyRetentionDays = this.historyStore.retentionDays;
+    // Dashboard sparkline; never rendered while recording is off
+    this.historyChart = options.historyChart !== false;
+    this._historyRecordedAt = new Map();
+
+    // Config-file corrections to the known-model context window table,
+    // keyed by model-name pattern (see src/context-window.js)
+    this.contextWindows = normaliseContextWindowOverrides(options.contextWindows);
 
     // Keepalive manager for session maintenance
     this.keepalive = {
@@ -391,7 +401,7 @@ class AgentTank {
     // Record usage snapshots and attach pace evaluations
     for (const [name, agent] of this.agents) {
       if (agent.usage) {
-        this._recordSnapshot(name, agent.provider, agent.usage);
+        this._recordSnapshot(name, agent);
         attachPaceEvaluation(agent.provider, agent.usage);
       }
     }
@@ -399,11 +409,22 @@ class AgentTank {
     logger.success('✅ All agents refresh complete');
   }
 
-  /** Record a usage snapshot to the history store. @private */
-  _recordSnapshot(agentId, provider, usage) {
+  /**
+   * Record one row per usage metric to the history store. Usage that was not
+   * re-captured since the last recording (failed refresh keeping cached usage,
+   * cooldown skip) is not recorded again. @private
+   */
+  _recordSnapshot(agentId, agent) {
+    const capturedAt = agent.usageUpdatedAt ?? null;
+    if (capturedAt !== null && this._historyRecordedAt.get(agentId) === capturedAt) return;
     try {
-      const snapshot = extractSnapshotMetrics(provider, usage);
-      if (snapshot) this.historyStore.addSnapshot(agentId, snapshot);
+      this.historyStore.recordUsage({
+        agentId,
+        provider: agent.provider,
+        usage: agent.usage,
+        recordedAt: capturedAt ?? undefined,
+      });
+      if (capturedAt !== null) this._historyRecordedAt.set(agentId, capturedAt);
     } catch (err) {
       console.error(`[${agentId}] Error recording snapshot:`, err.message);
     }
@@ -422,7 +443,7 @@ class AgentTank {
 
     // Record snapshot and attach pace evaluation for single agent refresh
     if (agent.usage) {
-      this._recordSnapshot(name, agent.provider, agent.usage);
+      this._recordSnapshot(name, agent);
       attachPaceEvaluation(agent.provider, agent.usage);
     }
   }
@@ -471,8 +492,24 @@ class AgentTank {
   /** Get usage history statistics. @returns {Object} */
   getHistoryStats() { return this.historyStore.getStats(); }
 
-  /** Get usage history for an agent. @param {string} [agentName] @returns {Array} */
-  getHistory(agentName = null) { return this.historyStore.getHistory(agentName); }
+  /**
+   * Get usage history series for an agent.
+   * @param {string} agentId
+   * @param {Object} [options] - `since`, `until`, `key` (see HistoryStore#getSeries)
+   * @returns {Array}
+   */
+  getHistory(agentId, options = {}) { return this.historyStore.getSeries(agentId, options); }
+
+  /** Get the history backend configuration. @returns {Object} */
+  getHistoryConfig() {
+    return {
+      enabled: this.historyStore.enabled,
+      store: this.historyStore.store,
+      path: this.historyStore.dbPath,
+      retentionDays: this.historyRetentionDays,
+      chart: this.historyChart && this.historyStore.store !== 'none',
+    };
+  }
 
   getStatus() {
     const status = {};
@@ -504,7 +541,7 @@ class AgentTank {
    * @returns {{providers: Object[]}}
    */
   getNormalizedStatus() {
-    return normalizeStatus(this.getStatus());
+    return normalizeStatus(this.getStatus(), { contextWindows: this.contextWindows });
   }
 
   /**
@@ -513,7 +550,7 @@ class AgentTank {
    * @returns {Object|null}
    */
   getNormalizedAgentStatus(name) {
-    return normalizeAgentStatus(this.getAgentStatus(name));
+    return normalizeAgentStatus(this.getAgentStatus(name), { contextWindows: this.contextWindows });
   }
 
   authenticate(req, url) {
@@ -633,6 +670,11 @@ class AgentTank {
     this.server = null;
     this.servers = [];
     this.listenHosts = [];
+    try {
+      this.historyStore.close();
+    } catch (err) {
+      console.error('[Shutdown] Error closing history store:', err.message);
+    }
   }
 
   /** Get keepalive status. @returns {Object|null} Keepalive manager status or null if not initialized */
