@@ -14,6 +14,14 @@ const { ClaudeAgent } = require('../../src/agents/claude.js');
 const { AgyAgent } = require('../../src/agents/agy.js');
 const { normalizeAgentStatus } = require('../../src/usage-normalizer.js');
 
+// Hand each agent the mocked pty explicitly. Relying on jest.mock alone let
+// the agents reach the real node-pty in some full runs and launch the
+// installed CLIs (#106).
+function withMockPty(agent) {
+  agent.pty = pty;
+  return agent;
+}
+
 const ESC = '\x1b';
 
 // Typing "/status" opens the slash-command autocomplete menu before Enter.
@@ -109,20 +117,20 @@ describe('agent metadata collection', () => {
 
   describe('ClaudeAgent /status completion', () => {
     it('does not treat the slash-command autocomplete menu as the Status panel', () => {
-      const agent = new ClaudeAgent();
+      const agent = withMockPty(new ClaudeAgent());
 
       expect(agent._hasCompleteStatusOutput(CLAUDE_AUTOCOMPLETE_MENU)).toBe(false);
     });
 
     it('does not complete on a panel whose footer has not rendered yet', () => {
-      const agent = new ClaudeAgent();
+      const agent = withMockPty(new ClaudeAgent());
       const partial = `${CLAUDE_AUTOCOMPLETE_MENU}${CLAUDE_STATUS_PANEL.split('\n').slice(0, 3).join('\n')}`;
 
       expect(agent._hasCompleteStatusOutput(partial)).toBe(false);
     });
 
     it('treats the rendered Status panel as complete and parses it', () => {
-      const agent = new ClaudeAgent();
+      const agent = withMockPty(new ClaudeAgent());
       const output = `${CLAUDE_AUTOCOMPLETE_MENU}${CLAUDE_STATUS_PANEL}`;
 
       expect(agent._hasCompleteStatusOutput(output)).toBe(true);
@@ -136,7 +144,7 @@ describe('agent metadata collection', () => {
     });
 
     it('derives plan and context window from the parsed panel', () => {
-      const agent = new ClaudeAgent();
+      const agent = withMockPty(new ClaudeAgent());
       const metadata = agent._parseStatusOutput(CLAUDE_STATUS_PANEL);
 
       const provider = normalizeAgentStatus({ name: 'claude', metadata, usage: null });
@@ -167,7 +175,7 @@ describe('agent metadata collection', () => {
     }
 
     it('waits past the autocomplete menu for the panel submitted by Enter', async () => {
-      const agent = new ClaudeAgent();
+      const agent = withMockPty(new ClaudeAgent());
       const shell = createClaudeShell();
 
       await refreshWithStubbedUsage(agent, 2000);
@@ -182,7 +190,7 @@ describe('agent metadata collection', () => {
     });
 
     it('exposes plan and context window from collected metadata', async () => {
-      const agent = new ClaudeAgent();
+      const agent = withMockPty(new ClaudeAgent());
       createClaudeShell();
 
       await refreshWithStubbedUsage(agent, 2000);
@@ -195,7 +203,7 @@ describe('agent metadata collection', () => {
 
   describe('AgyAgent banner metadata', () => {
     it('parses version, email and model from the 1.4.0 banner', () => {
-      const agent = new AgyAgent();
+      const agent = withMockPty(new AgyAgent());
 
       expect(agent._parseAgyMetadata(AGY_BANNER)).toEqual({
         version: '1.4.0',
@@ -207,21 +215,21 @@ describe('agent metadata collection', () => {
     });
 
     it('omits the plan when the account line has no plan in parentheses', () => {
-      const agent = new AgyAgent();
+      const agent = withMockPty(new AgyAgent());
       const noPlan = AGY_BANNER.replace('user@example.com (Google AI Pro)', 'user@example.com');
 
       expect(agent._parseAgyMetadata(noPlan).plan).toBeUndefined();
     });
 
     it('reports the banner plan as the canonical plan', () => {
-      const metadata = new AgyAgent()._parseAgyMetadata(AGY_BANNER);
+      const metadata = withMockPty(new AgyAgent())._parseAgyMetadata(AGY_BANNER);
       const result = normalizeAgentStatus({ name: 'agy', id: 'agy', provider: 'agy', usage: { models: [] }, metadata });
 
       expect(result.plan).toBe('google ai pro');
     });
 
     it('ignores the model quoted in the "no longer available" notice', () => {
-      const agent = new AgyAgent();
+      const agent = withMockPty(new AgyAgent());
       const withoutBannerModel = AGY_BANNER.replace('▀▀▀▀▀▀▀▀      Gemini 4 Argon (Medium)\n', '');
 
       // Falls back to the status line, never the retired "Gemini 3.1 Pro".
@@ -231,24 +239,24 @@ describe('agent metadata collection', () => {
     });
 
     it('reports the sign-in menu as unauthenticated despite its spinner', () => {
-      expect(new AgyAgent().detectAuthenticationState(AGY_SIGN_IN_SCREEN)).toMatchObject({
+      expect(withMockPty(new AgyAgent()).detectAuthenticationState(AGY_SIGN_IN_SCREEN)).toMatchObject({
         authenticated: false,
         status: 'unauthenticated',
       });
     });
 
     it('still treats a sign-in without the login menu as in progress', () => {
-      expect(new AgyAgent().detectAuthenticationState(' You are currently not signed in.\n ⣾  Signing in...')).toBeNull();
+      expect(withMockPty(new AgyAgent()).detectAuthenticationState(' You are currently not signed in.\n ⣾  Signing in...')).toBeNull();
     });
 
     it('returns only the cli marker when nothing has rendered', () => {
-      expect(new AgyAgent()._parseAgyMetadata('')).toEqual({ cli: 'agy' });
+      expect(withMockPty(new AgyAgent())._parseAgyMetadata('')).toEqual({ cli: 'agy' });
     });
   });
 
   describe('AgyAgent metadata over a chunked PTY', () => {
     it('spawns the CLI and parses the banner on the first refresh', async () => {
-      const agent = new AgyAgent();
+      const agent = withMockPty(new AgyAgent());
       createChunkedShell({
         startup: [`${AGY_BANNER_LINES.slice(0, 2).join('\r\n')}\r\n`, `${AGY_BANNER_LINES.slice(2).join('\r\n')}\r\n>\r\n`],
       });
@@ -266,7 +274,7 @@ describe('agent metadata collection', () => {
     });
 
     it('waits for a model line that renders after the prompt', async () => {
-      const agent = new AgyAgent();
+      const agent = withMockPty(new AgyAgent());
       createChunkedShell({
         startup: [`${AGY_BANNER_LINES[0]}\r\n${AGY_BANNER_LINES[1]}\r\n>\r\n`, '? for shortcuts Gemini 4 Argon · medium\r\n'],
       });
@@ -277,7 +285,7 @@ describe('agent metadata collection', () => {
     });
 
     it('waits for the plan that agy redraws next to the account after the model', async () => {
-      const agent = new AgyAgent();
+      const agent = withMockPty(new AgyAgent());
       // agy 1.4.0 prints the account bare, then ~2s later moves the cursor up
       // and draws " (Google AI Pro)" after it.
       createChunkedShell({
@@ -295,7 +303,7 @@ describe('agent metadata collection', () => {
     });
 
     it('still reports the model when no plan is ever drawn', async () => {
-      const agent = new AgyAgent();
+      const agent = withMockPty(new AgyAgent());
       createChunkedShell({ startup: [`${AGY_BANNER_LINES[0]}\r\n>\r\n? for shortcuts Gemini 4 Argon · medium\r\n`] });
 
       await refreshWithStubbedUsage(agent, 5000);
@@ -305,7 +313,7 @@ describe('agent metadata collection', () => {
     });
 
     it('stops at the sign-in screen instead of waiting out the spawn timeout', async () => {
-      const agent = new AgyAgent();
+      const agent = withMockPty(new AgyAgent());
       createChunkedShell({ startup: [AGY_SIGN_IN_SCREEN] });
 
       await refreshWithStubbedUsage(agent, 100);
@@ -316,7 +324,7 @@ describe('agent metadata collection', () => {
     });
 
     it('applies a contextWindows override for Gemini 4 Argon end to end', async () => {
-      const agent = new AgyAgent();
+      const agent = withMockPty(new AgyAgent());
       createChunkedShell({ startup: [`${AGY_BANNER}\r\n>\r\n`] });
 
       await refreshWithStubbedUsage(agent, 1000);

@@ -13,6 +13,9 @@ class BaseAgent {
     this.name = name;
     this.command = command;
     this.args = args;
+    // Terminal implementation used to start the CLI. Tests can replace it with
+    // a fake that has the same `spawn(command, args, options)` signature.
+    this.pty = pty;
     this.usage = null;
     this.metadata = null;
     this._metadataFetched = false;
@@ -228,7 +231,7 @@ class BaseAgent {
 
       try {
         const env = this.getEnv ? this.getEnv() : { ...process.env, TERM: 'xterm-256color' };
-        this.shell = pty.spawn(this.command, this.args, {
+        this.shell = this.pty.spawn(this.command, this.args, {
           name: 'xterm-color',
           cols: 120,
           rows: 40,
@@ -511,7 +514,7 @@ class BaseAgent {
       let shell;
       try {
         const env = this.getEnv ? this.getEnv() : { ...process.env, TERM: 'xterm-256color' };
-        shell = pty.spawn(this.command, this.args, {
+        shell = this.pty.spawn(this.command, this.args, {
           name: 'xterm-color',
           cols: 120,
           rows: 40,
