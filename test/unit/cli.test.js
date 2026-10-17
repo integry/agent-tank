@@ -1181,4 +1181,107 @@ describe('CLI', () => {
       }
     });
   });
+
+  describe('usage history flags', () => {
+    const HISTORY_STUB = path.resolve(__dirname, '../fixtures/cli-once-history-stub.js');
+    let sqlite = null;
+    try {
+      sqlite = require('node:sqlite');
+    } catch {
+      // History tests below are skipped on runtimes without node:sqlite.
+    }
+    const itWithSqlite = NODE_PTY_AVAILABLE && CLI_SUBPROCESS_AVAILABLE && sqlite ? it : it.skip;
+    let homeDir;
+
+    beforeEach(() => {
+      homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-tank-history-home-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(homeDir, { recursive: true, force: true });
+    });
+
+    function runWithHistoryStub(args, env = {}) {
+      const childEnv = { ...process.env, HOME: homeDir };
+      delete childEnv.AGENT_TANK_HISTORY;
+      delete childEnv.AGENT_TANK_HISTORY_DB;
+      Object.assign(childEnv, env);
+      const result = spawnSync(process.execPath, ['-r', HISTORY_STUB, CLI_PATH, '--once', '--json', ...args], {
+        encoding: 'utf8',
+        env: childEnv,
+        timeout: 30000,
+      });
+      const match = (result.stderr || '').match(/stub: history (.*)/);
+      return { exitCode: result.status, history: match ? JSON.parse(match[1]) : null };
+    }
+
+    function metricKeys(dbPath) {
+      const db = new sqlite.DatabaseSync(dbPath);
+      try {
+        return db.prepare('SELECT agent_id, metric_key FROM usage_metrics ORDER BY id').all()
+          .map(row => `${row.agent_id}:${row.metric_key}`);
+      } finally {
+        db.close();
+      }
+    }
+
+    itWithSqlite('records one row per metric per account to ~/.agent-tank/history.db by default', () => {
+      const result = runWithHistoryStub(['--claude', '--agent', 'codex:work']);
+      const dbPath = path.join(homeDir, '.agent-tank', 'history.db');
+
+      expect(result.exitCode).toBe(0);
+      expect(result.history).toMatchObject({ enabled: true, store: 'sqlite', path: dbPath });
+      expect(metricKeys(dbPath).sort()).toEqual(['claude:session', 'claude:weeklyAll', 'work:fiveHour', 'work:weekly']);
+      expect(fs.existsSync(path.join(homeDir, '.agent-tank', 'history.json'))).toBe(false);
+    });
+
+    itWithSqlite('--history-db writes to the explicit path', () => {
+      const dbPath = path.join(homeDir, 'custom', 'at.db');
+      const result = runWithHistoryStub(['--codex', '--history-db', dbPath]);
+
+      expect(result.history.path).toBe(dbPath);
+      expect(metricKeys(dbPath)).toEqual(['codex:fiveHour', 'codex:weekly']);
+      expect(fs.existsSync(path.join(homeDir, '.agent-tank', 'history.db'))).toBe(false);
+    });
+
+    itWithSqlite('AGENT_TANK_HISTORY_DB overrides --history-db', () => {
+      const envPath = path.join(homeDir, 'env.db');
+      const result = runWithHistoryStub(['--codex', '--history-db', path.join(homeDir, 'cli.db')], {
+        AGENT_TANK_HISTORY_DB: envPath,
+      });
+
+      expect(result.history.path).toBe(envPath);
+      expect(fs.existsSync(path.join(homeDir, 'cli.db'))).toBe(false);
+    });
+
+    itWithSqlite('--no-history disables recording and reports store "none"', () => {
+      const result = runWithHistoryStub(['--codex', '--no-history']);
+
+      expect(result.history).toEqual({ enabled: false, store: 'none', path: null, retentionDays: 14 });
+      expect(fs.existsSync(path.join(homeDir, '.agent-tank'))).toBe(false);
+    });
+
+    itWithSqlite('AGENT_TANK_HISTORY=0 overrides --history', () => {
+      const result = runWithHistoryStub(['--codex', '--history'], { AGENT_TANK_HISTORY: '0' });
+
+      expect(result.history.store).toBe('none');
+    });
+
+    itWithSqlite('resolves history.dbPath from the config file, expanding ~/', () => {
+      const configPath = createConfigFile({ history: { dbPath: '~/from-config.db' } });
+      const result = runWithHistoryStub(['-c', configPath, '--codex']);
+
+      expect(result.history.path).toBe(path.join(homeDir, 'from-config.db'));
+      expect(fs.existsSync(path.join(homeDir, 'from-config.db'))).toBe(true);
+    });
+
+    itWithSqlite('--history overrides history.enabled=false in the config file', () => {
+      const configPath = createConfigFile({ history: { enabled: false, retentionDays: 3 } });
+      const configOnly = runWithHistoryStub(['-c', configPath, '--codex']);
+      const cliWins = runWithHistoryStub(['-c', configPath, '--codex', '--history']);
+
+      expect(configOnly.history.store).toBe('none');
+      expect(cliWins.history).toMatchObject({ store: 'sqlite', retentionDays: 3 });
+    });
+  });
 });

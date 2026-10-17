@@ -102,4 +102,5 @@ module.exports = {
   SUPPORTED_PROVIDERS,
   normalizeAgentSpecs,
   parseAgentOption,
+  resolveConfigPath,
 };

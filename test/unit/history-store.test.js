@@ -1,366 +1,320 @@
 /**
- * Unit tests for the History Store module
+ * Unit tests for the SQLite history store.
  *
- * Tests the HistoryStore class that manages persistent storage of
- * usage snapshots with automatic pruning based on retention period.
+ * SQLite-backed tests require Node's built-in `node:sqlite` (Node.js 22.5+)
+ * and are skipped when it is unavailable. The no-op store and factory
+ * fallback tests run on every runtime.
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { HistoryStore, DEFAULT_RETENTION_DAYS } = require('../../src/history-store');
+const {
+  createHistoryStore,
+  SqliteHistoryStore,
+  NullHistoryStore,
+  DEFAULT_RETENTION_DAYS,
+  DEFAULT_HISTORY_DB,
+} = require('../../src/history-store');
 
-describe('HistoryStore', () => {
+function loadSqlite() {
+  try {
+    return require('node:sqlite');
+  } catch {
+    return null;
+  }
+}
+
+const sqlite = loadSqlite();
+
+if (!sqlite) {
+  console.log('\n⚠️  SQLite history store tests skipped: node:sqlite is not available (requires Node.js 22.5+)\n');
+}
+
+const describeIfSqlite = sqlite ? describe : describe.skip;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const CODEX_USAGE = {
+  fiveHour: { percentUsed: 20 },
+  weekly: { percentUsed: 45 },
+  modelLimits: [{ name: 'GPT-5.3-Codex-Spark', fiveHour: { percentUsed: 5 } }],
+};
+
+describe('NullHistoryStore', () => {
+  it('reports store "none" and returns empty results for every method', () => {
+    const store = new NullHistoryStore({ retentionDays: 7, reason: 'unavailable' });
+
+    expect(store.store).toBe('none');
+    expect(store.enabled).toBe(false);
+    expect(store.recordUsage({ agentId: 'claude', provider: 'claude', usage: { session: { percent: 1 } } })).toBe(0);
+    expect(store.getSeries('claude')).toEqual([]);
+    expect(store.getLatest('claude')).toBeNull();
+    expect(store.clear()).toBe(0);
+    expect(store.prune()).toBe(0);
+    expect(() => store.close()).not.toThrow();
+    expect(store.getStats()).toEqual({
+      store: 'none',
+      enabled: false,
+      reason: 'unavailable',
+      path: null,
+      retentionDays: 7,
+      totalRows: 0,
+      agents: {},
+    });
+  });
+});
+
+describe('createHistoryStore', () => {
+  it('returns a no-op store without warning when history is disabled', () => {
+    const warn = jest.fn();
+    const store = createHistoryStore({ enabled: false, warn });
+
+    expect(store).toBeInstanceOf(NullHistoryStore);
+    expect(store.getStats().reason).toBe('disabled');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a no-op store with one warning when node:sqlite cannot be loaded', () => {
+    const warn = jest.fn();
+    const store = createHistoryStore({
+      warn,
+      loadSqlite: () => { throw new Error('No such built-in module: node:sqlite'); },
+    });
+
+    expect(store.store).toBe('none');
+    expect(store.getStats()).toMatchObject({ store: 'none', reason: 'unavailable', totalRows: 0, agents: {} });
+    expect(() => store.recordUsage({ agentId: 'codex', provider: 'codex', usage: CODEX_USAGE })).not.toThrow();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toMatch(/node:sqlite is unavailable/);
+  });
+
+  it('defaults to ~/.agent-tank/history.db and 14 days of retention', () => {
+    expect(DEFAULT_HISTORY_DB).toBe(path.join(os.homedir(), '.agent-tank', 'history.db'));
+    expect(DEFAULT_RETENTION_DAYS).toBe(14);
+  });
+
+  it('falls back to the default retention for invalid values', () => {
+    expect(new NullHistoryStore({ retentionDays: Number.NaN }).retentionDays).toBe(14);
+    expect(new NullHistoryStore({ retentionDays: 0 }).retentionDays).toBe(14);
+  });
+});
+
+describeIfSqlite('SqliteHistoryStore', () => {
   let testDir;
+  let dbPath;
   let store;
 
   beforeEach(() => {
-    // Create a unique temp directory for each test
-    testDir = path.join(os.tmpdir(), `history-store-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    fs.mkdirSync(testDir, { recursive: true });
-
-    store = new HistoryStore({
-      historyDir: testDir,
-      historyFile: 'test-history.json',
-      retentionDays: 14
-    });
+    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'history-store-test-'));
+    dbPath = path.join(testDir, 'nested', 'history.db');
+    store = createHistoryStore({ dbPath, retentionDays: 14 });
   });
 
   afterEach(() => {
-    // Clean up test directory
+    store.close();
+    fs.rmSync(testDir, { recursive: true, force: true });
+  });
+
+  function rawQuery(sql, ...params) {
+    const db = new sqlite.DatabaseSync(dbPath);
     try {
-      fs.rmSync(testDir, { recursive: true, force: true });
-    } catch (e) {
-      // Ignore cleanup errors
+      return db.prepare(sql).all(...params);
+    } finally {
+      db.close();
     }
+  }
+
+  it('is created by the factory and does not touch disk until first use', () => {
+    expect(store).toBeInstanceOf(SqliteHistoryStore);
+    expect(store.store).toBe('sqlite');
+    expect(fs.existsSync(dbPath)).toBe(false);
   });
 
-  describe('constructor', () => {
-    it('uses default retention days when not specified', () => {
-      const defaultStore = new HistoryStore({ historyDir: testDir });
-      expect(defaultStore.retentionDays).toBe(DEFAULT_RETENTION_DAYS);
+  describe('recordUsage', () => {
+    it('creates the database and inserts one row per metric', () => {
+      const inserted = store.recordUsage({ agentId: 'work', provider: 'codex', usage: CODEX_USAGE, recordedAt: '2026-10-17T10:00:00.000Z' });
+
+      expect(inserted).toBe(3);
+      expect(fs.existsSync(dbPath)).toBe(true);
+      expect(rawQuery('SELECT agent_id, provider, metric_key, percent_used, unit, recorded_at, recorded_at_ms FROM usage_metrics ORDER BY id')).toEqual([
+        { agent_id: 'work', provider: 'codex', metric_key: 'fiveHour', percent_used: 20, unit: 'percent', recorded_at: '2026-10-17T10:00:00.000Z', recorded_at_ms: Date.parse('2026-10-17T10:00:00.000Z') },
+        { agent_id: 'work', provider: 'codex', metric_key: 'weekly', percent_used: 45, unit: 'percent', recorded_at: '2026-10-17T10:00:00.000Z', recorded_at_ms: Date.parse('2026-10-17T10:00:00.000Z') },
+        { agent_id: 'work', provider: 'codex', metric_key: 'GPT-5.3-Codex-Spark:fiveHour', percent_used: 5, unit: 'percent', recorded_at: '2026-10-17T10:00:00.000Z', recorded_at_ms: Date.parse('2026-10-17T10:00:00.000Z') },
+      ].map(row => expect.objectContaining(row)));
     });
 
-    it('accepts custom retention days', () => {
-      const customStore = new HistoryStore({
-        historyDir: testDir,
-        retentionDays: 7
+    it('produces a plottable series with plain SQL', () => {
+      const now = Date.now();
+      store.recordUsage({ agentId: 'work', provider: 'codex', usage: { weekly: { percentUsed: 10 } }, recordedAt: now - 2000 });
+      store.recordUsage({ agentId: 'work', provider: 'codex', usage: { weekly: { percentUsed: 12 } }, recordedAt: now - 1000 });
+
+      const rows = rawQuery("SELECT recorded_at, percent_used FROM usage_metrics WHERE agent_id='work' AND metric_key='weekly' ORDER BY recorded_at_ms");
+
+      expect(rows.map(r => r.percent_used)).toEqual([10, 12]);
+      expect(rows[0].recorded_at).toBe(new Date(now - 2000).toISOString());
+    });
+
+    it('stores non-percentage metrics with their value and unit', () => {
+      store.recordUsage({
+        agentId: 'work',
+        provider: 'codex',
+        metrics: [{ key: 'credits', label: 'Credits', percentUsed: null, value: 42.5, unit: 'credits' }],
       });
-      expect(customStore.retentionDays).toBe(7);
+
+      expect(store.getLatest('work').metrics).toEqual([
+        { key: 'credits', label: 'Credits', model: null, cycle: null, percentUsed: null, value: 42.5, unit: 'credits' },
+      ]);
     });
 
-    it('builds correct history path', () => {
-      expect(store.historyPath).toBe(path.join(testDir, 'test-history.json'));
-    });
-  });
-
-  describe('addSnapshot', () => {
-    it('adds a snapshot with current timestamp', () => {
-      const before = Date.now();
-      const record = store.addSnapshot('claude', { session: 50 });
-      const after = Date.now();
-
-      expect(record.agent).toBe('claude');
-      expect(record.usage).toEqual({ session: 50 });
-
-      const recordTime = new Date(record.timestamp).getTime();
-      expect(recordTime).toBeGreaterThanOrEqual(before);
-      expect(recordTime).toBeLessThanOrEqual(after);
+    it('records nothing when the usage has no metrics', () => {
+      expect(store.recordUsage({ agentId: 'x', provider: 'unknown', usage: { foo: 1 } })).toBe(0);
+      expect(fs.existsSync(dbPath)).toBe(false);
     });
 
-    it('adds a snapshot with custom timestamp', () => {
-      const customTimestamp = '2025-01-15T10:30:00.000Z';
-      const record = store.addSnapshot('agy', { models: {} }, customTimestamp);
-
-      expect(record.timestamp).toBe(customTimestamp);
+    it('validates agentId and provider', () => {
+      expect(() => store.recordUsage({ provider: 'codex', usage: CODEX_USAGE })).toThrow('agentId is required');
+      expect(() => store.recordUsage({ agentId: 'work', usage: CODEX_USAGE })).toThrow('provider is required');
     });
 
-    it('throws error for missing agentName', () => {
-      expect(() => store.addSnapshot(null, { session: 50 }))
-        .toThrow('agentName is required and must be a string');
-    });
+    it('deletes rows older than the retention period on write', () => {
+      const now = Date.now();
+      store.recordUsage({ agentId: 'work', provider: 'codex', usage: CODEX_USAGE, recordedAt: now - 15 * DAY_MS });
+      store.recordUsage({ agentId: 'work', provider: 'codex', usage: CODEX_USAGE, recordedAt: now - 13 * DAY_MS });
 
-    it('throws error for non-string agentName', () => {
-      expect(() => store.addSnapshot(123, { session: 50 }))
-        .toThrow('agentName is required and must be a string');
-    });
-
-    it('throws error for missing usageData', () => {
-      expect(() => store.addSnapshot('claude', null))
-        .toThrow('usageData is required and must be an object');
-    });
-
-    it('throws error for non-object usageData', () => {
-      expect(() => store.addSnapshot('claude', 'not an object'))
-        .toThrow('usageData is required and must be an object');
-    });
-
-    it('persists snapshot to disk', () => {
-      store.addSnapshot('claude', { session: 50 });
-
-      // Read directly from file
-      const fileContent = fs.readFileSync(store.historyPath, 'utf8');
-      const data = JSON.parse(fileContent);
-
-      expect(data).toHaveLength(1);
-      expect(data[0].agent).toBe('claude');
-    });
-
-    it('appends multiple snapshots', () => {
-      store.addSnapshot('claude', { session: 10 });
-      store.addSnapshot('claude', { session: 20 });
-      store.addSnapshot('agy', { models: { 'agy-2.5-flash': 5 } });
-
-      const history = store.getHistory();
-      expect(history).toHaveLength(3);
+      expect(rawQuery('SELECT COUNT(*) AS n FROM usage_metrics')[0].n).toBe(3);
+      store.recordUsage({ agentId: 'work', provider: 'codex', usage: CODEX_USAGE, recordedAt: now });
+      expect(store.getStats().agents.work.snapshots).toBe(2);
     });
   });
 
-  describe('getHistory', () => {
+  describe('getSeries', () => {
     beforeEach(() => {
-      store.addSnapshot('claude', { session: 10 });
-      store.addSnapshot('claude', { session: 20 });
-      store.addSnapshot('agy', { models: {} });
-      store.addSnapshot('codex', { fiveHour: 5 });
+      const base = Date.parse('2026-10-17T00:00:00.000Z');
+      jest.spyOn(Date, 'now').mockReturnValue(base + DAY_MS);
+      store.recordUsage({ agentId: 'work', provider: 'codex', usage: { fiveHour: { percentUsed: 1 }, weekly: { percentUsed: 10 } }, recordedAt: base });
+      store.recordUsage({ agentId: 'work', provider: 'codex', usage: { fiveHour: { percentUsed: 2 }, weekly: { percentUsed: 11, label: 'Weekly (renamed)' } }, recordedAt: base + 1000 });
+      store.recordUsage({ agentId: 'other', provider: 'claude', usage: { session: { percent: 50 } }, recordedAt: base });
     });
 
-    it('returns all records when no filter specified', () => {
-      const history = store.getHistory();
-      expect(history).toHaveLength(4);
+    afterEach(() => {
+      jest.restoreAllMocks();
     });
 
-    it('filters by agent name', () => {
-      const claudeHistory = store.getHistory('claude');
-      expect(claudeHistory).toHaveLength(2);
-      expect(claudeHistory.every(r => r.agent === 'claude')).toBe(true);
+    it('returns every series for one agent with time-ordered points', () => {
+      expect(store.getSeries('work')).toEqual([
+        {
+          key: 'fiveHour', label: '5h limit', model: null, cycle: 'five_hour', unit: 'percent',
+          points: [
+            { t: '2026-10-17T00:00:00.000Z', percent: 1, value: null },
+            { t: '2026-10-17T00:00:01.000Z', percent: 2, value: null },
+          ],
+        },
+        {
+          key: 'weekly', label: 'Weekly (renamed)', model: null, cycle: 'weekly', unit: 'percent',
+          points: [
+            { t: '2026-10-17T00:00:00.000Z', percent: 10, value: null },
+            { t: '2026-10-17T00:00:01.000Z', percent: 11, value: null },
+          ],
+        },
+      ]);
     });
 
-    it('returns empty array for unknown agent', () => {
-      const unknownHistory = store.getHistory('unknown');
-      expect(unknownHistory).toHaveLength(0);
+    it('filters by metric key and time range', () => {
+      const series = store.getSeries('work', { key: 'weekly', since: '2026-10-17T00:00:00.500Z' });
+
+      expect(series).toHaveLength(1);
+      expect(series[0].points).toEqual([{ t: '2026-10-17T00:00:01.000Z', percent: 11, value: null }]);
+      expect(store.getSeries('work', { until: Date.parse('2026-10-17T00:00:00.000Z') })[0].points).toHaveLength(1);
     });
 
-    it('returns a copy, not the internal array', () => {
-      const history = store.getHistory();
-      history.push({ agent: 'test', usage: {}, timestamp: '' });
-
-      // Original should be unchanged
-      expect(store.getHistory()).toHaveLength(4);
-    });
-  });
-
-  describe('getLatestSnapshot', () => {
-    it('returns the most recent snapshot for an agent', () => {
-      // Use recent timestamps to avoid pruning
-      const now = new Date();
-      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
-
-      store.addSnapshot('claude', { session: 10 }, twoHoursAgo.toISOString());
-      store.addSnapshot('claude', { session: 30 }, now.toISOString());
-      store.addSnapshot('claude', { session: 20 }, oneHourAgo.toISOString());
-
-      const latest = store.getLatestSnapshot('claude');
-      expect(latest.usage.session).toBe(30);
-    });
-
-    it('returns null for unknown agent', () => {
-      const latest = store.getLatestSnapshot('unknown');
-      expect(latest).toBeNull();
+    it('returns an empty array for an unknown agent', () => {
+      expect(store.getSeries('missing')).toEqual([]);
     });
   });
 
-  describe('getSnapshotsInWindow', () => {
-    it('returns snapshots within time window', () => {
-      const now = new Date();
-      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
-      const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+  describe('getLatest', () => {
+    it('returns only the metrics from the most recent refresh', () => {
+      store.recordUsage({ agentId: 'work', provider: 'codex', usage: CODEX_USAGE, recordedAt: Date.now() - 1000 });
+      store.recordUsage({ agentId: 'work', provider: 'codex', usage: { weekly: { percentUsed: 50 } }, recordedAt: Date.now() });
 
-      store.addSnapshot('claude', { session: 10 }, threeHoursAgo.toISOString());
-      store.addSnapshot('claude', { session: 20 }, twoHoursAgo.toISOString());
-      store.addSnapshot('claude', { session: 30 }, oneHourAgo.toISOString());
-      store.addSnapshot('claude', { session: 40 }, now.toISOString());
+      const latest = store.getLatest('work');
 
-      // Get snapshots from last 2.5 hours
-      const windowSeconds = 2.5 * 60 * 60;
-      const snapshots = store.getSnapshotsInWindow('claude', windowSeconds);
-
-      expect(snapshots).toHaveLength(3);
-      expect(snapshots[0].usage.session).toBe(20);
-      expect(snapshots[1].usage.session).toBe(30);
-      expect(snapshots[2].usage.session).toBe(40);
+      expect(latest).toMatchObject({ agentId: 'work', provider: 'codex' });
+      expect(latest.metrics.map(m => [m.key, m.percentUsed])).toEqual([['weekly', 50]]);
     });
 
-    it('returns snapshots sorted by timestamp ascending', () => {
-      const now = new Date();
-      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-
-      // Add in reverse order
-      store.addSnapshot('claude', { session: 40 }, now.toISOString());
-      store.addSnapshot('claude', { session: 30 }, oneHourAgo.toISOString());
-
-      const snapshots = store.getSnapshotsInWindow('claude', 2 * 60 * 60);
-
-      expect(snapshots[0].usage.session).toBe(30);
-      expect(snapshots[1].usage.session).toBe(40);
-    });
-  });
-
-  describe('clearHistory', () => {
-    beforeEach(() => {
-      store.addSnapshot('claude', { session: 10 });
-      store.addSnapshot('agy', { models: {} });
-      store.addSnapshot('codex', { fiveHour: 5 });
-    });
-
-    it('clears all history when no agent specified', () => {
-      store.clearHistory();
-      expect(store.getHistory()).toHaveLength(0);
-    });
-
-    it('clears only specified agent history', () => {
-      store.clearHistory('claude');
-
-      const history = store.getHistory();
-      expect(history).toHaveLength(2);
-      expect(history.find(r => r.agent === 'claude')).toBeUndefined();
-    });
-
-    it('persists cleared state to disk', () => {
-      store.clearHistory();
-
-      const fileContent = fs.readFileSync(store.historyPath, 'utf8');
-      const data = JSON.parse(fileContent);
-      expect(data).toHaveLength(0);
+    it('returns null for an unknown agent', () => {
+      expect(store.getLatest('missing')).toBeNull();
     });
   });
 
   describe('getStats', () => {
-    it('returns correct statistics', () => {
-      // Use recent timestamps to avoid pruning
-      const now = new Date();
-      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+    it('summarises rows per agent and reports the sqlite backend', () => {
+      const t1 = Date.now() - 1000;
+      const t2 = Date.now();
+      store.recordUsage({ agentId: 'work', provider: 'codex', usage: CODEX_USAGE, recordedAt: t1 });
+      store.recordUsage({ agentId: 'work', provider: 'codex', usage: CODEX_USAGE, recordedAt: t2 });
 
-      store.addSnapshot('claude', { session: 10 }, twoHoursAgo.toISOString());
-      store.addSnapshot('claude', { session: 20 }, now.toISOString());
-      store.addSnapshot('agy', { models: {} }, oneHourAgo.toISOString());
-
-      const stats = store.getStats();
-
-      expect(stats.totalRecords).toBe(3);
-      expect(stats.retentionDays).toBe(14);
-      expect(stats.historyPath).toBe(store.historyPath);
-
-      expect(stats.agents.claude.count).toBe(2);
-      expect(stats.agents.claude.oldest).toBe(twoHoursAgo.toISOString());
-      expect(stats.agents.claude.newest).toBe(now.toISOString());
-
-      expect(stats.agents.agy.count).toBe(1);
-    });
-
-    it('returns empty stats for empty history', () => {
-      const stats = store.getStats();
-
-      expect(stats.totalRecords).toBe(0);
-      expect(stats.agents).toEqual({});
+      expect(store.getStats()).toEqual({
+        store: 'sqlite',
+        enabled: true,
+        path: dbPath,
+        retentionDays: 14,
+        totalRows: 6,
+        agents: {
+          work: {
+            provider: 'codex',
+            rows: 6,
+            snapshots: 2,
+            metrics: 3,
+            oldest: new Date(t1).toISOString(),
+            newest: new Date(t2).toISOString(),
+          },
+        },
+      });
     });
   });
 
-  describe('automatic pruning', () => {
-    it('removes records older than retention period', () => {
-      // Create a store with 1 day retention
-      const shortRetentionStore = new HistoryStore({
-        historyDir: testDir,
-        historyFile: 'short-retention.json',
-        retentionDays: 1
-      });
+  describe('clear and prune', () => {
+    it('clears one agent or everything', () => {
+      store.recordUsage({ agentId: 'a', provider: 'codex', usage: CODEX_USAGE });
+      store.recordUsage({ agentId: 'b', provider: 'codex', usage: CODEX_USAGE });
 
-      const now = new Date();
-      const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
-      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-
-      shortRetentionStore.addSnapshot('claude', { session: 10 }, twoDaysAgo.toISOString());
-      shortRetentionStore.addSnapshot('claude', { session: 20 }, oneHourAgo.toISOString());
-      shortRetentionStore.addSnapshot('claude', { session: 30 }, now.toISOString());
-
-      // Force pruning by calling getHistory
-      const history = shortRetentionStore.getHistory();
-
-      // Only the recent records should remain
-      expect(history).toHaveLength(2);
-      expect(history.find(r => r.usage.session === 10)).toBeUndefined();
+      expect(store.clear('a')).toBe(3);
+      expect(Object.keys(store.getStats().agents)).toEqual(['b']);
+      expect(store.clear()).toBe(3);
+      expect(store.getStats().totalRows).toBe(0);
     });
 
-    it('prunes on addSnapshot', () => {
-      const shortRetentionStore = new HistoryStore({
-        historyDir: testDir,
-        historyFile: 'prune-on-add.json',
-        retentionDays: 1
-      });
+    it('prunes relative to the supplied time', () => {
+      const now = Date.now();
+      store.recordUsage({ agentId: 'a', provider: 'codex', usage: CODEX_USAGE, recordedAt: now });
 
-      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-
-      // Manually write old data to file
-      fs.writeFileSync(
-        shortRetentionStore.historyPath,
-        JSON.stringify([
-          { timestamp: twoDaysAgo.toISOString(), agent: 'claude', usage: { session: 10 } }
-        ])
-      );
-
-      // Reset internal state to force reload
-      shortRetentionStore._initialized = false;
-      shortRetentionStore._history = null;
-
-      // Add new snapshot - should trigger pruning
-      shortRetentionStore.addSnapshot('claude', { session: 50 });
-
-      const history = shortRetentionStore.getHistory();
-      expect(history).toHaveLength(1);
-      expect(history[0].usage.session).toBe(50);
+      expect(store.prune(now + 13 * DAY_MS)).toBe(0);
+      expect(store.prune(now + 15 * DAY_MS)).toBe(3);
     });
   });
 
-  describe('error handling', () => {
-    it('handles corrupted JSON file gracefully', () => {
-      // Write corrupted JSON
-      fs.writeFileSync(store.historyPath, 'not valid json');
+  describe('close', () => {
+    it('can be called repeatedly and reopens on next use', () => {
+      store.recordUsage({ agentId: 'a', provider: 'codex', usage: CODEX_USAGE });
+      store.close();
+      store.close();
 
-      // Reset internal state
-      store._initialized = false;
-      store._history = null;
-
-      // Should not throw, returns empty array
-      const history = store.getHistory();
-      expect(history).toEqual([]);
+      expect(store.getStats().totalRows).toBe(3);
     });
+  });
 
-    it('handles non-array JSON file gracefully', () => {
-      // Write valid JSON but wrong structure
-      fs.writeFileSync(store.historyPath, '{"not": "an array"}');
+  it('degrades to a no-op with one warning when the database cannot be opened', () => {
+    const blocker = path.join(testDir, 'file');
+    fs.writeFileSync(blocker, '');
+    const warn = jest.fn();
+    const broken = createHistoryStore({ dbPath: path.join(blocker, 'history.db'), warn });
 
-      // Reset internal state
-      store._initialized = false;
-      store._history = null;
-
-      // Should reset to empty array
-      const history = store.getHistory();
-      expect(history).toEqual([]);
-    });
-
-    it('creates directory if it does not exist', () => {
-      const nestedDir = path.join(testDir, 'nested', 'path');
-      const nestedStore = new HistoryStore({
-        historyDir: nestedDir,
-        historyFile: 'nested-history.json'
-      });
-
-      // Should not throw
-      nestedStore.addSnapshot('claude', { session: 50 });
-
-      expect(fs.existsSync(nestedDir)).toBe(true);
-    });
+    expect(broken.recordUsage({ agentId: 'a', provider: 'codex', usage: CODEX_USAGE })).toBe(0);
+    expect(broken.getSeries('a')).toEqual([]);
+    expect(broken.store).toBe('none');
+    expect(broken.getStats()).toMatchObject({ store: 'none', reason: 'error' });
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });
