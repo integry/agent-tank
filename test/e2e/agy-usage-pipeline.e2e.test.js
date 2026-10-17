@@ -156,9 +156,9 @@ describe('Antigravity Gemini 4 Argon pipeline E2E', () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     tank = new AgentTank({ autoDiscover: false, autoRefreshEnabled: false, historyEnabled: false });
     const agent = tank.createAgent('agy');
-    // Only the PTY is replaced: the banner is what the persistent process has
-    // printed when metadata is read, and runCommand returns the /usage screen.
-    agent.output = ARGON_BANNER;
+    // Only the PTY is replaced: spawning the process prints the startup banner
+    // that metadata is read from, and runCommand returns the /usage screen.
+    agent.spawnProcess = jest.fn(async () => { agent.spawnOutput = ARGON_BANNER; });
     agent.runCommand = jest.fn().mockResolvedValue(ARGON_USAGE_SCREEN);
     tank.agents.set('agy', agent);
     await tank.refreshAgent('agy');

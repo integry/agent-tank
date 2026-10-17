@@ -2127,6 +2127,8 @@ describe('CodexAgent', () => {
 describe('ClaudeAgent pingKeepalive', () => {
   let agent;
   let mockPty;
+  // Minimal rendered Status panel; the autocomplete menu alone is not enough.
+  const STATUS_PANEL = ' Version:2.1.302\n Session ID: 00000000-0000-0000-0000-000000000000\n Esc to cancel';
 
   beforeEach(() => {
     agent = new ClaudeAgent();
@@ -2146,7 +2148,7 @@ describe('ClaudeAgent pingKeepalive', () => {
       onData: jest.fn((cb) => {
         // Simulate CLI becoming ready after spawn
         setTimeout(() => cb('? for shortcuts'), 100);
-        setTimeout(() => cb('Current session\n10% used'), 500);
+        setTimeout(() => cb(STATUS_PANEL), 500);
         return { dispose: jest.fn() };
       }),
       onExit: jest.fn(() => ({ dispose: jest.fn() })),
@@ -2209,7 +2211,7 @@ describe('ClaudeAgent pingKeepalive', () => {
         // Simulate CLI becoming ready
         setTimeout(() => cb('? for shortcuts'), 100);
         // Then simulate /status response
-        setTimeout(() => cb('session info > prompt'), 800);
+        setTimeout(() => cb(STATUS_PANEL), 800);
         return { dispose: jest.fn() };
       }),
       onExit: jest.fn(() => ({ dispose: jest.fn() })),
@@ -2237,7 +2239,7 @@ describe('ClaudeAgent pingKeepalive', () => {
     const mockShell = {
       onData: jest.fn((cb) => {
         setTimeout(() => cb('? for shortcuts'), 100);
-        setTimeout(() => cb('session > prompt'), 500);
+        setTimeout(() => cb(STATUS_PANEL), 500);
         return { dispose: jest.fn() };
       }),
       onExit: jest.fn(() => ({ dispose: jest.fn() })),
@@ -2259,7 +2261,7 @@ describe('ClaudeAgent pingKeepalive', () => {
     const mockShell = {
       onData: jest.fn((cb) => {
         setTimeout(() => cb('? for shortcuts'), 100);
-        setTimeout(() => cb('session > prompt'), 500);
+        setTimeout(() => cb(STATUS_PANEL), 500);
         return { dispose: jest.fn() };
       }),
       onExit: jest.fn(() => ({ dispose: jest.fn() })),

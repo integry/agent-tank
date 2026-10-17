@@ -28,6 +28,7 @@ class BaseAgent {
     this.shell = null;
     this.processReady = false;
     this.output = '';
+    this.spawnOutput = ''; // Startup banner seen while waiting for the prompt
     this.freshProcess = false;
     this._onDataCallback = null;
     this._commandInFlight = false;
@@ -221,6 +222,7 @@ class BaseAgent {
     return new Promise((resolve, reject) => {
       let trustHandled = false;
       let spawnOutput = '';
+      this.spawnOutput = '';
 
       logger.agent(this.name, 'Spawning persistent process:', logger.dim(`${this.command} ${this.args.join(' ')}`));
 
@@ -264,6 +266,7 @@ class BaseAgent {
         }
 
         spawnOutput += data;
+        this.spawnOutput = spawnOutput;
 
         // Handle trust/update prompts during spawn (only once each)
         if (!trustHandled && this.handleTrustPrompt && this.handleTrustPrompt(this.shell, spawnOutput)) {

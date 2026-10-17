@@ -111,8 +111,8 @@ describeIfAgy('AgyAgent E2E', () => {
       // If there's an error (e.g., rate limiting), it should be stored
       if (agent.error) {
         console.log(`Agent reported error: ${agent.error}`);
-        // Rate limiting or cached data errors are acceptable
-        expect(agent.error).toMatch(/rate.?limit|cached|Failed to parse/i);
+        // Rate limiting, cached data and missing sign-in errors are acceptable
+        expect(agent.error).toMatch(/rate.?limit|cached|Failed to parse|Authentication required/i);
       }
     });
   });

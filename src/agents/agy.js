@@ -84,7 +84,10 @@ class AgyAgent extends BaseAgent {
       };
     }
 
-    if (this._hasReadyPrompt(clean) || /signing in/i.test(clean)) {
+    // agy 1.4.0 draws a "Signing in..." spinner next to its login menu, so a
+    // menu still asking for a login method means nobody is signed in.
+    const awaitingLoginChoice = /currently not signed in/i.test(clean) && /select login method/i.test(clean);
+    if (this._hasReadyPrompt(clean) || (/signing in/i.test(clean) && !awaitingLoginChoice)) {
       return null;
     }
 
@@ -249,7 +252,44 @@ class AgyAgent extends BaseAgent {
     }
 
     this._aboutSent = true;
-    return this._parseAgyMetadata(this.output);
+    // The version, account and model are only printed in the startup banner,
+    // so the process has to be running before there is anything to parse.
+    if (!this.shell || !this.processReady) {
+      await this.spawnProcess();
+    }
+    return this._parseAgyMetadata(await this._waitForBanner());
+  }
+
+  // Resolve with the startup output once the banner's model line has rendered
+  // or a sign-in screen is up (else after a short grace period, since the
+  // prompt can appear before the model line).
+  _waitForBanner(timeoutMs = 3000) {
+    const banner = () => `${this.spawnOutput || ''}${this.output || ''}`;
+    const settled = () => this._parseBannerModel(this.stripAnsi(banner())) || this.detectAuthenticationState(banner());
+    if (!this.shell || settled()) {
+      return Promise.resolve(banner());
+    }
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        this._onDataCallback = null;
+        resolve(banner());
+      };
+      const timer = setTimeout(done, timeoutMs);
+      this._onDataCallback = () => {
+        if (settled()) done();
+      };
+    });
+  }
+
+  // "Gemini 4 Argon (Medium)" on its own banner line, or the status line
+  // "? for shortcuts Gemini 4 Argon · medium". Quoted names belong to notices
+  // such as '"Gemini 3.1 Pro (High)" is no longer available', not the model.
+  _parseBannerModel(clean) {
+    const bannerLine = clean.match(/^[^\n"]*?\b((?:Gemini|Claude|GPT)\b[^\n"()]*?)\s*\([^)\n]*\)\s*$/im);
+    if (bannerLine) return this.stripBoxChars(bannerLine[1]).trim();
+    const statusLine = clean.match(/\?\s+for\s+shortcuts[ \t]+([^\n·]+?)(?:[ \t]*·[^\n]*)?[ \t]*$/im);
+    return statusLine ? this.stripBoxChars(statusLine[1]).trim() : null;
   }
 
   _parseAgyMetadata(output) {
@@ -265,9 +305,8 @@ class AgyAgent extends BaseAgent {
     const cwdMatch = clean.match(/\n\s*(\/[^\n]+)\n/);
     if (cwdMatch) metadata.cwd = this.stripBoxChars(cwdMatch[1]);
 
-    const modelMatch = clean.match(/((?:Gemini|Claude|GPT)[^\n]+?)\s+\((?:Google AI|[^)]*Pro|[^)]*Free|[^)]*)\)/i)
-      || clean.match(/\?\s+for\s+shortcuts\s+(.+?)(?:\n|$)/i);
-    if (modelMatch) metadata.model = this.stripBoxChars(modelMatch[1]);
+    const model = this._parseBannerModel(clean);
+    if (model) metadata.model = model;
 
     metadata.cli = 'agy';
     return Object.keys(metadata).length > 1 ? metadata : { cli: 'agy' };
