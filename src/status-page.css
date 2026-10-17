@@ -303,6 +303,7 @@ body.light-mode .agent-card {
 }
 
 .usage { margin-bottom: 15px; flex: 1; }
+.usage-extras { margin: -5px 0 15px; }
 
 .usage-item {
   display: flex;

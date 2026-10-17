@@ -406,6 +406,7 @@ async function main() {
     historyEnabled,
     historyDbPath,
     historyChart,
+    contextWindows: config.contextWindows,
     skipServer: onceMode, // Don't start HTTP server in one-shot mode
   });
 

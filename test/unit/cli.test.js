@@ -1147,6 +1147,29 @@ describe('CLI', () => {
       })]);
       expect(codex.windows.map(w => [w.type, w.resets_at])).toEqual([['weekly', '2026-10-10T19:00:00.000Z']]);
       expect(claude.raw.usage.session.resetsAt).toBe('8pm (UTC)');
+      // Neither CLI reported a window or credits, and neither model is in the table.
+      expect(parsed.providers.map(p => [p.context_window, p.credits])).toEqual([[null, null], [null, null]]);
+    });
+
+    itWithPty('--once --json applies contextWindows from the config file', () => {
+      const stub = path.resolve(__dirname, '../fixtures/cli-once-json-stub.js');
+      const configPath = createConfigFile({ contextWindows: { 'gpt-6-astra': 300000 } });
+      const result = spawnSync(process.execPath, ['-r', stub, CLI_PATH, '-c', configPath, '--codex', '--once', '--json'], {
+        encoding: 'utf8',
+        env: process.env,
+        timeout: 30000,
+      });
+
+      expect(result.status).toBe(0);
+      const [codex] = JSON.parse(result.stdout).providers;
+      expect(codex.context_window).toEqual({
+        total_tokens: 300000,
+        used_tokens: null,
+        used_percent: null,
+        remaining_percent: null,
+        model: 'GPT-6-Astra',
+        source: 'override',
+      });
     });
 
     itWithPty('--json mode suppresses regular logging output', () => {

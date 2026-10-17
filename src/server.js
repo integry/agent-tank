@@ -37,7 +37,10 @@ function historyResponse(tank, id, params = new URLSearchParams()) {
 
 /** Render the dashboard HTML. */
 function statusPageResponse(tank) {
-  return statusPage(tank.getStatus(), { historyChart: tank.getHistoryConfig().chart });
+  return statusPage(tank.getStatus(), {
+    historyChart: tank.getHistoryConfig().chart,
+    contextWindows: tank.contextWindows,
+  });
 }
 
 /** Build the GET /config body. */

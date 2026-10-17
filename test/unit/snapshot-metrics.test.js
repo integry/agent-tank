@@ -79,6 +79,33 @@ describe('snapshot-metrics', () => {
       ]);
     });
 
+    it('records the credit balance and context window utilisation', () => {
+      const metrics = extractCodexMetrics({
+        fiveHour: null,
+        weekly: { percentUsed: 81 },
+        contextWindow: { percentLeft: 25, usedTokens: 198000, totalTokens: 258000 },
+        credits: { remaining: 48405, unit: 'credits' },
+      });
+
+      expect(metrics).toEqual([
+        { key: 'weekly', label: 'Weekly limit', model: null, cycle: 'weekly', percentUsed: 81, value: null, unit: 'percent' },
+        { key: 'contextUsedPercent', label: 'Context window', model: null, cycle: null, percentUsed: 76.74, value: null, unit: 'percent' },
+        { key: 'credits', label: 'Credits', model: null, cycle: null, percentUsed: null, value: 48405, unit: 'credits' },
+      ]);
+    });
+
+    it('falls back to percentLeft for context utilisation without token counts', () => {
+      const metrics = extractCodexMetrics({ contextWindow: { percentLeft: 40, usedTokens: null, totalTokens: 272000 } });
+
+      expect(metrics).toEqual([
+        { key: 'contextUsedPercent', label: 'Context window', model: null, cycle: null, percentUsed: 60, value: null, unit: 'percent' },
+      ]);
+    });
+
+    it('skips credits and context rows that carry no number', () => {
+      expect(extractCodexMetrics({ contextWindow: { totalTokens: 1 }, credits: { remaining: null } })).toEqual([]);
+    });
+
     it('derives percent used from percentLeft when percentUsed is absent', () => {
       const [metric] = extractCodexMetrics({ fiveHour: null, weekly: { percentLeft: 70 } });
 

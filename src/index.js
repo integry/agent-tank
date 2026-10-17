@@ -16,6 +16,7 @@ const { normalizeStatus, normalizeAgentStatus } = require('./usage-normalizer.js
 const { KeepaliveManager } = require('./keepalive-manager.js');
 const { AutoRefreshManager } = require('./auto-refresh-manager.js');
 const { normalizeAgentSpecs } = require('./agent-config.js');
+const { normaliseContextWindowOverrides } = require('./context-window.js');
 
 // Load package.json for version info
 const pkg = require(path.join(__dirname, '..', 'package.json'));
@@ -173,6 +174,10 @@ class AgentTank {
     // Dashboard sparkline; never rendered while recording is off
     this.historyChart = options.historyChart !== false;
     this._historyRecordedAt = new Map();
+
+    // Config-file corrections to the known-model context window table,
+    // keyed by model-name pattern (see src/context-window.js)
+    this.contextWindows = normaliseContextWindowOverrides(options.contextWindows);
 
     // Keepalive manager for session maintenance
     this.keepalive = {
@@ -536,7 +541,7 @@ class AgentTank {
    * @returns {{providers: Object[]}}
    */
   getNormalizedStatus() {
-    return normalizeStatus(this.getStatus());
+    return normalizeStatus(this.getStatus(), { contextWindows: this.contextWindows });
   }
 
   /**
@@ -545,7 +550,7 @@ class AgentTank {
    * @returns {Object|null}
    */
   getNormalizedAgentStatus(name) {
-    return normalizeAgentStatus(this.getAgentStatus(name));
+    return normalizeAgentStatus(this.getAgentStatus(name), { contextWindows: this.contextWindows });
   }
 
   authenticate(req, url) {

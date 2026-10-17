@@ -3,7 +3,8 @@ const path = require('node:path');
 const pkg = require(path.join(__dirname, '..', 'package.json'));
 
 const { agentIcons, refreshIcon, tankIcon, syncIcon, copyIcon } = require('./icons');
-const { formatUsage } = require('./usage-formatters');
+const { formatUsage, formatUsageExtras } = require('./usage-formatters');
+const { normalizeAgentStatus } = require('./usage-normalizer');
 const { clientScript } = require('./client-script');
 const { getStatusBadgeClass, getStatusText } = require('./public-status');
 
@@ -79,6 +80,8 @@ function renderHistoryChart(name) {
 function renderAgentCard([name, data], options = {}) {
   const provider = data.provider || data.name || name;
   const usageHtml = formatUsage(provider, data.usage, { agentId: name });
+  const canonical = normalizeAgentStatus({ ...data, id: name }, { contextWindows: options.contextWindows });
+  const extrasHtml = formatUsageExtras(name, canonical.context_window, canonical.credits);
   const statusClass = data.error ? 'error' : data.isRefreshing ? 'refreshing' : 'ok';
   const icon = agentIcons[provider] || '';
   const providerName = getAgentDisplayName(provider);
@@ -101,6 +104,7 @@ function renderAgentCard([name, data], options = {}) {
           </button>
         </h2>
         <div class="usage">${usageHtml}</div>
+        ${extrasHtml}
         ${historyHtml}
         ${footerHtml}
       </div>
@@ -112,6 +116,7 @@ function renderAgentCard([name, data], options = {}) {
  * @param {Object} status - Raw agent status keyed by agent id (AgentTank#getStatus)
  * @param {Object} [options]
  * @param {boolean} [options.historyChart=false] - Add a usage-history sparkline container to each card
+ * @param {Object<string, number>} [options.contextWindows] - Context window overrides (config file)
  * @returns {string}
  */
 function statusPage(status, options = {}) {

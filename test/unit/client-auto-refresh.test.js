@@ -41,7 +41,7 @@ async function fetchFromHandler(handler, url) {
   return { ok: res.statusCode === 200, status: res.statusCode, json: async () => JSON.parse(res.body) };
 }
 
-function loadDashboard(handler, cards) {
+function loadDashboard(handler, cards, extras = []) {
   const context = {
     console: { log: () => {}, warn: () => {}, error: jest.fn() },
     // Disable the timer-driven loop; tests call performAutoRefresh directly.
@@ -50,7 +50,11 @@ function loadDashboard(handler, cards) {
       : fetchFromHandler(handler, url),
     document: {
       querySelector: () => null,
-      querySelectorAll: (selector) => (selector === '.agent-card' ? cards : []),
+      querySelectorAll: (selector) => {
+        if (selector === '.agent-card') return cards;
+        if (selector === '.usage-extras') return extras;
+        return [];
+      },
     },
     localStorage: { setItem: () => {} },
     autoRefreshConfig: { enabled: false, interval: 0 },
@@ -130,5 +134,72 @@ describe('dashboard auto-refresh polling', () => {
     await dashboard.performAutoRefresh();
 
     expect(dashboard.trackedMetric).toMatchObject({ metricId: 'work-session', agent: 'work', percent: 64 });
+  });
+
+  describe('context window and credits rows', () => {
+    function addCodexAccount(id, usage) {
+      const agent = tank.createAgent({ provider: 'codex', id, alias: id });
+      agent.usage = usage;
+      agent.lastUpdated = new Date().toISOString();
+      tank.agents.set(id, agent);
+      return agent;
+    }
+
+    function fakeExtras(agentId) {
+      return { dataset: { agentId }, innerHTML: '', style: { display: 'none' } };
+    }
+
+    it('fills in a Codex card\'s rows after an XHR refresh', async () => {
+      addCodexAccount('codex', {
+        fiveHour: null,
+        weekly: { percentUsed: 81, percentLeft: 19, resetsIn: '4d 2h' },
+        model: 'GPT-6-Astra',
+        contextWindow: { percentLeft: 25, usedTokens: 198000, totalTokens: 258000 },
+        credits: { remaining: 48405, unit: 'credits' },
+      });
+      const extras = fakeExtras('codex');
+      const dashboard = loadDashboard(handler, [], [extras]);
+
+      await dashboard.performAutoRefresh();
+
+      expect(extras.style.display).toBe('');
+      expect(extras.innerHTML).toContain('Context window');
+      expect(extras.innerHTML).toContain('198K / 258K');
+      expect(extras.innerHTML).toContain('48,405 credits');
+    });
+
+    it('redraws the rows with new values and hides them once they disappear', async () => {
+      const agent = addCodexAccount('codex', {
+        weekly: { percentUsed: 10 },
+        contextWindow: { usedTokens: 10000, totalTokens: 258000 },
+        credits: { remaining: 100 },
+      });
+      const extras = fakeExtras('codex');
+      const dashboard = loadDashboard(handler, [], [extras]);
+
+      await dashboard.performAutoRefresh();
+      expect(extras.innerHTML).toContain('10K / 258K');
+      expect(extras.innerHTML).toContain('100 credits');
+
+      agent.usage = { weekly: { percentUsed: 12 }, contextWindow: { usedTokens: 50000, totalTokens: 258000 }, credits: { remaining: 90 } };
+      await dashboard.performAutoRefresh();
+      expect(extras.innerHTML).toContain('50K / 258K');
+      expect(extras.innerHTML).toContain('90 credits');
+
+      agent.usage = { weekly: { percentUsed: 12 } };
+      await dashboard.performAutoRefresh();
+      expect(extras.innerHTML).toBe('');
+      expect(extras.style.display).toBe('none');
+    });
+
+    it('leaves a Claude card without a known model hidden', async () => {
+      const extras = fakeExtras('work');
+      const dashboard = loadDashboard(handler, [], [extras]);
+
+      await dashboard.performAutoRefresh();
+
+      expect(extras.innerHTML).toBe('');
+      expect(extras.style.display).toBe('none');
+    });
   });
 });
