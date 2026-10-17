@@ -91,7 +91,7 @@ node bin/agent-tank.js --help                 # full option list
 
 Prerequisites:
 
-- **Node.js 18+**
+- **Node.js 18+** (usage history needs **Node.js 22.5+** for the built-in `node:sqlite`; on older runtimes history is disabled with a warning)
 - `node-pty` is a native module, so `npm install` needs **Python 3.8+** and **C/C++ build tools**. See [Installation Notes](#installation-notes) if the build fails.
 - At least one supported CLI installed and authenticated on your `PATH` (`claude`, `agy`, or `codex`).
 
@@ -256,6 +256,8 @@ Options:
   --activity-debounce <ms>           Activity debounce interval in milliseconds (default: 5000)
   --keepalive           Enable/disable session keepalive (default: true)
   --keepalive-interval <seconds>     Session keepalive interval in seconds (default: 300, 0 = disabled)
+  --history             Enable/disable usage history recording (default: true)
+  --history-db <path>   SQLite history database (default: ~/.agent-tank/history.db)
   --history-retention-days <days>    Days to retain usage history (default: 14)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
@@ -287,6 +289,8 @@ three exceptions: `--no-background`, `--once`, and `--json` suppress
 | `AGENT_TANK_ACTIVITY_DEBOUNCE` | Activity debounce interval in milliseconds |
 | `AGENT_TANK_KEEPALIVE` | Enable/disable keepalive |
 | `AGENT_TANK_KEEPALIVE_INTERVAL` | Keepalive interval in seconds |
+| `AGENT_TANK_HISTORY` | Enable/disable usage history (`1`/`true` or `0`/`false`) |
+| `AGENT_TANK_HISTORY_DB` | SQLite history database path |
 | `AGENT_TANK_HISTORY_RETENTION_DAYS` | History retention window |
 | `AGENT_TANK_BACKGROUND` | Start as a detached background process (`1`/`true`) |
 | `AGENT_TANK_BACKGROUND_LOG` | Background child stdout/stderr log path (defaults to a temp file) |
@@ -335,6 +339,8 @@ and display `alias`, and an optional `configPath` directory:
     "interval": 300
   },
   "history": {
+    "enabled": true,
+    "dbPath": "~/.agent-tank/history.db",
     "retentionDays": 14
   }
 }
@@ -408,8 +414,8 @@ reset, so its reset fields are `null`.
 | GET | `/status` | Canonical usage for all agents (`{ "providers": [...] }`) |
 | GET | `/status/:id` | Canonical usage for one configured account |
 | GET | `/config` | Auto-refresh and history config |
-| GET | `/history` | History summary |
-| GET | `/history/:id` | History for one configured account |
+| GET | `/history` | History summary, including the backend (`store`: `sqlite` or `none`) |
+| GET | `/history/:id` | Metric series for one configured account (`?since=`, `?until=`, `?metric=`) |
 | POST | `/refresh` | Refresh all agents; returns `{ "success": true, "providers": [...] }` |
 | POST | `/refresh/:id` | Refresh one configured account; returns `{ "success": true, "provider": {...} }` |
 
@@ -596,18 +602,49 @@ Notes:
 
 ## Usage History and Pace
 
-Agent Tank stores usage snapshots and calculates whether a metric is being consumed faster than the time window would suggest.
+Agent Tank records usage history and calculates whether a metric is being consumed faster than the time window would suggest.
 
-You can configure retention:
+History is stored in SQLite at `~/.agent-tank/history.db`, using Node's built-in
+`node:sqlite` (no extra dependency). Each refresh writes **one row per metric**
+to the `usage_metrics` table:
+
+| Column | Description |
+|---|---|
+| `agent_id` | Configured account id (e.g. `claude`, `work`) |
+| `provider` | Provider key (`claude`, `agy`, `codex`) |
+| `metric_key` | Stable series id, e.g. `session`, `weeklyAll`, `fiveHour`, `model:Gemini · Weekly Limit`, `GPT-5.3-Codex-Spark:fiveHour` |
+| `metric_label` | Human-readable label (may change without forking the series) |
+| `model`, `cycle` | Model (group) the limit applies to, and `session` / `five_hour` / `weekly` |
+| `percent_used` | Always percent **used**, including for Antigravity |
+| `value`, `unit` | Non-percentage metrics (`unit` is `percent` for percentage rows) |
+| `recorded_at`, `recorded_at_ms` | Capture time as ISO 8601 and epoch milliseconds |
+
+A series needs no application code:
 
 ```bash
-agent-tank --history-retention-days 7
+sqlite3 ~/.agent-tank/history.db \
+  "SELECT recorded_at, percent_used FROM usage_metrics
+   WHERE agent_id='work' AND metric_key='weekly' ORDER BY recorded_at_ms"
 ```
+
+Options:
+
+```bash
+agent-tank --history-retention-days 7   # delete rows older than 7 days on write
+agent-tank --history-db /tmp/at.db      # use a different database file
+agent-tank --no-history                 # disable history recording
+```
+
+`node:sqlite` requires Node.js 22.5+. On older runtimes Agent Tank logs one
+warning at startup, keeps running without history, and reports
+`"store": "none"` on `GET /config` and `GET /history`. The same is reported
+when history is disabled with `--no-history`.
 
 History endpoints:
 
-- `GET /history`
-- `GET /history/:agent`
+- `GET /history` returns per-account row counts, the database path and `store`
+- `GET /history/:id` returns `{ "id", "store", "series": [{ "key", "label", "model", "cycle", "unit", "points": [{ "t", "percent", "value" }] }] }`;
+  filter with `since` / `until` (ISO 8601 or epoch ms) and `metric` (a `metric_key`)
 
 ## Installation Notes
 

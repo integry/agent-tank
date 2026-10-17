@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Usage history moved from `~/.agent-tank/history.json` to a SQLite database at `~/.agent-tank/history.db` (Node's built-in `node:sqlite`, no new dependency). Each refresh stores one row per metric in a normalised `usage_metrics` table, so a series is a single indexed query. The JSON file is no longer read or written, and existing JSON history is not migrated
+- `GET /history/:id` now returns `{ id, store, series }`, where each series is `{ key, label, model, cycle, unit, points: [{ t, percent, value }] }`; it accepts `since`, `until` and `metric` query parameters. `GET /history` stats are now per-account row counts plus `store` and `path`
+- `GET /config` reports the history backend as `history: { enabled, store, path, retentionDays }`
+- `src/snapshot-metrics.js` now exports `extractUsageMetrics(provider, usage)`, which returns a flat array of metric rows; `extractSnapshotMetrics` was removed
+- History needs Node.js 22.5+. On older runtimes history is disabled with one startup warning and reported as `store: "none"`; refreshes are unaffected
+- Add `--history` / `--no-history`, `--history-db <path>`, `AGENT_TANK_HISTORY`, `AGENT_TANK_HISTORY_DB`, and the `history.enabled` / `history.dbPath` config keys
+- Usage that was not re-captured since it was last recorded (a failed refresh that keeps cached usage, or a refresh skipped by the cooldown) is no longer recorded again
+- `AgentTank#stop()` closes the history database
+
 - Usage responses now use a canonical provider shape shared by every provider: `id`, `provider`, `plan`, `status`, `last_updated`, `error`, and a `windows` list (`type`, `label`, `model`, `used_percent`, `remaining_percent`, ISO 8601 `resets_at`, `resets_in_seconds`, `pace` or `null`). The original per-provider payload is preserved under each provider's `raw` field. Response envelopes per endpoint:
   - `GET /status` and `--once --json` return `{ "providers": [...] }`
   - `GET /status/:id` returns a single canonical provider object

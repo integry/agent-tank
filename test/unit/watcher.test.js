@@ -742,6 +742,89 @@ describe('AgentTank', () => {
     });
   });
 
+  describe('usage history', () => {
+    function fakeStore() {
+      return {
+        store: 'sqlite',
+        enabled: true,
+        dbPath: '/tmp/at.db',
+        retentionDays: 14,
+        recordUsage: jest.fn(() => 1),
+        getSeries: jest.fn(() => []),
+        getStats: jest.fn(() => ({ store: 'sqlite' })),
+        close: jest.fn(),
+      };
+    }
+
+    function tankWithAgent(historyStore) {
+      const tank = new AgentTank({ refreshCooldown: 0, historyStore });
+      const agent = tank.createAgent({ provider: 'codex', id: 'work' });
+      agent.refresh = jest.fn(async () => {
+        agent._setUsage({ weekly: { percentUsed: 30 } });
+      });
+      tank.agents.set('work', agent);
+      return { tank, agent };
+    }
+
+    it('reports "none" when history is disabled', () => {
+      const tank = new AgentTank({ historyEnabled: false, historyRetentionDays: 3 });
+
+      expect(tank.getHistoryConfig()).toEqual({ enabled: false, store: 'none', path: null, retentionDays: 3 });
+      expect(tank.getHistoryStats()).toMatchObject({ store: 'none', totalRows: 0, agents: {} });
+      expect(tank.getHistory('claude')).toEqual([]);
+    });
+
+    it('passes the explicit database path to the store', () => {
+      const tank = new AgentTank({ historyDbPath: '/tmp/at.db' });
+
+      expect(tank.historyStore.dbPath).toBe('/tmp/at.db');
+    });
+
+    it('records each refresh with the agent id, provider and capture time', async () => {
+      const store = fakeStore();
+      const { tank, agent } = tankWithAgent(store);
+
+      await tank.refreshAgent('work');
+
+      expect(store.recordUsage).toHaveBeenCalledWith({
+        agentId: 'work',
+        provider: 'codex',
+        usage: agent.usage,
+        recordedAt: agent.usageUpdatedAt,
+      });
+    });
+
+    it('does not record the same captured usage twice', async () => {
+      const store = fakeStore();
+      const { tank, agent } = tankWithAgent(store);
+      await tank.refreshAgent('work');
+      agent.refresh = jest.fn().mockResolvedValue();
+
+      await tank.refreshAgent('work');
+
+      expect(store.recordUsage).toHaveBeenCalledTimes(1);
+    });
+
+    it('never lets a history failure escape a refresh', async () => {
+      const store = fakeStore();
+      store.recordUsage.mockImplementation(() => { throw new Error('disk full'); });
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+      const { tank } = tankWithAgent(store);
+
+      await expect(tank.refreshAgent('work')).resolves.toBeUndefined();
+      console.error.mockRestore();
+    });
+
+    it('closes the history store on stop', () => {
+      const store = fakeStore();
+      const tank = new AgentTank({ historyStore: store });
+
+      tank.stop();
+
+      expect(store.close).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('AUTO_REFRESH_MODES constant', () => {
     it('contains none mode', () => {
       expect(AUTO_REFRESH_MODES).toContain('none');

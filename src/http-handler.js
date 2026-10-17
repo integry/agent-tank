@@ -3,6 +3,7 @@
  */
 
 const { statusPage } = require('./status-page.js');
+const { historyResponse } = require('./server.js');
 
 /**
  * Handle GET / - Status HTML page
@@ -33,9 +34,7 @@ function handleConfig(res, tank) {
       enabled: tank.autoRefresh.enabled && tank.autoRefresh.interval > 0,
       interval: tank.autoRefresh.interval,
     },
-    history: {
-      retentionDays: tank.historyRetentionDays,
-    },
+    history: tank.getHistoryConfig(),
     lastRefreshedAt: tank.lastRefreshedAt,
   };
   res.setHeader('Content-Type', 'application/json');
@@ -56,8 +55,8 @@ function handleHistoryStats(res, tank) {
 /**
  * Handle GET /history/:agent - Agent-specific history
  */
-function handleAgentHistory(res, tank, agentName) {
-  const history = tank.getHistory(agentName);
+function handleAgentHistory(res, tank, agentName, params = new URLSearchParams()) {
+  const history = historyResponse(tank, decodeURIComponent(agentName), params);
   res.setHeader('Content-Type', 'application/json');
   res.writeHead(200);
   res.end(JSON.stringify(history, null, 2));
@@ -149,7 +148,7 @@ async function handleRequest(req, res, tank) {
     } else if (path === '/history') {
       handleHistoryStats(res, tank);
     } else if (path.startsWith('/history/')) {
-      handleAgentHistory(res, tank, path.slice(9));
+      handleAgentHistory(res, tank, path.slice(9), url.searchParams);
     } else if (path.startsWith('/status/')) {
       handleAgentStatus(res, tank, path.slice(8));
     } else {

@@ -7,6 +7,55 @@ const http = require('node:http');
 const logger = require('./logger.js');
 const { statusPage } = require('./status-page.js');
 
+function sendJson(res, body) {
+  res.setHeader('Content-Type', 'application/json');
+  res.writeHead(200);
+  res.end(JSON.stringify(body, null, 2));
+}
+
+/**
+ * Build the GET /history/:id body. Supports `since`, `until` (ISO 8601 or
+ * epoch ms) and `metric` (a metric key) query parameters.
+ */
+function historyResponse(tank, id, params) {
+  const options = {};
+  for (const [param, option] of [['since', 'since'], ['until', 'until'], ['metric', 'key']]) {
+    const raw = params.get(param);
+    if (raw) options[option] = /^\d+$/.test(raw) ? Number(raw) : raw;
+  }
+  return { id, store: tank.getHistoryConfig().store, series: tank.getHistory(id, options) };
+}
+
+/** Build the GET /config body. */
+function configResponse(tank) {
+  return {
+    autoRefresh: {
+      enabled: tank.autoRefresh.enabled && tank.autoRefresh.interval > 0,
+      interval: tank.autoRefresh.interval, // in seconds
+      refreshCooldown: tank.refreshCooldown,
+    },
+    history: tank.getHistoryConfig(),
+    lastRefreshedAt: tank.lastRefreshedAt,
+  };
+}
+
+/**
+ * Serve GET /history (stats) and GET /history/:id (series).
+ * @returns {boolean} Whether the request was a history route
+ */
+function handleHistoryRoute(res, tank, url) {
+  if (url.pathname === '/history') {
+    sendJson(res, tank.getHistoryStats());
+    return true;
+  }
+  if (url.pathname.startsWith('/history/')) {
+    const id = decodeURIComponent(url.pathname.slice(9));
+    sendJson(res, historyResponse(tank, id, url.searchParams));
+    return true;
+  }
+  return false;
+}
+
 function createRequestHandler(tank) {
   return async (req, res) => {
     const url = new URL(req.url, `http://localhost:${tank.port}`);
@@ -48,17 +97,11 @@ function createRequestHandler(tank) {
       }
 
       if (req.method === 'GET' && path === '/config') {
-        const config = {
-          autoRefresh: {
-            enabled: tank.autoRefresh.enabled && tank.autoRefresh.interval > 0,
-            interval: tank.autoRefresh.interval, // in seconds
-            refreshCooldown: tank.refreshCooldown,
-          },
-          lastRefreshedAt: tank.lastRefreshedAt,
-        };
-        res.setHeader('Content-Type', 'application/json');
-        res.writeHead(200);
-        res.end(JSON.stringify(config, null, 2));
+        sendJson(res, configResponse(tank));
+        return;
+      }
+
+      if (req.method === 'GET' && handleHistoryRoute(res, tank, url)) {
         return;
       }
 
@@ -145,4 +188,4 @@ function displayServerBanner(tank) {
   console.log('');
 }
 
-module.exports = { createRequestHandler, createServer, displayServerBanner };
+module.exports = { createRequestHandler, historyResponse, createServer, displayServerBanner };
