@@ -132,14 +132,16 @@ describeIfSqlite('SqliteHistoryStore', () => {
 
   describe('recordUsage', () => {
     it('creates the database and inserts one row per metric', () => {
-      const inserted = store.recordUsage({ agentId: 'work', provider: 'codex', usage: CODEX_USAGE, recordedAt: '2026-10-17T10:00:00.000Z' });
+      const recordedAt = new Date().toISOString();
+      const recordedAtMs = Date.parse(recordedAt);
+      const inserted = store.recordUsage({ agentId: 'work', provider: 'codex', usage: CODEX_USAGE, recordedAt });
 
       expect(inserted).toBe(3);
       expect(fs.existsSync(dbPath)).toBe(true);
       expect(rawQuery('SELECT agent_id, provider, metric_key, percent_used, unit, recorded_at, recorded_at_ms FROM usage_metrics ORDER BY id')).toEqual([
-        { agent_id: 'work', provider: 'codex', metric_key: 'fiveHour', percent_used: 20, unit: 'percent', recorded_at: '2026-10-17T10:00:00.000Z', recorded_at_ms: Date.parse('2026-10-17T10:00:00.000Z') },
-        { agent_id: 'work', provider: 'codex', metric_key: 'weekly', percent_used: 45, unit: 'percent', recorded_at: '2026-10-17T10:00:00.000Z', recorded_at_ms: Date.parse('2026-10-17T10:00:00.000Z') },
-        { agent_id: 'work', provider: 'codex', metric_key: 'GPT-5.3-Codex-Spark:fiveHour', percent_used: 5, unit: 'percent', recorded_at: '2026-10-17T10:00:00.000Z', recorded_at_ms: Date.parse('2026-10-17T10:00:00.000Z') },
+        { agent_id: 'work', provider: 'codex', metric_key: 'fiveHour', percent_used: 20, unit: 'percent', recorded_at: recordedAt, recorded_at_ms: recordedAtMs },
+        { agent_id: 'work', provider: 'codex', metric_key: 'weekly', percent_used: 45, unit: 'percent', recorded_at: recordedAt, recorded_at_ms: recordedAtMs },
+        { agent_id: 'work', provider: 'codex', metric_key: 'GPT-5.3-Codex-Spark:fiveHour', percent_used: 5, unit: 'percent', recorded_at: recordedAt, recorded_at_ms: recordedAtMs },
       ].map(row => expect.objectContaining(row)));
     });
 

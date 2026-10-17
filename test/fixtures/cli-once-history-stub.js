@@ -27,7 +27,9 @@ AgentTank.prototype.start = async function start() {
       alias: null,
       provider,
       usage: USAGE[provider],
-      usageUpdatedAt: '2026-10-17T10:00:00.000Z',
+      // A current capture time keeps the rows inside the retention window that
+      // recordUsage() prunes against on every write.
+      usageUpdatedAt: new Date().toISOString(),
       getStatus: () => ({ name: provider, usage: USAGE[provider], metadata: null, error: null }),
       requestStop: () => {},
       killProcess: () => {},
