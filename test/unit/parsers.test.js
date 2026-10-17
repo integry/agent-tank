@@ -1471,6 +1471,160 @@ describe('AgyAgent', () => {
         expect(result.models[0].cycle).toBe('sessionAgy');
       });
     });
+
+    describe('Gemini 4 Argon quota pool', () => {
+      // Antigravity 1.3.x adds a "GEMINI 4 ARGON" group whose header has no
+      // "MODELS" suffix and opens with a paragraph of prose.
+      const argonOutput = `
+        \u2514 Models & Quota
+
+        GEMINI MODELS
+          Models within this group: Gemini Flash, Gemini Pro
+
+          Weekly Limit Remaining
+            [\u2588\u2588\u2588\u2588\u2591] 98.71%
+            Refreshes in 160h 45m
+
+          Five Hour Limit Remaining
+            [\u2588\u2588\u2588\u2588\u2591] 98.32%
+            Refreshes in 2h 45m
+
+
+        CLAUDE AND GPT MODELS
+          Models within this group: Claude Opus, Claude Sonnet, GPT-OSS
+
+          Weekly Limit Remaining
+            [\u2591\u2591\u2591\u2591\u2591] 0.00%
+            Refreshes in 36h 36m
+
+          Five Hour Limit Remaining
+            Disabled: You have hit your weekly limit, the 5-hour limit does not currently apply.
+
+
+        GEMINI 4 ARGON
+          For paid Pro plans, Argon quota is separate. Higher Argon quota (included as part of the larger Gemini quota bucket) is available on Ultra plans.
+
+          Gemini 4 Argon Weekly Limit
+            [\u2588\u2588\u2588\u2588\u2591] 98.23%
+            Refreshes in 158h 44m
+      `;
+
+      it('parses exactly four limits in screen order', () => {
+        const result = agent.parseOutput(argonOutput);
+
+        expect(result.models.map(m => m.model)).toEqual([
+          'Gemini \u00b7 Weekly Limit Remaining',
+          'Gemini \u00b7 Five Hour Limit Remaining',
+          'Claude and GPT \u00b7 Weekly Limit Remaining',
+          'Gemini 4 Argon Weekly Limit',
+        ]);
+      });
+
+      it('attributes the Argon limit to its own group with intact fields', () => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-10-17T10:00:00.000Z'));
+        try {
+          const argon = agent.parseOutput(argonOutput).models[3];
+
+          expect(argon).toMatchObject({
+            model: 'Gemini 4 Argon Weekly Limit',
+            group: 'Gemini 4 Argon',
+            cycle: 'weekly',
+            usageLeft: 98.23,
+            percentUsed: 1.8,
+            resetsIn: '158h 44m',
+            resetsInSeconds: 158 * 60 * 60 + 44 * 60,
+            resetsAt: '2026-10-24T00:44:00.000Z',
+          });
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('never names a model after the header, the description or the disabled row', () => {
+        const names = agent.parseOutput(argonOutput).models.map(m => m.model);
+
+        expect(names.some(n => /GEMINI 4 ARGON|paid Pro plans|Ultra plans|Disabled/.test(n))).toBe(false);
+      });
+
+      it('keeps the disabled five-hour row out of the Claude and GPT group', () => {
+        const claude = agent.parseOutput(argonOutput).models.filter(m => m.group === 'Claude and GPT');
+
+        expect(claude.map(m => m.model)).toEqual(['Claude and GPT \u00b7 Weekly Limit Remaining']);
+        expect(claude[0]).toMatchObject({ usageLeft: 0, percentUsed: 100, resetsIn: '36h 36m', cycle: 'weekly' });
+      });
+
+      it('qualifies a bare "Weekly Limit" inside the Argon section with the Argon group', () => {
+        const output = `
+          Models & Quota
+          CLAUDE AND GPT MODELS
+          Weekly Limit
+          [\u2588\u2588\u2588\u2588\u2588] 60.00%
+          Quota available
+          GEMINI 4 ARGON
+          For paid Pro plans, Argon quota is separate.
+          Weekly Limit
+          [\u2588\u2588\u2588\u2588\u2588] 98.23%
+          Refreshes in 158h 44m
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.models.map(m => m.model)).toEqual([
+          'Claude and GPT \u00b7 Weekly Limit',
+          'Gemini 4 Argon \u00b7 Weekly Limit',
+        ]);
+        expect(result.models[0]).toMatchObject({ usageLeft: 60, resetsIn: null, resetsAt: null });
+        expect(result.models[1]).toMatchObject({ group: 'Gemini 4 Argon', usageLeft: 98.23, resetsIn: '158h 44m' });
+      });
+
+      it('treats a header followed directly by a limit label as a header', () => {
+        const output = `
+          Models & Quota
+          GEMINI 4 ARGON
+          Weekly Limit
+          [\u2588\u2588\u2588\u2588\u2588] 50%
+          Quota available
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.models).toEqual([
+          expect.objectContaining({ model: 'Gemini 4 Argon \u00b7 Weekly Limit', group: 'Gemini 4 Argon', usageLeft: 50 }),
+        ]);
+      });
+
+      it('keeps an ALL-CAPS model label followed by its percentage a model', () => {
+        const output = `
+          Model Quota
+          GPT OSS 120B
+          \u2588\u2588\u2588\u2588\u2588 80%
+          Resets in 1h
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.models).toHaveLength(1);
+        expect(result.models[0]).toMatchObject({ model: 'GPT OSS 120B', usageLeft: 80 });
+        expect(result.models[0].group).toBeUndefined();
+      });
+
+      it('skips prose even when a percentage bar follows it', () => {
+        const output = `
+          Models & Quota
+          GEMINI 4 ARGON
+          Argon quota is separate on paid Pro plans.
+          [\u2588\u2588\u2588\u2588\u2588] 10%
+          Gemini 4 Argon Weekly Limit
+          [\u2588\u2588\u2588\u2588\u2588] 98.23%
+          Refreshes in 158h 44m
+        `;
+
+        const result = agent.parseOutput(output);
+
+        expect(result.models.map(m => m.model)).toEqual(['Gemini 4 Argon Weekly Limit']);
+      });
+    });
   });
 
   describe('parseDurationToSeconds', () => {

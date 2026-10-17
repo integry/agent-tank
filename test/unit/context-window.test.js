@@ -53,6 +53,8 @@ describe('context-window', () => {
       expect(detectContextWindow({ model: 'claude-opus-4-5' }).total_tokens).toBe(200000);
       expect(detectContextWindow({ model: 'claude-opus-4-6' }).total_tokens).toBe(1000000);
       expect(detectContextWindow({ model: 'Gemini 3 Pro (High)' }).total_tokens).toBe(1048576);
+      expect(detectContextWindow({ model: 'Gemini 4 Argon (Medium)' }))
+        .toMatchObject({ total_tokens: 1048576, model: 'Gemini 4 Argon (Medium)', source: 'known-model' });
       expect(detectContextWindow({ model: 'gpt-5.1-codex-max' }).total_tokens).toBe(272000);
     });
 
@@ -88,7 +90,7 @@ describe('context-window', () => {
     });
 
     it('returns null when nothing is reported and the model is unknown', () => {
-      expect(detectContextWindow({ model: 'Gemini 4 Argon (Medium)' })).toBeNull();
+      expect(detectContextWindow({ model: 'Gemini 9 Xenon (Medium)' })).toBeNull();
       expect(detectContextWindow({ model: null })).toBeNull();
       expect(detectContextWindow()).toBeNull();
     });

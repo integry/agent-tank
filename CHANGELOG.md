@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Antigravity: support the separate **Gemini 4 Argon** quota pool reported by `agy` 1.3.x. Its `GEMINI 4 ARGON` section is recognised as a group even without a `MODELS` suffix, so `Gemini 4 Argon Weekly Limit` is reported with `group: "Gemini 4 Argon"` and `cycle: "weekly"` (a `weekly` window with `model: "Gemini 4 Argon"` in `GET /status`), and a bare `Weekly Limit` in that section is qualified as `Gemini 4 Argon · Weekly Limit` instead of being attributed to the previous group
+- Built-in context window for `Gemini 4 Argon` (1,048,576 tokens), so Antigravity accounts running it report a `known-model` `context_window`
 - `context_window` and `credits` on every canonical provider object (`GET /status`, `GET /status/:id`, `--once --json`), `null` when unknown. `context_window` is `{ total_tokens, used_tokens, used_percent, remaining_percent, model, source }`, where `source` is `cli` (reported by the CLI), `override` (config file) or `known-model` (built-in table in `src/context-window.js`). Claude and Antigravity get a size looked up from the model their CLI reports; Codex reports its own. `credits` is the Codex credit balance, `{ remaining, unit: "credits" }`; Claude's extra-usage dollar budget stays under `raw.usage.extraUsage`
 - Codex: parse `Context window: N% left (X used / Y)` and `Credits: N credits` from `/status` into `usage.contextWindow` / `usage.credits`, and read the same values from the JSON-RPC app-server response when it reports them
 - `contextWindows` config key to add or correct known model context windows, e.g. `{ "gpt-6-astra": 300000 }`
@@ -21,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Antigravity: descriptive prose lines (ending in `.`, `!` or `?`, or longer than eight words) on the `/usage` screen are skipped explicitly and can never become a model label. Quota parsing moved from `src/agents/agy.js` to `src/agents/agy-usage-parser.js`
 - Usage history moved from `~/.agent-tank/history.json` to a SQLite database at `~/.agent-tank/history.db` (Node's built-in `node:sqlite`, no new dependency). Each refresh stores one row per metric in a normalised `usage_metrics` table, so a series is a single indexed query. The JSON file is no longer read or written, and existing JSON history is not migrated
 - `GET /history/:id` now returns `{ agent, store, retention_days, series }` (`series` is `[]` for an account with no recorded metrics), where each series is `{ key, label, model, cycle, unit, points: [{ t, percent, value }] }`; it accepts `since`, `until` and `metric` query parameters. `GET /history` stats are now per-account row counts plus `store` and `path`
 - `GET /config` reports the history backend as `history: { enabled, store, path, retentionDays, chart }`
