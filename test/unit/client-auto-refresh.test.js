@@ -60,6 +60,7 @@ function loadDashboard(handler, cards) {
     highlightTrackedMetric: () => {},
     updateFaviconAndTitle: () => {},
     checkAndNotify: () => {},
+    renderHistoryCharts: () => {},
     setTimeout,
     clearInterval,
     setInterval,

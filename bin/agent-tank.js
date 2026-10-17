@@ -38,6 +38,7 @@ const options = {
   history: { type: 'boolean', default: true },
   'history-db': { type: 'string' },
   'history-retention-days': { type: 'string', default: '14' },
+  'history-chart': { type: 'boolean', default: true },
   'keepalive': { type: 'boolean', default: true },
   'keepalive-interval': { type: 'string', default: '300' },
   once: { type: 'boolean', default: false },
@@ -102,6 +103,7 @@ Options:
   --history             Enable/disable usage history recording (default: true)
   --history-db <path>   SQLite history database (default: ~/.agent-tank/history.db)
   --history-retention-days <days>    Days to retain usage history (default: 14)
+  --history-chart       Show/hide the dashboard usage-history sparkline (default: true)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
   --background          Start Agent Tank as a detached background process
@@ -131,6 +133,7 @@ Environment variables:
   AGENT_TANK_HISTORY        Enable/disable usage history ("1" or "true" / "0" or "false")
   AGENT_TANK_HISTORY_DB     SQLite history database path
   AGENT_TANK_HISTORY_RETENTION_DAYS  Days to retain usage history
+  AGENT_TANK_HISTORY_CHART  Show/hide the dashboard sparkline ("1" or "true" / "0" or "false")
   AGENT_TANK_BACKGROUND  Start as a detached background process ("1" or "true")
   AGENT_TANK_BACKGROUND_LOG  Log file for background child stdout/stderr
   AGENT_TANK_BACKGROUND_GRACE_MS  Parent startup grace period before reporting background success
@@ -158,6 +161,7 @@ Examples:
   agent-tank --history-retention-days 7  # Keep only 7 days of history
   agent-tank --history-db /tmp/at.db  # Store usage history in a custom database
   agent-tank --no-history             # Disable usage history recording
+  agent-tank --no-history-chart       # Keep recording history but hide the dashboard sparkline
   agent-tank --once                   # Fetch usage once and exit
   agent-tank --once --json            # Output pure JSON for scripting
 
@@ -167,7 +171,7 @@ HTTP Endpoints:
   GET /status/:id    Canonical usage for a specific agent account (JSON)
   GET /config        Auto-refresh and history configuration (JSON)
   GET /history       Usage history statistics (JSON)
-  GET /history/:id   Usage history series for an agent account (JSON; ?since=&until=&metric=)
+  GET /history/:id   Usage history series for an agent account (JSON; ?since=&until=&metric=&view=chart)
   POST /refresh      Trigger refresh for all agents
   POST /refresh/:id  Trigger refresh for a specific agent account
 `);
@@ -343,6 +347,16 @@ async function main() {
     historyDbPath = resolveConfigPath(config.history.dbPath, configBaseDir);
   }
 
+  // Dashboard history chart (env > CLI > config file); off whenever history is off
+  const historyChartEnv = process.env.AGENT_TANK_HISTORY_CHART;
+  let historyChart = values['history-chart'];
+  if (historyChartEnv !== undefined) {
+    historyChart = historyChartEnv === '1' || historyChartEnv === 'true';
+  } else if (!tokens.some(token => token.kind === 'option' && token.name === 'history-chart') &&
+    config.history?.chart !== undefined) {
+    historyChart = config.history.chart;
+  }
+
   // Keepalive configuration (env > CLI > config file)
   const keepaliveEnv = process.env.AGENT_TANK_KEEPALIVE;
   let keepaliveEnabled = values['keepalive'];
@@ -391,6 +405,7 @@ async function main() {
     historyRetentionDays,
     historyEnabled,
     historyDbPath,
+    historyChart,
     skipServer: onceMode, // Don't start HTTP server in one-shot mode
   });
 

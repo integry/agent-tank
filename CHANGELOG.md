@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Usage-history sparkline on each dashboard agent card: one hand-built inline-SVG line per tracked metric on a fixed 0–100% scale, with a legend of latest values and hover read-out. It is redrawn after every auto-refresh poll and card refresh without a page reload, and shows "Not enough history yet" until a metric has two points
+- `--history-chart` / `--no-history-chart`, `AGENT_TANK_HISTORY_CHART` and the `history.chart` config key (default on). `GET /config` reports the effective value as `history.chart`, which is `false` whenever history recording is off (`store: "none"`)
+- `GET /history/:id?view=chart` returns only plottable series (percent units, at least two points) with `{ t, percent }` points
+- `src/history-series.js` exports `toChartSeries(series, options)`
+
 ### Changed
 
 - Usage history moved from `~/.agent-tank/history.json` to a SQLite database at `~/.agent-tank/history.db` (Node's built-in `node:sqlite`, no new dependency). Each refresh stores one row per metric in a normalised `usage_metrics` table, so a series is a single indexed query. The JSON file is no longer read or written, and existing JSON history is not migrated
-- `GET /history/:id` now returns `{ id, store, series }`, where each series is `{ key, label, model, cycle, unit, points: [{ t, percent, value }] }`; it accepts `since`, `until` and `metric` query parameters. `GET /history` stats are now per-account row counts plus `store` and `path`
-- `GET /config` reports the history backend as `history: { enabled, store, path, retentionDays }`
+- `GET /history/:id` now returns `{ agent, store, retention_days, series }` (`series` is `[]` for an account with no recorded metrics), where each series is `{ key, label, model, cycle, unit, points: [{ t, percent, value }] }`; it accepts `since`, `until` and `metric` query parameters. `GET /history` stats are now per-account row counts plus `store` and `path`
+- `GET /config` reports the history backend as `history: { enabled, store, path, retentionDays, chart }`
 - `src/snapshot-metrics.js` now exports `extractUsageMetrics(provider, usage)`, which returns a flat array of metric rows; `extractSnapshotMetrics` was removed
 - History needs Node.js 22.5+. On older runtimes history is disabled with one startup warning and reported as `store: "none"`; refreshes are unaffected
 - Add `--history` / `--no-history`, `--history-db <path>`, `AGENT_TANK_HISTORY`, `AGENT_TANK_HISTORY_DB`, and the `history.enabled` / `history.dbPath` config keys

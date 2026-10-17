@@ -185,6 +185,9 @@ ${metricExtractors}
         updateFaviconAndTitle();
         checkAndNotify();
 
+        // Redraw usage-history sparklines with the newly recorded points
+        renderHistoryCharts();
+
         console.log('[Auto-refresh] Updated', allMetrics.length, 'metrics');
       } catch (error) {
         console.error('[Auto-refresh] Error:', error);

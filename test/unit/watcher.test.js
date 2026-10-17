@@ -769,7 +769,7 @@ describe('AgentTank', () => {
     it('reports "none" when history is disabled', () => {
       const tank = new AgentTank({ historyEnabled: false, historyRetentionDays: 3 });
 
-      expect(tank.getHistoryConfig()).toEqual({ enabled: false, store: 'none', path: null, retentionDays: 3 });
+      expect(tank.getHistoryConfig()).toEqual({ enabled: false, store: 'none', path: null, retentionDays: 3, chart: false });
       expect(tank.getHistoryStats()).toMatchObject({ store: 'none', totalRows: 0, agents: {} });
       expect(tank.getHistory('claude')).toEqual([]);
     });

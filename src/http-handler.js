@@ -2,8 +2,7 @@
  * HTTP request handler utilities for AgentTank server.
  */
 
-const { statusPage } = require('./status-page.js');
-const { historyResponse } = require('./server.js');
+const { historyResponse, configResponse, statusPageResponse } = require('./server.js');
 
 /**
  * Handle GET / - Status HTML page
@@ -11,7 +10,7 @@ const { historyResponse } = require('./server.js');
 function handleStatusPage(res, tank) {
   res.setHeader('Content-Type', 'text/html');
   res.writeHead(200);
-  res.end(statusPage(tank.getStatus()));
+  res.end(statusPageResponse(tank));
 }
 
 /**
@@ -29,14 +28,7 @@ function handleStatusJson(res, tank) {
  * Handle GET /config - Server configuration
  */
 function handleConfig(res, tank) {
-  const config = {
-    autoRefresh: {
-      enabled: tank.autoRefresh.enabled && tank.autoRefresh.interval > 0,
-      interval: tank.autoRefresh.interval,
-    },
-    history: tank.getHistoryConfig(),
-    lastRefreshedAt: tank.lastRefreshedAt,
-  };
+  const config = configResponse(tank);
   res.setHeader('Content-Type', 'application/json');
   res.writeHead(200);
   res.end(JSON.stringify(config, null, 2));
