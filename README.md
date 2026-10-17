@@ -417,6 +417,33 @@ reset, so its reset fields are `null`.
 }
 ```
 
+Limits are grouped by the section they appear under (`GEMINI MODELS`,
+`CLAUDE AND GPT MODELS`, …), and shared labels such as `Weekly Limit` are
+qualified with their group. Antigravity 1.3.x also reports **Gemini 4 Argon** as
+a separate quota pool under a `GEMINI 4 ARGON` header. It is reported as its own
+weekly limit with `group: "Gemini 4 Argon"`, so `GET /status` returns it as a
+`weekly` window with `model: "Gemini 4 Argon"`:
+
+```json
+{
+  "model": "Gemini 4 Argon Weekly Limit",
+  "usageLeft": 98.23,
+  "percentUsed": 1.8,
+  "resetsIn": "158h 44m",
+  "resetsInSeconds": 571440,
+  "resetsAt": "2026-10-24T00:44:00.000Z",
+  "cycle": "weekly",
+  "group": "Gemini 4 Argon"
+}
+```
+
+Section descriptions (such as Argon's "For paid Pro plans, …" note) and rows
+without a percentage (such as a `Disabled: …` five-hour limit after the weekly
+limit is hit) are not reported as limits. Argon's context window is not yet
+published, so when the CLI banner names `Gemini 4 Argon` as the active model the
+account's `context_window` is `null` unless you set it with the `contextWindows`
+config key (e.g. `{ "gemini-4-argon": 1048576 }`, reported as `source: "override"`).
+
 ## HTTP API
 
 ### Endpoints

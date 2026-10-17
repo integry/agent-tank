@@ -88,6 +88,8 @@ describe('context-window', () => {
     });
 
     it('returns null when nothing is reported and the model is unknown', () => {
+      expect(detectContextWindow({ model: 'Gemini 9 Xenon (Medium)' })).toBeNull();
+      // Unverified window: must not fall through to a Gemini family entry.
       expect(detectContextWindow({ model: 'Gemini 4 Argon (Medium)' })).toBeNull();
       expect(detectContextWindow({ model: null })).toBeNull();
       expect(detectContextWindow()).toBeNull();

@@ -29,6 +29,8 @@
  *   reserved for output). Codex itself reports a slightly smaller usable
  *   figure (e.g. 258K), which wins when the CLI reports it.
  * - Gemini 2.5 / 3: 1,048,576 input tokens (Google model cards).
+ * - Gemini 4 Argon is deliberately absent: its window is not yet published, so
+ *   it stays unknown unless an operator sets it through `contextWindows`.
  */
 const KNOWN_CONTEXT_WINDOWS = Object.freeze({
   'claude-fable-5': 1000000,
