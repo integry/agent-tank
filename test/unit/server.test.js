@@ -38,6 +38,12 @@ function mockResponse() {
   return res;
 }
 
+async function invokeHtml(handler, url) {
+  const res = mockResponse();
+  await handler({ method: 'GET', url, headers: {} }, res);
+  return res.body;
+}
+
 async function invoke(handler, method, url) {
   const res = mockResponse();
   await handler({ method, url, headers: {} }, res);
@@ -176,7 +182,15 @@ describe('server request handler', () => {
       const { status, json } = await invoke(handler, 'GET', '/config');
 
       expect(status).toBe(200);
-      expect(json.history).toEqual({ enabled: false, store: 'none', path: null, retentionDays: 14 });
+      expect(json.history).toEqual({ enabled: false, store: 'none', path: null, retentionDays: 14, chart: false });
+    });
+
+    it('GET / omits the history chart even though the chart option is on', async () => {
+      expect(tank.historyChart).toBe(true);
+
+      const html = await invokeHtml(handler, '/');
+
+      expect(html).not.toContain('class="history-chart"');
     });
 
     it('GET /history returns empty stats', async () => {
@@ -189,7 +203,7 @@ describe('server request handler', () => {
     it('GET /history/:id returns no series', async () => {
       const { json } = await invoke(handler, 'GET', '/history/claude');
 
-      expect(json).toEqual({ id: 'claude', store: 'none', series: [] });
+      expect(json).toEqual({ agent: 'claude', store: 'none', retention_days: 14, series: [] });
     });
   });
 
@@ -223,7 +237,53 @@ describe('server request handler', () => {
     it('GET /config reports the sqlite backend and database path', async () => {
       const { json } = await invoke(handler, 'GET', '/config');
 
-      expect(json.history).toEqual({ enabled: true, store: 'sqlite', path: dbPath, retentionDays: 7 });
+      expect(json.history).toEqual({ enabled: true, store: 'sqlite', path: dbPath, retentionDays: 7, chart: true });
+    });
+
+    it('GET / renders a history chart container per card', async () => {
+      const html = await invokeHtml(handler, '/');
+
+      expect(html).toContain('<div class="history-chart" data-agent-id="work"');
+    });
+
+    it('--no-history-chart removes the container and reports history.chart: false', async () => {
+      tank.historyChart = false;
+
+      const html = await invokeHtml(handler, '/');
+      const { json } = await invoke(handler, 'GET', '/config');
+
+      expect(html).not.toContain('class="history-chart"');
+      expect(json.history.chart).toBe(false);
+    });
+
+    it('GET /history/:id returns the documented envelope', async () => {
+      const { json } = await invoke(handler, 'GET', '/history/work');
+
+      expect(Object.keys(json)).toEqual(['agent', 'store', 'retention_days', 'series']);
+      expect(json).toMatchObject({ agent: 'work', store: 'sqlite', retention_days: 7 });
+    });
+
+    it('GET /history/:id returns series: [] for an account with no recorded metrics', async () => {
+      const { json } = await invoke(handler, 'GET', '/history/unknown');
+
+      expect(json).toEqual({ agent: 'unknown', store: 'sqlite', retention_days: 7, series: [] });
+    });
+
+    it('GET /history/:id?view=chart returns only series with at least two plottable points', async () => {
+      const single = await invoke(handler, 'GET', '/history/work?view=chart');
+      tank.historyStore.recordUsage({
+        agentId: 'work',
+        provider: 'codex',
+        usage: { fiveHour: { percentUsed: 25 }, weekly: { percentUsed: 50 } },
+        recordedAt: Date.now() + 1000,
+      });
+      const double = await invoke(handler, 'GET', '/history/work?view=chart');
+
+      expect(single.json.series).toEqual([]);
+      expect(double.json.series.map(s => s.key)).toEqual(['fiveHour', 'weekly']);
+      expect(double.json.series[1]).toMatchObject({ key: 'weekly', cycle: 'weekly' });
+      expect(double.json.series[1].points.map(p => Object.keys(p))).toEqual([['t', 'percent'], ['t', 'percent']]);
+      expect(double.json.series[1].points.map(p => p.percent)).toEqual([45, 50]);
     });
 
     it('GET /history reports the backend and per-agent row counts', async () => {

@@ -1205,6 +1205,7 @@ describe('CLI', () => {
       const childEnv = { ...process.env, HOME: homeDir };
       delete childEnv.AGENT_TANK_HISTORY;
       delete childEnv.AGENT_TANK_HISTORY_DB;
+      delete childEnv.AGENT_TANK_HISTORY_CHART;
       Object.assign(childEnv, env);
       const result = spawnSync(process.execPath, ['-r', HISTORY_STUB, CLI_PATH, '--once', '--json', ...args], {
         encoding: 'utf8',
@@ -1257,7 +1258,7 @@ describe('CLI', () => {
     itWithSqlite('--no-history disables recording and reports store "none"', () => {
       const result = runWithHistoryStub(['--codex', '--no-history']);
 
-      expect(result.history).toEqual({ enabled: false, store: 'none', path: null, retentionDays: 14 });
+      expect(result.history).toEqual({ enabled: false, store: 'none', path: null, retentionDays: 14, chart: false });
       expect(fs.existsSync(path.join(homeDir, '.agent-tank'))).toBe(false);
     });
 
@@ -1282,6 +1283,33 @@ describe('CLI', () => {
 
       expect(configOnly.history.store).toBe('none');
       expect(cliWins.history).toMatchObject({ store: 'sqlite', retentionDays: 3 });
+    });
+
+    itWithSqlite('enables the history chart by default', () => {
+      const result = runWithHistoryStub(['--codex']);
+
+      expect(result.history.chart).toBe(true);
+    });
+
+    itWithSqlite('--no-history-chart reports history.chart: false but keeps recording', () => {
+      const result = runWithHistoryStub(['--codex', '--no-history-chart']);
+
+      expect(result.history).toMatchObject({ store: 'sqlite', chart: false });
+    });
+
+    itWithSqlite('AGENT_TANK_HISTORY_CHART=0 overrides --history-chart', () => {
+      const result = runWithHistoryStub(['--codex', '--history-chart'], { AGENT_TANK_HISTORY_CHART: '0' });
+
+      expect(result.history.chart).toBe(false);
+    });
+
+    itWithSqlite('history.chart=false in the config file hides the chart unless --history-chart is passed', () => {
+      const configPath = createConfigFile({ history: { chart: false } });
+      const configOnly = runWithHistoryStub(['-c', configPath, '--codex']);
+      const cliWins = runWithHistoryStub(['-c', configPath, '--codex', '--history-chart']);
+
+      expect(configOnly.history.chart).toBe(false);
+      expect(cliWins.history.chart).toBe(true);
     });
   });
 });

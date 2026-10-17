@@ -259,6 +259,7 @@ Options:
   --history             Enable/disable usage history recording (default: true)
   --history-db <path>   SQLite history database (default: ~/.agent-tank/history.db)
   --history-retention-days <days>    Days to retain usage history (default: 14)
+  --history-chart       Show/hide the dashboard usage-history sparkline (default: true)
   --once                Fetch usage once and exit (no HTTP server)
   --json                Output pure JSON (suppress logging, use with --once)
   --background          Start Agent Tank as a detached background process
@@ -292,6 +293,7 @@ three exceptions: `--no-background`, `--once`, and `--json` suppress
 | `AGENT_TANK_HISTORY` | Enable/disable usage history (`1`/`true` or `0`/`false`) |
 | `AGENT_TANK_HISTORY_DB` | SQLite history database path |
 | `AGENT_TANK_HISTORY_RETENTION_DAYS` | History retention window |
+| `AGENT_TANK_HISTORY_CHART` | Show/hide the dashboard usage-history sparkline (`1`/`true` or `0`/`false`) |
 | `AGENT_TANK_BACKGROUND` | Start as a detached background process (`1`/`true`) |
 | `AGENT_TANK_BACKGROUND_LOG` | Background child stdout/stderr log path (defaults to a temp file) |
 | `AGENT_TANK_BACKGROUND_GRACE_MS` | Parent startup grace period before reporting background success; success means the child survived this period |
@@ -341,7 +343,8 @@ and display `alias`, and an optional `configPath` directory:
   "history": {
     "enabled": true,
     "dbPath": "~/.agent-tank/history.db",
-    "retentionDays": 14
+    "retentionDays": 14,
+    "chart": true
   }
 }
 ```
@@ -415,7 +418,7 @@ reset, so its reset fields are `null`.
 | GET | `/status/:id` | Canonical usage for one configured account |
 | GET | `/config` | Auto-refresh and history config |
 | GET | `/history` | History summary, including the backend (`store`: `sqlite` or `none`) |
-| GET | `/history/:id` | Metric series for one configured account (`?since=`, `?until=`, `?metric=`) |
+| GET | `/history/:id` | Metric series for one configured account (`?since=`, `?until=`, `?metric=`, `?view=chart`) |
 | POST | `/refresh` | Refresh all agents; returns `{ "success": true, "providers": [...] }` |
 | POST | `/refresh/:id` | Refresh one configured account; returns `{ "success": true, "provider": {...} }` |
 
@@ -633,6 +636,7 @@ Options:
 agent-tank --history-retention-days 7   # delete rows older than 7 days on write
 agent-tank --history-db /tmp/at.db      # use a different database file
 agent-tank --no-history                 # disable history recording
+agent-tank --no-history-chart           # keep recording, hide the dashboard sparkline
 ```
 
 `node:sqlite` requires Node.js 22.5+. On older runtimes Agent Tank logs one
@@ -643,8 +647,45 @@ when history is disabled with `--no-history`.
 History endpoints:
 
 - `GET /history` returns per-account row counts, the database path and `store`
-- `GET /history/:id` returns `{ "id", "store", "series": [{ "key", "label", "model", "cycle", "unit", "points": [{ "t", "percent", "value" }] }] }`;
-  filter with `since` / `until` (ISO 8601 or epoch ms) and `metric` (a `metric_key`)
+- `GET /history/:id` returns `{ "agent", "store", "retention_days", "series": [{ "key", "label", "model", "cycle", "unit", "points": [{ "t", "percent", "value" }] }] }`;
+  filter with `since` / `until` (ISO 8601 or epoch ms) and `metric` (a `metric_key`).
+  `series` is `[]` for an account with no recorded metrics
+- `GET /history/:id?view=chart` returns the same envelope with only plottable
+  series (percent units with at least two points), each point reduced to `{ "t", "percent" }`:
+
+```json
+{
+  "agent": "work",
+  "store": "sqlite",
+  "retention_days": 14,
+  "series": [
+    {
+      "key": "weekly",
+      "label": "Weekly",
+      "model": null,
+      "cycle": "weekly",
+      "points": [{ "t": "2026-10-16T08:00:00.000Z", "percent": 12 }, { "t": "2026-10-16T09:00:00.000Z", "percent": 15 }]
+    }
+  ]
+}
+```
+
+`percent` is always percent **used**.
+
+### Dashboard sparkline
+
+Each agent card on the status page shows a sparkline of its usage history, one
+line per tracked metric on a fixed 0–100% scale, with a legend that shows each
+metric's latest value (hover the chart to read values at an earlier time). The
+chart is redrawn after every auto-refresh poll and after a card's refresh
+button, without reloading the page. Until a metric has at least two recorded
+points the card shows "Not enough history yet".
+
+The sparkline is on by default. Hide it with `--no-history-chart`,
+`AGENT_TANK_HISTORY_CHART=0` or `"history": { "chart": false }`; `GET /config`
+reports the effective setting as `history.chart`. When recording is off
+(`--no-history`, or `store: "none"` on runtimes without `node:sqlite`) the chart
+is never rendered and `history.chart` is `false`.
 
 ## Installation Notes
 

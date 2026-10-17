@@ -170,6 +170,8 @@ class AgentTank {
       retentionDays: options.historyRetentionDays ?? DEFAULT_RETENTION_DAYS,
     });
     this.historyRetentionDays = this.historyStore.retentionDays;
+    // Dashboard sparkline; never rendered while recording is off
+    this.historyChart = options.historyChart !== false;
     this._historyRecordedAt = new Map();
 
     // Keepalive manager for session maintenance
@@ -500,6 +502,7 @@ class AgentTank {
       store: this.historyStore.store,
       path: this.historyStore.dbPath,
       retentionDays: this.historyRetentionDays,
+      chart: this.historyChart && this.historyStore.store !== 'none',
     };
   }
 
